@@ -26,15 +26,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::types::{deterministic_hash, CapabilityId, ModuleId, StateId};
+use crate::types::{deterministic_hash, CapabilityId, ObjectId, StateId};
 
 /// 受保护资源目前统一用 StateId 表示——能力总是围绕某个具体 State 的访问权。
 /// 如果以后需要对 Scope 本身发放能力，再扩展这个类型，现在没有真实场景不做。
 pub type ResourceId = StateId;
 
 pub fn capability_id_of(
-    grantor: ModuleId,
-    grantee: ModuleId,
+    grantor: ObjectId,
+    grantee: ObjectId,
     resource: ResourceId,
     grant_sequence: u64,
 ) -> CapabilityId {
@@ -57,15 +57,15 @@ pub enum CapabilityError {
 #[derive(Debug, Clone)]
 pub struct CapabilityInfo {
     pub capability_type: String,
-    pub granted_by: ModuleId,
-    pub root_holder: ModuleId,
+    pub granted_by: ObjectId,
+    pub root_holder: ObjectId,
     pub resource: ResourceId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DelegationEdge {
-    pub from: ModuleId,
-    pub to: ModuleId,
+    pub from: ObjectId,
+    pub to: ObjectId,
     pub capability_id: CapabilityId,
     pub cascade_on_revoke: bool,
 }
@@ -74,13 +74,13 @@ pub struct DelegationEdge {
 struct HolderRecord {
     active: bool,
     /// None 表示这是根节点（GRANT 直接产生的持有者）
-    parent: Option<ModuleId>,
+    parent: Option<ObjectId>,
 }
 
 pub struct CapabilityGraph {
     grants: HashMap<CapabilityId, CapabilityInfo>,
-    holders: HashMap<(CapabilityId, ModuleId), HolderRecord>,
-    children: HashMap<(CapabilityId, ModuleId), HashSet<ModuleId>>,
+    holders: HashMap<(CapabilityId, ObjectId), HolderRecord>,
+    children: HashMap<(CapabilityId, ObjectId), HashSet<ObjectId>>,
     edges: Vec<DelegationEdge>,
     grant_sequence: u64,
 }
@@ -112,8 +112,8 @@ impl CapabilityGraph {
     pub fn grant(
         &mut self,
         capability_type: String,
-        grantor: ModuleId,
-        grantee: ModuleId,
+        grantor: ObjectId,
+        grantee: ObjectId,
         resource: ResourceId,
     ) -> CapabilityId {
         self.grant_sequence += 1;
@@ -139,7 +139,7 @@ impl CapabilityGraph {
     }
 
     /// holder 当前是否持有该能力（不做树遍历，只看自己的 active 标志）
-    pub fn holds(&self, cap_id: CapabilityId, holder: ModuleId) -> bool {
+    pub fn holds(&self, cap_id: CapabilityId, holder: ObjectId) -> bool {
         self.holders
             .get(&(cap_id, holder))
             .map(|r| r.active)
@@ -153,8 +153,8 @@ impl CapabilityGraph {
     pub fn delegate(
         &mut self,
         cap_id: CapabilityId,
-        from: ModuleId,
-        to: ModuleId,
+        from: ObjectId,
+        to: ObjectId,
         cascade_on_revoke: bool,
     ) -> Result<(), CapabilityError> {
         if !self.grants.contains_key(&cap_id) {
@@ -199,7 +199,7 @@ impl CapabilityGraph {
     pub fn revoke(
         &mut self,
         cap_id: CapabilityId,
-        holder: ModuleId,
+        holder: ObjectId,
         cascade_override: Option<bool>,
     ) -> Result<(), CapabilityError> {
         if !self.holders.contains_key(&(cap_id, holder)) {
@@ -223,8 +223,8 @@ impl CapabilityGraph {
         Ok(())
     }
 
-    fn deactivate_subtree(&mut self, cap_id: CapabilityId, node: ModuleId) {
-        let kids: Vec<ModuleId> = self
+    fn deactivate_subtree(&mut self, cap_id: CapabilityId, node: ObjectId) {
+        let kids: Vec<ObjectId> = self
             .children
             .get(&(cap_id, node))
             .map(|s| s.iter().cloned().collect())
