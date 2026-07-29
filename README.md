@@ -1,47 +1,58 @@
 # Veritas
 
-[English](#english) | [中文](#chinese)
+An abstract machine that defines new physics for software: what entities are, how they are isolated, and how they can safely cooperate without trusting each other.
 
----
 
-## English
+## What This Is
 
-Veritas - An abstract machine design and prototype implementation driven by the "Devil's Programmer Testing" methodology.
+Linux solved one problem: how multiple programs share one computer.
 
-**Current Phase**: Phase 1.1, transaction kernel prototype (BEGIN/READ/WRITE/COMMIT/ABORT + Blind Write Protection + fail-fast Snapshot Isolation). WAL/Scope/Effect/Contract not yet implemented. Design is still evolving.
+Veritas solves a different problem: how multiple entities cooperate in the same world while being physically incapable of accessing each other's data.
 
-## Documentation
+Not through encryption. Not through permission flags. Not through trust. Through the machine's own physical laws.
 
-Design documents are located in the `docs/` directory:
-- Veritas_设计文档_v0.4.md
-- Veritas_运行时数据模型标准.md
+
+## Why This Exists
+
+Operating systems isolate processes. But they cannot isolate components inside a process. Once a process has permission to read a file, every module inside that process can read it. The ad SDK, the analytics module, the chat module—all share the same access.
+
+Veritas isolates at the entity level. You define what an entity is. The machine guarantees that entity A cannot read entity B's state unless B explicitly grants a capability. Same process, same address space, same hardware. Physically impossible to violate.
+
+
+## What It Does Today
+
+OBJECT_BIRTH  - Create an entity. Unique identity. Zero-trace on abort. Survives crash recovery.
+OBJECT_LINK   - Connect two entities. Self-loop rejected. Topology persisted to WAL.
+READ / WRITE  - Read and write barriers with automatic version tracking.
+COMMIT / ABORT - All-or-nothing transactions. Abort leaves zero trace.
+SAVEPOINT     - Nested rollback. Entities and links roll back correctly.
+EFFECT        - Deferred side effects. Automatically retried after crash.
+WAL           - Write-ahead log. World restores to consistent state after crash.
+
+56 tests. All passing. Each test runs in its own isolated WAL environment.
+
+
+## What It Is Not
+
+Not a database. Not a blockchain. Not a programming language. Not an end-user product.
+
+It is a layer of physical laws. Others can build systems on top of it—the same way Android, Ubuntu, and router firmware are built on top of Linux.
+
+
+## Quick Start
+
+git clone https://github.com/aote6/veritas.git
+cd veritas
+cargo test
+
 
 ## Status
 
-Currently 6/6 unit tests passing. See [STATUS.md](STATUS.md) for details.
+v0.1.0 — Transaction kernel + Scope + WAL + Savepoint + Object + Link + Recovery.
+
+See STATUS.md for details.
+
 
 ## License
-
-GPL-3.0
-
----
-
-## 中文
-
-Veritas - 以"魔鬼程序员测试"为方法论的抽象机器设计与原型实现。
-
-**当前阶段**：Phase 1.1，事务内核原型（BEGIN/READ/WRITE/COMMIT/ABORT + 盲写保护 + fail-fast 快照隔离）。尚未包含 WAL/Scope/Effect/Contract，设计仍在演进中。
-
-## 文档
-
-设计文档位于 `docs/` 目录：
-- Veritas_设计文档_v0.4.md
-- Veritas_运行时数据模型标准.md
-
-## 状态
-
-当前 6/6 单元测试通过。详见 [STATUS.md](STATUS.md)。
-
-## 许可证
 
 GPL-3.0
