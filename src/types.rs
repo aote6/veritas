@@ -73,6 +73,21 @@ pub struct ScopeChange {
 // Runtime Object 基础类型
 pub type ObjectId = u64;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelationKind {
+    CapabilityDelegation = 0,
+    ContractDependency = 1,
+    EffectPropagation = 2,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkEdge {
+    pub from: ObjectId,
+    pub to: ObjectId,
+    pub relation: RelationKind,
+}
+
+
 #[derive(Debug, Clone, Default)]
 pub struct ReadSet {
     pub states: HashMap<StateId, Version>,
@@ -175,6 +190,7 @@ pub struct TransactionContext {
     pub scope_write_set: Vec<ScopeChange>,
     pub effect_queue: EffectQueue,
     pub savepoints: Vec<Savepoint>,
+    pub pending_links: Vec<LinkEdge>,
     pub pending_objects: Vec<ObjectId>,
     pub aborted: bool,
 }
@@ -190,6 +206,7 @@ impl TransactionContext {
             effect_queue: EffectQueue::default(),
             savepoints: Vec::new(),
             pending_objects: Vec::new(),
+            pending_links: Vec::new(),
             aborted: false,
         }
     }

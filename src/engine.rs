@@ -24,6 +24,7 @@ pub struct VeritasEngine {
     commit_lock: Mutex<()>,
     wal: WalWriter,
     object_registry: Mutex<HashSet<ObjectId>>,
+    topology: Mutex<Vec<LinkEdge>>,
 }
 
 impl VeritasEngine {
@@ -49,6 +50,7 @@ impl VeritasEngine {
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
             object_registry: Mutex::new(HashSet::new()),
+            topology: Mutex::new(Vec::new()),
         };
 
         if !records.is_empty() {
@@ -268,6 +270,29 @@ impl VeritasEngine {
             }
         }
 
+        // P6: 写入 ObjectLink WAL 条目并固化拓扑
+        for edge in &ctx.pending_links {
+            let link_entry = WalEntry::ObjectLink {
+                tx_id: ctx.tx_id(),
+                from: edge.from,
+                to: edge.to,
+                relation_kind: match edge.relation {
+                    RelationKind::CapabilityDelegation => 0,
+                    RelationKind::ContractDependency => 1,
+                    RelationKind::EffectPropagation => 2,
+                },
+            };
+            self.wal
+                .append_and_sync(&link_entry)
+                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectLink write failed: {}", e)))?;
+        }
+        {
+            let mut topo = self.topology.lock().unwrap();
+            for edge in &ctx.pending_links {
+                topo.push(edge.clone());
+            }
+        }
+
         drop(_lock);
 
         for pending in pending_effects {
@@ -285,6 +310,32 @@ impl VeritasEngine {
             }
         }
 
+        Ok(())
+    }
+
+    /// P6: OBJECT_LINK 物理原语
+    pub fn object_link(
+        &self,
+        ctx: &mut TransactionContext,
+        from: ObjectId,
+        to: ObjectId,
+        relation: RelationKind,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // 检查源和目标是否存在（全局注册表或当前事务 pending）
+        let registry = self.object_registry.lock().unwrap();
+        let from_exists = registry.contains(&from) || ctx.pending_objects.contains(&from);
+        let to_exists = registry.contains(&to) || ctx.pending_objects.contains(&to);
+        drop(registry);
+
+        if !from_exists || !to_exists {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        ctx.pending_links.push(LinkEdge { from, to, relation });
         Ok(())
     }
 
@@ -1213,5 +1264,48 @@ mod tests {
         let result = engine.object_birth(&mut tx3, obj_id); // 101 已存在
         assert!(result.is_err(), "重复 ObjectId 应报错");
         engine.abort(&mut tx3, AbortReason::WriteConflict);
+    }
+
+    #[test]
+    fn test_object_link_commit_and_abort() {
+        let engine = VeritasEngine::new();
+
+        // 创建两个 Object
+        let obj_a: ObjectId = 201;
+        let obj_b: ObjectId = 202;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.object_birth(&mut tx, obj_b).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        // 测试1: commit 后 Link 存在
+        let mut tx2 = engine.begin();
+        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 1, "拓扑应包含1条边");
+        assert_eq!(topo[0].from, obj_a);
+        assert_eq!(topo[0].to, obj_b);
+        assert_eq!(topo[0].relation, RelationKind::CapabilityDelegation);
+        drop(topo);
+
+        // 测试2: 连接不存在的 Object 应报错
+        let mut tx3 = engine.begin();
+        let obj_c: ObjectId = 999;
+        let result = engine.object_link(&mut tx3, obj_a, obj_c, RelationKind::ContractDependency);
+        assert!(result.is_err(), "连接不存在的 Object 应报错");
+        engine.abort(&mut tx3, AbortReason::WriteConflict);
+
+        // 测试3: abort 后 Link 不存在
+        let mut tx4 = engine.begin();
+        let obj_d: ObjectId = 203;
+        engine.object_birth(&mut tx4, obj_d).unwrap();
+        engine.object_link(&mut tx4, obj_a, obj_d, RelationKind::EffectPropagation).unwrap();
+        engine.abort(&mut tx4, AbortReason::WriteConflict);
+
+        let topo2 = engine.topology.lock().unwrap();
+        assert_eq!(topo2.len(), 1, "abort 后拓扑不应增加");
+        drop(topo2);
     }
 }

@@ -42,6 +42,12 @@ pub enum WalEntry {
         tx_id: TxId,
         object_id: ObjectId,
     },
+    ObjectLink {
+        tx_id: TxId,
+        from: ObjectId,
+        to: ObjectId,
+        relation_kind: u8,
+    },
 }
 
 impl WalEntry {
@@ -92,6 +98,10 @@ impl WalEntry {
                 format!("OBJECTBIRTH TX={} OBJECT={} END
 ", tx_id, object_id)
             }
+            WalEntry::ObjectLink { tx_id, from, to, relation_kind } => {
+                format!("OBJECTLINK TX={} FROM={} TO={} KIND={} END
+", tx_id, from, to, relation_kind)
+            }
         }
     }
 
@@ -110,6 +120,7 @@ impl WalEntry {
             "EFFECTACK" => Self::deserialize_effect_ack(&parts),
             "CHECKPOINT" => Self::deserialize_checkpoint(&parts),
             "OBJECTBIRTH" => Self::deserialize_object_birth(&parts),
+            "OBJECTLINK" => Self::deserialize_object_link(&parts),
             _ => None,
         }
     }
@@ -225,6 +236,34 @@ impl WalEntry {
             .ok()?;
         Some(WalEntry::ObjectBirth { tx_id, object_id })
     }
+
+    fn deserialize_object_link(parts: &[&str]) -> Option<Self> {
+        let tx_id = parts
+            .iter()
+            .find(|p| p.starts_with("TX="))?
+            .strip_prefix("TX=")?
+            .parse::<TxId>()
+            .ok()?;
+        let from = parts
+            .iter()
+            .find(|p| p.starts_with("FROM="))?
+            .strip_prefix("FROM=")?
+            .parse::<ObjectId>()
+            .ok()?;
+        let to = parts
+            .iter()
+            .find(|p| p.starts_with("TO="))?
+            .strip_prefix("TO=")?
+            .parse::<ObjectId>()
+            .ok()?;
+        let relation_kind = parts
+            .iter()
+            .find(|p| p.starts_with("KIND="))?
+            .strip_prefix("KIND=")?
+            .parse::<u8>()
+            .ok()?;
+        Some(WalEntry::ObjectLink { tx_id, from, to, relation_kind })
+    }
 }
 
 pub struct WalWriter {
@@ -283,6 +322,7 @@ impl RecoveryManager {
                         }
                     }
                     WalEntry::ObjectBirth { .. } => {}
+                    WalEntry::ObjectLink { .. } => {}
                     _ => {}
                 }
                 records.push(entry);
@@ -355,6 +395,7 @@ impl RecoveryManager {
                 }
                 WalEntry::Checkpoint { .. } => {}
                 WalEntry::ObjectBirth { .. } => {}
+                WalEntry::ObjectLink { .. } => {}
             }
         }
 
