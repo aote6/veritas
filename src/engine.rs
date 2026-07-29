@@ -6,6 +6,8 @@ use std::sync::Mutex;
 
 use crate::types::*;
 use crate::wal::{RecoveryManager, WalRecord, WalWriter};
+use crate::transaction::TransactionContext;
+use crate::store::StateStore;
 
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(bytes[..8].try_into().unwrap())
@@ -15,7 +17,7 @@ const WAL_PATH: &str = "wal.log";
 
 pub struct VeritasEngine {
     global_version: AtomicU64,
-    state_store: Mutex<HashMap<StateId, StateEntry>>,
+    state_store: StateStore,
     tx_id_counter: AtomicU64,
     commit_lock: Mutex<()>,
     wal: WalWriter,
@@ -33,12 +35,12 @@ impl VeritasEngine {
                 (Vec::new(), 0)
             });
 
-        let mut state_store = HashMap::new();
-        RecoveryManager::apply_records(&records, &mut state_store);
+        let mut state_map = HashMap::new();
+        RecoveryManager::apply_records(&records, &mut state_map);
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
-            state_store: Mutex::new(state_store),
+            state_store: StateStore::from_map(state_map),
             tx_id_counter: AtomicU64::new(1),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
@@ -52,13 +54,14 @@ impl VeritasEngine {
     }
 
     pub fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
-        let mut store = self.state_store.lock().unwrap();
-        store.insert(state_id, StateEntry { value: initial_value, version: 0 });
+        self.state_store.insert(state_id, StateEntry {
+            value: initial_value,
+            version: 0,
+        });
     }
 
     pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
-        let store = self.state_store.lock().unwrap();
-        store.get(&state_id).cloned()
+        self.state_store.read(state_id)
     }
 
     pub fn init_state_in_tx(
@@ -73,18 +76,11 @@ impl VeritasEngine {
     pub fn begin(&self) -> TransactionContext {
         let tx_id = self.tx_id_counter.fetch_add(1, Ordering::SeqCst);
         let snapshot_version = self.global_version.load(Ordering::Acquire);
-        TransactionContext {
-            tx_id,
-            snapshot_version,
-            read_set: ReadSet::default(),
-            write_set: WriteSet::default(),
-            effect_queue: EffectQueue::default(),
-            aborted: false,
-        }
+        TransactionContext::new(tx_id, snapshot_version)
     }
 
     pub fn read(&self, ctx: &mut TransactionContext, state_id: StateId) -> Result<Vec<u8>, VeritasError> {
-        if ctx.aborted {
+        if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
@@ -92,11 +88,10 @@ impl VeritasEngine {
             return Ok(written_value.clone());
         }
 
-        let store = self.state_store.lock().unwrap();
-        let entry = store.get(&state_id)
+        let entry = self.state_store.read(state_id)
             .ok_or(VeritasError::EngineError(format!("State {:?} not found", state_id)))?;
 
-        if entry.version > ctx.snapshot_version {
+        if entry.version > ctx.snapshot_version() {
             return Err(VeritasError::Abort(AbortReason::ReadFutureVersion));
         }
 
@@ -105,13 +100,12 @@ impl VeritasEngine {
     }
 
     pub fn write(&self, ctx: &mut TransactionContext, state_id: StateId, value: Vec<u8>) -> Result<(), VeritasError> {
-        if ctx.aborted {
+        if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
         if !ctx.read_set.states.contains_key(&state_id) {
-            let store = self.state_store.lock().unwrap();
-            if let Some(entry) = store.get(&state_id) {
+            if let Some(entry) = self.state_store.read(state_id) {
                 ctx.read_set.states.insert(state_id, entry.version);
             }
         }
@@ -121,12 +115,12 @@ impl VeritasEngine {
     }
 
     pub fn effect(&self, ctx: &mut TransactionContext, payload: Vec<u8>) -> Result<String, VeritasError> {
-        if ctx.aborted {
+        if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
-        let seq = ctx.effect_queue.effects.len();
-        let idempotency_key = format!("{}-{}", ctx.tx_id, seq);
-        ctx.effect_queue.effects.push(PendingEffect {
+        let seq = ctx.effect_queue.len();
+        let idempotency_key = format!("{}-{}", ctx.tx_id(), seq);
+        ctx.effect_queue.push(PendingEffect {
             idempotency_key: idempotency_key.clone(),
             payload,
         });
@@ -134,7 +128,7 @@ impl VeritasEngine {
     }
 
     pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
-        if ctx.aborted {
+        if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
@@ -144,7 +138,7 @@ impl VeritasEngine {
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
         let wal_record = WalRecord {
-            tx_id: ctx.tx_id,
+            tx_id: ctx.tx_id(),
             version: commit_version,
             writes: ctx.write_set.state_changes.iter()
                 .map(|(id, val)| (*id, val.clone()))
@@ -154,23 +148,17 @@ impl VeritasEngine {
         self.wal.append_and_sync(&wal_record)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
 
-        {
-            let mut store = self.state_store.lock().unwrap();
-            for (state_id, new_value) in &ctx.write_set.state_changes {
-                store.insert(
-                    *state_id,
-                    StateEntry {
-                        value: new_value.clone(),
-                        version: commit_version,
-                    },
-                );
-            }
+        for (state_id, new_value) in &ctx.write_set.state_changes {
+            self.state_store.insert(*state_id, StateEntry {
+                value: new_value.clone(),
+                version: commit_version,
+            });
         }
 
         self.global_version.fetch_add(1, Ordering::SeqCst);
         drop(_lock);
 
-        for pending in &ctx.effect_queue.effects {
+        for pending in ctx.effect_queue.drain() {
             println!("[EFFECT] 执行 {}: payload长度={}", pending.idempotency_key, pending.payload.len());
         }
 
@@ -178,13 +166,12 @@ impl VeritasEngine {
     }
 
     pub fn abort(&self, ctx: &mut TransactionContext, _reason: AbortReason) {
-        ctx.aborted = true;
+        ctx.set_aborted();
     }
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
-        let store = self.state_store.lock().unwrap();
         for (state_id, read_version) in &ctx.read_set.states {
-            if let Some(entry) = store.get(state_id) {
+            if let Some(entry) = self.state_store.read(*state_id) {
                 if entry.version > *read_version {
                     return Err(AbortReason::WriteConflict);
                 }
@@ -413,7 +400,7 @@ mod tests {
         assert_eq!(engine2.get_global_version(), version_after_commit);
 
         let mut ctx2 = engine2.begin();
-        assert_eq!(ctx2.snapshot_version, version_after_commit);
+        assert_eq!(ctx2.snapshot_version(), version_after_commit);
         let val = engine2.read(&mut ctx2, state_a).unwrap();
         assert_eq!(bytes_to_u64(&val), 50);
 

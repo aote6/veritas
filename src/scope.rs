@@ -7,23 +7,21 @@
 
 use crate::engine::VeritasEngine;
 use crate::types::*;
+use crate::transaction::TransactionContext;
 
 pub fn scope_state_id(scope_name: &str) -> StateId {
     deterministic_hash(&format!("__scope__:{}", scope_name))
 }
 
 pub trait ScopeExt {
-    /// 声明一个Scope（幂等：重复声明不清空已有版本号）
     fn declare_scope(&self, scope_name: &str);
 
-    /// 聚合查询前调用：将该Scope的结构版本纳入事务读取集
     fn touch_scope_read(
         &self,
         ctx: &mut TransactionContext,
         scope_name: &str,
     ) -> Result<(), VeritasError>;
 
-    /// 新增/删除集合成员时调用：推高该Scope的结构版本
     fn touch_scope_write(
         &self,
         ctx: &mut TransactionContext,

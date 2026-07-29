@@ -24,16 +24,6 @@ pub struct WriteSet {
     pub state_changes: HashMap<StateId, Vec<u8>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct TransactionContext {
-    pub tx_id: TxId,
-    pub snapshot_version: Version,
-    pub read_set: ReadSet,
-    pub write_set: WriteSet,
-    pub effect_queue: EffectQueue,
-    pub aborted: bool,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum AbortReason {
     WriteConflict,
@@ -81,10 +71,4 @@ pub fn deterministic_hash(input: &str) -> u64 {
 pub struct PendingEffect {
     pub idempotency_key: String,
     pub payload: Vec<u8>,
-}
-
-/// 副作用队列：事务级暂存区
-#[derive(Debug, Clone, Default)]
-pub struct EffectQueue {
-    pub effects: Vec<PendingEffect>,
 }
