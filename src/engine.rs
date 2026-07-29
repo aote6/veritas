@@ -1,7 +1,7 @@
 // Veritas Kernel V0.3 - 事务引擎核心
 // P1: WAL 格式扩展 + Effect 崩溃恢复重试 + tx_id_counter 恢复续接
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
@@ -23,6 +23,7 @@ pub struct VeritasEngine {
     tx_id_counter: AtomicU64,
     commit_lock: Mutex<()>,
     wal: WalWriter,
+    object_registry: Mutex<HashSet<ObjectId>>,
 }
 
 impl VeritasEngine {
@@ -47,6 +48,7 @@ impl VeritasEngine {
             tx_id_counter: AtomicU64::new(max_tx_id + 1),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
+            object_registry: Mutex::new(HashSet::new()),
         };
 
         if !records.is_empty() {
@@ -222,6 +224,16 @@ impl VeritasEngine {
         self.wal
             .append_and_sync(&wal_entry)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
+        // P4: 写入 ObjectBirth WAL 条目
+        for object_id in &ctx.pending_objects {
+            let birth_entry = WalEntry::ObjectBirth {
+                tx_id: ctx.tx_id(),
+                object_id: *object_id,
+            };
+            self.wal
+                .append_and_sync(&birth_entry)
+                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectBirth write failed: {}", e)))?;
+        }
 
         for (state_id, value) in ctx.write_set.iter() {
             self.state_store.insert(
@@ -247,6 +259,15 @@ impl VeritasEngine {
         }
 
         self.global_version.fetch_add(1, Ordering::SeqCst);
+
+        // P4: 固化 Object 到全局注册表
+        {
+            let mut registry = self.object_registry.lock().unwrap();
+            for object_id in &ctx.pending_objects {
+                registry.insert(*object_id);
+            }
+        }
+
         drop(_lock);
 
         for pending in pending_effects {
@@ -264,6 +285,32 @@ impl VeritasEngine {
             }
         }
 
+        Ok(())
+    }
+
+    /// P4: OBJECT_BIRTH 最小物理原语
+    pub fn object_birth(
+        &self,
+        ctx: &mut TransactionContext,
+        object_id: ObjectId,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // 检查全局注册表：若已存在则拒绝
+        let registry = self.object_registry.lock().unwrap();
+        if registry.contains(&object_id) {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+        drop(registry);
+
+        // 检查当前事务暂存区：防重复
+        if ctx.pending_objects.contains(&object_id) {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        ctx.pending_objects.push(object_id);
         Ok(())
     }
 
@@ -1135,5 +1182,36 @@ mod tests {
 
             let _ = std::fs::remove_file(&path);
         }
+    }
+
+    #[test]
+    fn test_object_birth_commit_and_abort() {
+        use std::sync::Mutex;
+        let engine = VeritasEngine::new();
+
+        // 测试1: commit 后 Object 存在
+        let mut tx = engine.begin();
+        let obj_id: ObjectId = 101;
+        engine.object_birth(&mut tx, obj_id).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let registry = engine.object_registry.lock().unwrap();
+        assert!(registry.contains(&obj_id), "commit 后注册表应包含 Object");
+        drop(registry);
+
+        // 测试2: abort 后 Object 不存在
+        let mut tx2 = engine.begin();
+        let obj_id2: ObjectId = 102;
+        engine.object_birth(&mut tx2, obj_id2).unwrap();
+        engine.abort(&mut tx2, AbortReason::WriteConflict);
+
+        let registry2 = engine.object_registry.lock().unwrap();
+        drop(registry2);
+
+        // 测试3: 重复 ObjectId 应拒绝
+        let mut tx3 = engine.begin();
+        let result = engine.object_birth(&mut tx3, obj_id); // 101 已存在
+        assert!(result.is_err(), "重复 ObjectId 应报错");
+        engine.abort(&mut tx3, AbortReason::WriteConflict);
     }
 }
