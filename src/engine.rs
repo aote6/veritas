@@ -42,6 +42,27 @@ impl VeritasEngine {
         let (state_map, scope_map, pending_effects, max_tx_id) =
             RecoveryManager::apply_records(&records);
 
+        // P7.5: 从 WAL records 重建 object_registry 和 topology
+        let mut recovered_objects: HashSet<ObjectId> = HashSet::new();
+        let mut recovered_links: Vec<LinkEdge> = Vec::new();
+        for record in &records {
+            match record {
+                WalEntry::ObjectBirth { object_id, .. } => {
+                    recovered_objects.insert(*object_id);
+                }
+                WalEntry::ObjectLink { from, to, relation_kind, .. } => {
+                    let relation = match relation_kind {
+                        0 => RelationKind::CapabilityDelegation,
+                        1 => RelationKind::ContractDependency,
+                        2 => RelationKind::EffectPropagation,
+                        _ => continue,
+                    };
+                    recovered_links.push(LinkEdge { from: *from, to: *to, relation });
+                }
+                _ => {}
+            }
+        }
+
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
             state_store: StateStore::from_map(state_map),
@@ -49,8 +70,8 @@ impl VeritasEngine {
             tx_id_counter: AtomicU64::new(max_tx_id + 1),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
-            object_registry: Mutex::new(HashSet::new()),
-            topology: Mutex::new(Vec::new()),
+            object_registry: Mutex::new(recovered_objects),
+            topology: Mutex::new(recovered_links),
         };
 
         if !records.is_empty() {
@@ -325,6 +346,11 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
+        // 自环检测
+        if from == to {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
         // 检查源和目标是否存在（全局注册表或当前事务 pending）
         let registry = self.object_registry.lock().unwrap();
         let from_exists = registry.contains(&from) || ctx.pending_objects.contains(&from);
@@ -409,6 +435,8 @@ impl VeritasEngine {
             write_set_len: ctx.write_set.len(),
             effect_queue_len: ctx.effect_queue.len(),
             scope_write_set_len: ctx.scope_write_set.len(),
+            pending_objects_len: ctx.pending_objects.len(),
+            pending_links_len: ctx.pending_links.len(),
         });
 
         Ok(())
@@ -436,6 +464,8 @@ impl VeritasEngine {
         ctx.write_set.truncate(sp.write_set_len);
         ctx.effect_queue.truncate(sp.effect_queue_len);
         ctx.scope_write_set.truncate(sp.scope_write_set_len);
+        ctx.pending_objects.truncate(sp.pending_objects_len);
+        ctx.pending_links.truncate(sp.pending_links_len);
 
         ctx.savepoints.truncate(index + 1);
 
@@ -1237,8 +1267,10 @@ mod tests {
 
     #[test]
     fn test_object_birth_commit_and_abort() {
-        use std::sync::Mutex;
-        let engine = VeritasEngine::new();
+        let wal_path = "target/test_p4_birth.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+        let _ = std::fs::remove_file(wal_path);
 
         // 测试1: commit 后 Object 存在
         let mut tx = engine.begin();
@@ -1268,7 +1300,9 @@ mod tests {
 
     #[test]
     fn test_object_link_commit_and_abort() {
-        let engine = VeritasEngine::new();
+        let wal_path = "target/test_p6_link.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
 
         // 创建两个 Object
         let obj_a: ObjectId = 201;
@@ -1311,7 +1345,9 @@ mod tests {
 
     #[test]
     fn test_p1_to_p6_full_lifecycle() {
-        let engine = VeritasEngine::new();
+        let wal_path = "target/test_p7_lifecycle.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
 
         // 1. 事务1：诞生两个 Object
         let obj_a: ObjectId = 1001;
@@ -1339,5 +1375,126 @@ mod tests {
         assert_eq!(topo[0].to, obj_b);
         assert_eq!(topo[0].relation, RelationKind::CapabilityDelegation);
         drop(topo);
+    }
+
+    // ========== P7.5 工程验收测试 ==========
+
+    #[test]
+    fn test_same_tx_birth_and_link() {
+        let wal_path = "target/test_p7_5_sametx.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+        let mut tx = engine.begin();
+        let obj_a: ObjectId = 301;
+        let obj_b: ObjectId = 302;
+
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.object_birth(&mut tx, obj_b).unwrap();
+        let link_res = engine.object_link(&mut tx, obj_a, obj_b, RelationKind::CapabilityDelegation);
+        assert!(link_res.is_ok(), "same-tx birth+link should succeed");
+        engine.commit(&mut tx).unwrap();
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 1);
+        assert_eq!(topo[0].from, obj_a);
+        assert_eq!(topo[0].to, obj_b);
+    }
+
+    #[test]
+    fn test_self_link_rejection() {
+        let wal_path = "target/test_p7_5_selflink.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+        let mut tx = engine.begin();
+        let obj_a: ObjectId = 303;
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        let result = engine.object_link(&mut tx2, obj_a, obj_a, RelationKind::ContractDependency);
+        assert!(result.is_err(), "self-link A->A must be rejected");
+    }
+
+    #[test]
+    fn test_duplicate_link() {
+        let wal_path = "target/test_p7_5_duplink.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+        let mut tx = engine.begin();
+        let obj_a: ObjectId = 304;
+        let obj_b: ObjectId = 305;
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.object_birth(&mut tx, obj_b).unwrap();
+        engine.object_link(&mut tx, obj_a, obj_b, RelationKind::CapabilityDelegation).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        let res = engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation);
+        // 当前语义：重复 Link 报错（已存在）
+        // 如果未来改为幂等，这里改成 assert!(res.is_ok())
+        println!("[P7.5] duplicate link result: {:?}", res);
+    }
+
+    // ========== P7.5 第二轮：WAL Replay + Savepoint 回滚 ==========
+
+    #[test]
+    fn test_savepoint_rollback_link() {
+        let wal_path = "target/test_p7_5_savepoint.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+        let mut tx = engine.begin();
+        let obj_a: ObjectId = 401;
+        let obj_b: ObjectId = 402;
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.object_birth(&mut tx, obj_b).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        engine.savepoint(&mut tx2, "sp1").unwrap();
+        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::EffectPropagation).unwrap();
+
+        // rollback_to 后验证
+        engine.rollback_to(&mut tx2, "sp1").unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 0, "Savepoint rollback should remove link");
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_wal_replay_topology_and_registry() {
+        let wal_path = "target/test_p7_5_replay.wal";
+        let _ = std::fs::remove_file(wal_path);
+
+        let obj_a: ObjectId = 501;
+        let obj_b: ObjectId = 502;
+
+        // 阶段 A: Engine 1 提交 Birth + Link
+        {
+            let engine1 = VeritasEngine::with_wal_path(wal_path.to_string());
+            let mut tx = engine1.begin();
+            engine1.object_birth(&mut tx, obj_a).unwrap();
+            engine1.object_birth(&mut tx, obj_b).unwrap();
+            engine1.object_link(&mut tx, obj_a, obj_b, RelationKind::ContractDependency).unwrap();
+            engine1.commit(&mut tx).unwrap();
+        }
+
+        // 阶段 B: Engine 2 重新 open WAL，验证恢复
+        let engine2 = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let reg = engine2.object_registry.lock().unwrap();
+        assert!(reg.contains(&obj_a), "WAL replay: obj_a should be restored");
+        assert!(reg.contains(&obj_b), "WAL replay: obj_b should be restored");
+        drop(reg);
+
+        let topo = engine2.topology.lock().unwrap();
+        assert_eq!(topo.len(), 1, "WAL replay: topology should have 1 edge");
+        assert_eq!(topo[0].from, obj_a);
+        assert_eq!(topo[0].to, obj_b);
+        assert_eq!(topo[0].relation, RelationKind::ContractDependency);
+        drop(topo);
+
+        let _ = std::fs::remove_file(wal_path);
     }
 }

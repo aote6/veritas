@@ -179,6 +179,8 @@ pub struct Savepoint {
     pub write_set_len: usize,
     pub effect_queue_len: usize,
     pub scope_write_set_len: usize,
+    pub pending_objects_len: usize,
+    pub pending_links_len: usize,
 }
 
 #[derive(Debug, Clone)]
