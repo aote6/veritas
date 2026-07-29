@@ -392,3 +392,87 @@ mod tests {
         cleanup_wal(&path);
     }
 }
+
+    // ==================== Phase 2.5 并发压力测试 ====================
+
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn test_concurrent_transactions() {
+        let path = format!("wal_stress_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+
+        let engine = Arc::new(VeritasEngine::with_wal_path(path.clone()));
+        let state_x = deterministic_hash("Stress::Counter::X");
+        engine.init_state(state_x, 0u64.to_le_bytes().to_vec());
+
+        const N_THREADS: usize = 12;
+        const OPS_PER_THREAD: usize = 50;
+
+        let success_count = Arc::new(AtomicU64::new(0));
+
+        let handles: Vec<_> = (0..N_THREADS)
+            .map(|_| {
+                let engine = Arc::clone(&engine);
+                let success_count = Arc::clone(&success_count);
+                thread::spawn(move || {
+                    for _ in 0..OPS_PER_THREAD {
+                        loop {
+                            let mut ctx = engine.begin();
+                            let val = match engine.read(&mut ctx, state_x) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+                            let current = u64::from_le_bytes(val[..8].try_into().unwrap());
+                            engine
+                                .write(&mut ctx, state_x, (current + 1).to_le_bytes().to_vec())
+                                .unwrap();
+
+                            match engine.commit(&mut ctx) {
+                                Ok(()) => {
+                                    success_count.fetch_add(1, Ordering::SeqCst);
+                                    break;
+                                }
+                                Err(_) => continue,
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let expected = success_count.load(Ordering::SeqCst);
+        let mut ctx = engine.begin();
+        let final_val = engine.read(&mut ctx, state_x).unwrap();
+        let final_count = u64::from_le_bytes(final_val[..8].try_into().unwrap());
+        assert_eq!(
+            final_count, expected,
+            "最终计数应等于成功提交次数（无更新丢失）"
+        );
+        assert_eq!(
+            expected,
+            (N_THREADS * OPS_PER_THREAD) as u64,
+            "所有操作最终都应通过重试成功"
+        );
+
+        assert_eq!(engine.get_global_version(), expected);
+
+        drop(engine);
+
+        let engine2 = VeritasEngine::with_wal_path(path.clone());
+        let mut ctx2 = engine2.begin();
+        let recovered_val = engine2.read(&mut ctx2, state_x).unwrap();
+        let recovered_count = u64::from_le_bytes(recovered_val[..8].try_into().unwrap());
+        assert_eq!(
+            recovered_count, expected,
+            "恢复后的值应与运行时最终值一致"
+        );
+        assert_eq!(engine2.get_global_version(), expected);
+
+        let _ = std::fs::remove_file(&path);
+    }
