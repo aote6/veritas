@@ -1308,4 +1308,36 @@ mod tests {
         assert_eq!(topo2.len(), 1, "abort 后拓扑不应增加");
         drop(topo2);
     }
+
+    #[test]
+    fn test_p1_to_p6_full_lifecycle() {
+        let engine = VeritasEngine::new();
+
+        // 1. 事务1：诞生两个 Object
+        let obj_a: ObjectId = 1001;
+        let obj_b: ObjectId = 1002;
+        let mut tx1 = engine.begin();
+        engine.object_birth(&mut tx1, obj_a).expect("Birth A failed");
+        engine.object_birth(&mut tx1, obj_b).expect("Birth B failed");
+        engine.commit(&mut tx1).expect("Commit tx1 failed");
+
+        // 2. 事务2：建立 Link
+        let mut tx2 = engine.begin();
+        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation)
+            .expect("Link A->B failed");
+        engine.commit(&mut tx2).expect("Commit tx2 failed");
+
+        // 3. 校验最终物理状态
+        let registry = engine.object_registry.lock().unwrap();
+        assert!(registry.contains(&obj_a), "registry 应包含 A");
+        assert!(registry.contains(&obj_b), "registry 应包含 B");
+        drop(registry);
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 1, "拓扑应有1条边");
+        assert_eq!(topo[0].from, obj_a);
+        assert_eq!(topo[0].to, obj_b);
+        assert_eq!(topo[0].relation, RelationKind::CapabilityDelegation);
+        drop(topo);
+    }
 }
