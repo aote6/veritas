@@ -4,6 +4,7 @@ mod engine;
 mod types;
 mod wal;
 mod scope;
+mod scope_registry;
 mod effect;
 mod store;
 mod extension;
@@ -14,7 +15,7 @@ use engine::VeritasEngine;
 fn main() {
     println!("╔════════════════════════════════════╗");
     println!("║   Veritas Kernel V0.2 - Phase 6    ║");
-    println!("║   Savepoint 完成                   ║");
+    println!("║   Savepoint + ScopeRegistry 完成   ║");
     println!("╚════════════════════════════════════╝\n");
 
     let engine = VeritasEngine::new();
@@ -26,9 +27,11 @@ fn main() {
     let balance = u64::from_le_bytes(val[..8].try_into().unwrap());
     println!("[事务 {}] 读取余额: {}", tx.tx_id, balance);
 
-    let _key = engine.effect(&mut tx, b"notification: balance checked".to_vec()).unwrap();
+    let _key = engine
+        .effect(&mut tx, b"notification: balance checked".to_vec())
+        .unwrap();
     engine.commit(&mut tx).unwrap();
     println!("[事务 {}] COMMIT + EFFECT 执行 ✓", tx.tx_id);
 
-    println!("\n✓ Phase 6 Savepoint 完成");
+    println!("\n✓ Phase 6 Savepoint + ScopeRegistry 完成");
 }

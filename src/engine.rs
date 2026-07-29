@@ -1,11 +1,13 @@
-// Veritas Kernel V0.2 - 事务引擎核心
+// Veritas Kernel V0.3 - 事务引擎核心
+// P1: WAL 格式扩展 + Effect 崩溃恢复重试 + tx_id_counter 恢复续接
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use crate::scope_registry::ScopeRegistry;
 use crate::types::*;
-use crate::wal::{RecoveryManager, WalRecord, WalWriter};
+use crate::wal::{RecoveryManager, WalEffect, WalEntry, WalScopeChange, WalWriter};
 use crate::store::StateStore;
 
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -17,6 +19,7 @@ const WAL_PATH: &str = "wal.log";
 pub struct VeritasEngine {
     global_version: AtomicU64,
     state_store: StateStore,
+    scope_registry: ScopeRegistry,
     tx_id_counter: AtomicU64,
     commit_lock: Mutex<()>,
     wal: WalWriter,
@@ -34,29 +37,57 @@ impl VeritasEngine {
                 (Vec::new(), 0)
             });
 
-        let mut state_map = HashMap::new();
-        RecoveryManager::apply_records(&records, &mut state_map);
+        let (state_map, scope_map, pending_effects, max_tx_id) =
+            RecoveryManager::apply_records(&records);
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
             state_store: StateStore::from_map(state_map),
-            tx_id_counter: AtomicU64::new(1),
+            scope_registry: ScopeRegistry::from_map(scope_map),
+            tx_id_counter: AtomicU64::new(max_tx_id + 1),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
         };
 
         if !records.is_empty() {
-            println!("[恢复] 从WAL恢复 {} 条记录，当前版本号: {}", records.len(), recovered_version);
+            println!(
+                "[恢复] 从WAL恢复 {} 条记录，当前版本号: {}，下一个事务ID: {}",
+                records.len(),
+                recovered_version,
+                max_tx_id + 1
+            );
+        }
+
+        for pending in pending_effects {
+            println!(
+                "[恢复][EFFECT重试] 执行 {}: payload长度={}",
+                pending.idempotency_key,
+                pending.payload.len()
+            );
+            let ack = WalEntry::EffectAck {
+                tx_id: pending.tx_id,
+                idempotency_key: pending.idempotency_key,
+            };
+            if let Err(e) = engine.wal.append_and_sync(&ack) {
+                eprintln!("[WARN] 写入 EffectAck 失败: {}", e);
+            }
         }
 
         engine
     }
 
+    pub fn scope_registry(&self) -> &ScopeRegistry {
+        &self.scope_registry
+    }
+
     pub fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
-        self.state_store.insert(state_id, StateEntry {
-            value: initial_value,
-            version: 0,
-        });
+        self.state_store.insert(
+            state_id,
+            StateEntry {
+                value: initial_value,
+                version: 0,
+            },
+        );
     }
 
     pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
@@ -78,18 +109,26 @@ impl VeritasEngine {
         TransactionContext::new(tx_id, snapshot_version)
     }
 
-    pub fn read(&self, ctx: &mut TransactionContext, state_id: StateId) -> Result<Vec<u8>, VeritasError> {
+    pub fn read(
+        &self,
+        ctx: &mut TransactionContext,
+        state_id: StateId,
+    ) -> Result<Vec<u8>, VeritasError> {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        // 优先从 WriteSet 读取最新值
         if let Some(written_value) = ctx.write_set.get_latest(state_id) {
             return Ok(written_value.clone());
         }
 
-        let entry = self.state_store.read(state_id)
-            .ok_or(VeritasError::EngineError(format!("State {:?} not found", state_id)))?;
+        let entry = self
+            .state_store
+            .read(state_id)
+            .ok_or(VeritasError::EngineError(format!(
+                "State {:?} not found",
+                state_id
+            )))?;
 
         if entry.version > ctx.snapshot_version() {
             return Err(VeritasError::Abort(AbortReason::ReadFutureVersion));
@@ -99,12 +138,16 @@ impl VeritasEngine {
         Ok(entry.value.clone())
     }
 
-    pub fn write(&self, ctx: &mut TransactionContext, state_id: StateId, value: Vec<u8>) -> Result<(), VeritasError> {
+    pub fn write(
+        &self,
+        ctx: &mut TransactionContext,
+        state_id: StateId,
+        value: Vec<u8>,
+    ) -> Result<(), VeritasError> {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        // 盲写保护：如果该 state 尚未在 ReadSet 中，将其当前版本补入
         if !ctx.read_set.states.contains_key(&state_id) {
             if let Some(entry) = self.state_store.read(state_id) {
                 ctx.read_set.states.insert(state_id, entry.version);
@@ -115,7 +158,11 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn effect(&self, ctx: &mut TransactionContext, payload: Vec<u8>) -> Result<String, VeritasError> {
+    pub fn effect(
+        &self,
+        ctx: &mut TransactionContext,
+        payload: Vec<u8>,
+    ) -> Result<String, VeritasError> {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
@@ -136,37 +183,85 @@ impl VeritasEngine {
         let _lock = self.commit_lock.lock().unwrap();
 
         self.detect_conflict(ctx)?;
+        self.detect_scope_conflict(ctx)?;
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
-        // 构建 WAL 记录（使用最新值）
         let mut writes_map = HashMap::new();
         for (state_id, value) in ctx.write_set.iter() {
             writes_map.insert(*state_id, value.clone());
         }
-        let wal_record = WalRecord {
+
+        let wal_scope_changes: Vec<WalScopeChange> = ctx
+            .scope_write_set
+            .iter()
+            .map(|c| WalScopeChange {
+                scope_id: c.scope_id,
+                change_type: c.change_type.clone(),
+                state_id: c.state_id,
+            })
+            .collect();
+
+        let pending_effects = ctx.effect_queue.drain();
+        let wal_effects: Vec<WalEffect> = pending_effects
+            .iter()
+            .map(|e| WalEffect {
+                idempotency_key: e.idempotency_key.clone(),
+                payload: e.payload.clone(),
+            })
+            .collect();
+
+        let wal_entry = WalEntry::Commit {
             tx_id: ctx.tx_id(),
             version: commit_version,
             writes: writes_map.into_iter().collect(),
+            scope_changes: wal_scope_changes,
+            effects: wal_effects,
         };
 
-        self.wal.append_and_sync(&wal_record)
+        self.wal
+            .append_and_sync(&wal_entry)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
 
-        // 应用写入集到状态存储（按顺序，后面的覆盖前面的）
         for (state_id, value) in ctx.write_set.iter() {
-            self.state_store.insert(*state_id, StateEntry {
-                value: value.clone(),
-                version: commit_version,
-            });
+            self.state_store.insert(
+                *state_id,
+                StateEntry {
+                    value: value.clone(),
+                    version: commit_version,
+                },
+            );
+        }
+
+        for change in &ctx.scope_write_set {
+            match change.change_type {
+                ScopeChangeType::Bind => {
+                    self.scope_registry
+                        .apply_bind(change.scope_id, change.state_id);
+                }
+                ScopeChangeType::Unbind => {
+                    self.scope_registry
+                        .apply_unbind(change.scope_id, change.state_id);
+                }
+            }
         }
 
         self.global_version.fetch_add(1, Ordering::SeqCst);
         drop(_lock);
 
-        // 执行副作用
-        for pending in ctx.effect_queue.drain() {
-            println!("[EFFECT] 执行 {}: payload长度={}", pending.idempotency_key, pending.payload.len());
+        for pending in pending_effects {
+            println!(
+                "[EFFECT] 执行 {}: payload长度={}",
+                pending.idempotency_key,
+                pending.payload.len()
+            );
+            let ack = WalEntry::EffectAck {
+                tx_id: ctx.tx_id(),
+                idempotency_key: pending.idempotency_key.clone(),
+            };
+            if let Err(e) = self.wal.append_and_sync(&ack) {
+                eprintln!("[WARN] 写入 EffectAck 失败: {}", e);
+            }
         }
 
         Ok(())
@@ -187,11 +282,20 @@ impl VeritasEngine {
         Ok(())
     }
 
+    fn detect_scope_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
+        for (scope_id, read_version) in &ctx.read_set.scopes {
+            if let Some(current_version) = self.scope_registry.struct_version(*scope_id) {
+                if current_version > *read_version {
+                    return Err(AbortReason::PhantomConflict);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_global_version(&self) -> Version {
         self.global_version.load(Ordering::Acquire)
     }
-
-    // ============ Savepoint API ============
 
     pub fn savepoint(
         &self,
@@ -206,6 +310,7 @@ impl VeritasEngine {
             name: name.to_string(),
             write_set_len: ctx.write_set.len(),
             effect_queue_len: ctx.effect_queue.len(),
+            scope_write_set_len: ctx.scope_write_set.len(),
         });
 
         Ok(())
@@ -230,13 +335,10 @@ impl VeritasEngine {
 
         let sp = ctx.savepoints[index].clone();
 
-        // 回滚 WriteSet 到 savepoint 时的长度
         ctx.write_set.truncate(sp.write_set_len);
-
-        // 回滚 EffectQueue 到 savepoint 时的长度
         ctx.effect_queue.truncate(sp.effect_queue_len);
+        ctx.scope_write_set.truncate(sp.scope_write_set_len);
 
-        // 保留 savepoint 本身及之前的所有 savepoint
         ctx.savepoints.truncate(index + 1);
 
         Ok(())
@@ -278,7 +380,9 @@ mod tests {
         engine.init_state(state_a, 100u64.to_le_bytes().to_vec());
 
         let mut ctx = engine.begin();
-        engine.write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine.commit(&mut ctx).unwrap();
 
         let metadata = fs::metadata(&path);
@@ -296,7 +400,9 @@ mod tests {
         engine1.init_state(state_a, 100u64.to_le_bytes().to_vec());
 
         let mut ctx = engine1.begin();
-        engine1.write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine1
+            .write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine1.commit(&mut ctx).unwrap();
         drop(engine1);
 
@@ -320,7 +426,13 @@ mod tests {
             let mut ctx = engine1.begin();
             let val = engine1.read(&mut ctx, state_a).unwrap();
             let current = bytes_to_u64(&val);
-            engine1.write(&mut ctx, state_a, (current + 100).to_le_bytes().to_vec()).unwrap();
+            engine1
+                .write(
+                    &mut ctx,
+                    state_a,
+                    (current + 100).to_le_bytes().to_vec(),
+                )
+                .unwrap();
             engine1.commit(&mut ctx).unwrap();
         }
         drop(engine1);
@@ -345,7 +457,9 @@ mod tests {
     fn test_read_your_writes() {
         let (engine, state_a, path) = setup_engine();
         let mut ctx = engine.begin();
-        engine.write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         let balance = engine.read(&mut ctx, state_a).unwrap();
         assert_eq!(bytes_to_u64(&balance), 50);
         engine.commit(&mut ctx).unwrap();
@@ -365,10 +479,14 @@ mod tests {
         engine.init_state(state_a, 100u64.to_le_bytes().to_vec());
 
         let mut ctx1 = engine.begin();
-        engine.write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
 
         let mut ctx2 = engine.begin();
-        engine.write(&mut ctx2, state_a, 30u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx2, state_a, 30u64.to_le_bytes().to_vec())
+            .unwrap();
         engine.commit(&mut ctx2).unwrap();
 
         let result = engine.commit(&mut ctx1);
@@ -386,7 +504,9 @@ mod tests {
         let mut ctx = engine.begin();
         let balance = engine.read(&mut ctx, state_a).unwrap();
         assert_eq!(bytes_to_u64(&balance), 100);
-        engine.write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine.commit(&mut ctx).unwrap();
 
         let mut ctx2 = engine.begin();
@@ -404,10 +524,14 @@ mod tests {
 
         let mut ctx2 = engine.begin();
         let _ = engine.read(&mut ctx2, state_a).unwrap();
-        engine.write(&mut ctx2, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx2, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine.commit(&mut ctx2).unwrap();
 
-        engine.write(&mut ctx1, state_a, 30u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx1, state_a, 30u64.to_le_bytes().to_vec())
+            .unwrap();
         let result = engine.commit(&mut ctx1);
         assert!(result.is_err());
         cleanup_wal(&path);
@@ -418,7 +542,9 @@ mod tests {
         let (engine, state_a, path) = setup_engine();
 
         let mut ctx1 = engine.begin();
-        engine.write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
 
         let mut ctx2 = engine.begin();
         let balance = engine.read(&mut ctx2, state_a).unwrap();
@@ -432,7 +558,9 @@ mod tests {
 
         let mut ctx1 = engine.begin();
         let mut ctx2 = engine.begin();
-        engine.write(&mut ctx2, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine
+            .write(&mut ctx2, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine.commit(&mut ctx2).unwrap();
 
         let result = engine.read(&mut ctx1, state_a);
@@ -449,7 +577,9 @@ mod tests {
         engine1.init_state(state_a, 100u64.to_le_bytes().to_vec());
 
         let mut ctx1 = engine1.begin();
-        engine1.write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine1
+            .write(&mut ctx1, state_a, 50u64.to_le_bytes().to_vec())
+            .unwrap();
         engine1.commit(&mut ctx1).unwrap();
         let version_after_commit = engine1.get_global_version();
         drop(engine1);
@@ -462,7 +592,9 @@ mod tests {
         let val = engine2.read(&mut ctx2, state_a).unwrap();
         assert_eq!(bytes_to_u64(&val), 50);
 
-        engine2.write(&mut ctx2, state_a, 30u64.to_le_bytes().to_vec()).unwrap();
+        engine2
+            .write(&mut ctx2, state_a, 30u64.to_le_bytes().to_vec())
+            .unwrap();
         engine2.commit(&mut ctx2).unwrap();
         assert_eq!(engine2.get_global_version(), version_after_commit + 1);
 
@@ -500,7 +632,11 @@ mod tests {
                             };
                             let current = bytes_to_u64(&val);
                             engine
-                                .write(&mut ctx, state_x, (current + 1).to_le_bytes().to_vec())
+                                .write(
+                                    &mut ctx,
+                                    state_x,
+                                    (current + 1).to_le_bytes().to_vec(),
+                                )
                                 .unwrap();
 
                             match engine.commit(&mut ctx) {
@@ -560,13 +696,13 @@ mod tests {
             const LIMIT: u64 = 10000;
 
             let mut tx1 = engine.begin();
-            engine.touch_scope_read(&mut tx1, "family_group_1").unwrap();
-            let used_a = bytes_to_u64(
-                &engine.read(&mut tx1, account_a).unwrap()[..8],
-            );
-            let used_b = bytes_to_u64(
-                &engine.read(&mut tx1, account_b).unwrap()[..8],
-            );
+            engine
+                .enumerate_scope(&mut tx1, "family_group_1")
+                .unwrap();
+            let used_a =
+                bytes_to_u64(&engine.read(&mut tx1, account_a).unwrap()[..8]);
+            let used_b =
+                bytes_to_u64(&engine.read(&mut tx1, account_b).unwrap()[..8]);
             assert!(used_a + used_b + 6000 <= LIMIT);
             engine
                 .write(&mut tx1, account_a, (used_a + 6000).to_le_bytes().to_vec())
@@ -574,14 +710,19 @@ mod tests {
 
             let mut tx2 = engine.begin();
             let account_c = deterministic_hash("Family::AccountC::Used");
-            engine.touch_scope_write(&mut tx2, "family_group_1").unwrap();
             engine.init_state_in_tx(&mut tx2, account_c, 5000u64.to_le_bytes().to_vec());
+            engine
+                .bind_scope(&mut tx2, "family_group_1", account_c)
+                .unwrap();
             engine.commit(&mut tx2).unwrap();
             println!("[事务2] 添加成员C(初始额度5000) COMMIT 成功");
 
             let result = engine.commit(&mut tx1);
             assert!(result.is_err());
-            println!("[事务1] 提现6000 COMMIT 失败: {:?} ✓ Scope幻读保护生效", result);
+            println!(
+                "[事务1] 提现6000 COMMIT 失败: {:?} ✓ Scope幻读保护生效",
+                result
+            );
 
             let _ = std::fs::remove_file(&path);
         }
@@ -605,19 +746,21 @@ mod tests {
             engine.declare_scope("family_group_regress");
 
             let mut tx1 = engine.begin();
-            engine.touch_scope_read(&mut tx1, "family_group_regress").unwrap();
-            let used_a = bytes_to_u64(
-                &engine.read(&mut tx1, account_a).unwrap()[..8],
-            );
+            engine
+                .enumerate_scope(&mut tx1, "family_group_regress")
+                .unwrap();
+            let used_a =
+                bytes_to_u64(&engine.read(&mut tx1, account_a).unwrap()[..8]);
             engine
                 .write(&mut tx1, account_a, (used_a + 2000).to_le_bytes().to_vec())
                 .unwrap();
 
             let mut tx2 = engine.begin();
-            engine.touch_scope_read(&mut tx2, "family_group_regress").unwrap();
-            let used_b = bytes_to_u64(
-                &engine.read(&mut tx2, account_b).unwrap()[..8],
-            );
+            engine
+                .enumerate_scope(&mut tx2, "family_group_regress")
+                .unwrap();
+            let used_b =
+                bytes_to_u64(&engine.read(&mut tx2, account_b).unwrap()[..8]);
             engine
                 .write(&mut tx2, account_b, (used_b + 3000).to_le_bytes().to_vec())
                 .unwrap();
@@ -625,6 +768,122 @@ mod tests {
 
             let result = engine.commit(&mut tx1);
             assert!(result.is_ok());
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_scope_bind_rolls_back_with_savepoint() {
+            let path = format!("wal_scope_rollback_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+
+            let member = deterministic_hash("Scope::Member::X");
+            engine.declare_scope("rollback_test_scope");
+
+            let mut tx = engine.begin();
+            engine.savepoint(&mut tx, "before_bind").unwrap();
+            engine.init_state_in_tx(&mut tx, member, 1u64.to_le_bytes().to_vec());
+            engine
+                .bind_scope(&mut tx, "rollback_test_scope", member)
+                .unwrap();
+
+            engine.rollback_to(&mut tx, "before_bind").unwrap();
+            engine.commit(&mut tx).unwrap();
+
+            let id = crate::scope::scope_state_id("rollback_test_scope");
+            assert_eq!(engine.scope_registry().struct_version(id), Some(0));
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_scope_struct_version_survives_restart() {
+            let path = format!("wal_scope_persist_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine1 = VeritasEngine::with_wal_path(path.clone());
+            engine1.declare_scope("persist_test_scope");
+            let member = deterministic_hash("Persist::Member");
+
+            let mut tx = engine1.begin();
+            engine1.init_state_in_tx(&mut tx, member, 1u64.to_le_bytes().to_vec());
+            engine1
+                .bind_scope(&mut tx, "persist_test_scope", member)
+                .unwrap();
+            engine1.commit(&mut tx).unwrap();
+            drop(engine1);
+
+            let engine2 = VeritasEngine::with_wal_path(path.clone());
+            let id = crate::scope::scope_state_id("persist_test_scope");
+            assert_eq!(engine2.scope_registry().struct_version(id), Some(1));
+
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[cfg(test)]
+    mod crash_recovery_tests {
+        use super::*;
+
+        #[test]
+        fn test_crash_recovery_retries_unacked_effect() {
+            let path = format!("wal_effect_crash_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+
+            {
+                let writer = crate::wal::WalWriter::open(&path).unwrap();
+                let commit = crate::wal::WalEntry::Commit {
+                    tx_id: 1,
+                    version: 1,
+                    writes: vec![(
+                        deterministic_hash("CrashTest::A"),
+                        1u64.to_le_bytes().to_vec(),
+                    )],
+                    scope_changes: vec![],
+                    effects: vec![crate::wal::WalEffect {
+                        idempotency_key: "1-0".to_string(),
+                        payload: b"pending notification".to_vec(),
+                    }],
+                };
+                writer.append_and_sync(&commit).unwrap();
+            }
+
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            assert_eq!(engine.get_global_version(), 1);
+
+            let (records, _) = crate::wal::RecoveryManager::recover(&path).unwrap();
+            let ack_count = records
+                .iter()
+                .filter(|r| matches!(
+                    r,
+                    crate::wal::WalEntry::EffectAck { idempotency_key, .. }
+                    if idempotency_key == "1-0"
+                ))
+                .count();
+            assert_eq!(ack_count, 1, "重启后应补写一条 EffectAck");
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_tx_id_counter_survives_restart() {
+            let path = format!("wal_txid_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine1 = VeritasEngine::with_wal_path(path.clone());
+            let state = deterministic_hash("TxId::Continuity");
+            engine1.init_state(state, 0u64.to_le_bytes().to_vec());
+
+            let mut ctx = engine1.begin();
+            let last_tx_id = ctx.tx_id();
+            engine1
+                .write(&mut ctx, state, 1u64.to_le_bytes().to_vec())
+                .unwrap();
+            engine1.commit(&mut ctx).unwrap();
+            drop(engine1);
+
+            let engine2 = VeritasEngine::with_wal_path(path.clone());
+            let ctx2 = engine2.begin();
+            assert!(ctx2.tx_id() > last_tx_id, "重启后 tx_id 不应该撞车");
 
             let _ = std::fs::remove_file(&path);
         }
@@ -643,12 +902,21 @@ mod tests {
             engine.init_state(state_a, 0u64.to_le_bytes().to_vec());
 
             let mut tx1 = engine.begin();
-            engine.write(&mut tx1, state_a, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx1, state_a, 10u64.to_le_bytes().to_vec())
+                .unwrap();
 
             let mut tx2 = engine.begin();
-            let _key = engine.effect(&mut tx2, b"notification: should not execute".to_vec()).unwrap();
+            let _key = engine
+                .effect(
+                    &mut tx2,
+                    b"notification: should not execute".to_vec(),
+                )
+                .unwrap();
             let _ = engine.read(&mut tx2, state_a).unwrap();
-            engine.write(&mut tx2, state_a, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx2, state_a, 20u64.to_le_bytes().to_vec())
+                .unwrap();
 
             engine.commit(&mut tx1).unwrap();
             let result = engine.commit(&mut tx2);
@@ -669,8 +937,12 @@ mod tests {
             engine.init_state(state_a, 0u64.to_le_bytes().to_vec());
 
             let mut ctx = engine.begin();
-            let key = engine.effect(&mut ctx, b"notification: send email".to_vec()).unwrap();
-            engine.write(&mut ctx, state_a, 100u64.to_le_bytes().to_vec()).unwrap();
+            let key = engine
+                .effect(&mut ctx, b"notification: send email".to_vec())
+                .unwrap();
+            engine
+                .write(&mut ctx, state_a, 100u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.commit(&mut ctx).unwrap();
 
             let mut ctx_check = engine.begin();
@@ -681,8 +953,6 @@ mod tests {
             let _ = std::fs::remove_file(&path);
         }
     }
-
-    // ============ Savepoint Tests ============
 
     #[cfg(test)]
     mod savepoint_tests {
@@ -698,21 +968,28 @@ mod tests {
 
             let mut tx = engine.begin();
 
-            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 10u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.savepoint(&mut tx, "sp1").unwrap();
 
-            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 20u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.savepoint(&mut tx, "sp2").unwrap();
 
-            engine.write(&mut tx, state, 30u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 30u64.to_le_bytes().to_vec())
+                .unwrap();
 
-            // 回滚到 sp2 → 应该是 20
             engine.rollback_to(&mut tx, "sp2").unwrap();
             engine.commit(&mut tx).unwrap();
 
             let mut check = engine.begin();
             let val = u64::from_le_bytes(
-                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+                engine.read(&mut check, state).unwrap()[..8]
+                    .try_into()
+                    .unwrap(),
             );
             assert_eq!(val, 20);
 
@@ -729,25 +1006,30 @@ mod tests {
 
             let mut tx = engine.begin();
 
-            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 10u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.savepoint(&mut tx, "outer").unwrap();
 
-            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 20u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.savepoint(&mut tx, "inner").unwrap();
 
-            engine.write(&mut tx, state, 30u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 30u64.to_le_bytes().to_vec())
+                .unwrap();
 
-            // 回滚到 inner → 20
             engine.rollback_to(&mut tx, "inner").unwrap();
-
-            // 再回滚到 outer → 10
             engine.rollback_to(&mut tx, "outer").unwrap();
 
             engine.commit(&mut tx).unwrap();
 
             let mut check = engine.begin();
             let val = u64::from_le_bytes(
-                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+                engine.read(&mut check, state).unwrap()[..8]
+                    .try_into()
+                    .unwrap(),
             );
             assert_eq!(val, 10);
 
@@ -764,27 +1046,30 @@ mod tests {
 
             let mut tx = engine.begin();
 
-            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 10u64.to_le_bytes().to_vec())
+                .unwrap();
             let _key1 = engine.effect(&mut tx, b"effect 1".to_vec()).unwrap();
 
             engine.savepoint(&mut tx, "sp1").unwrap();
 
-            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state, 20u64.to_le_bytes().to_vec())
+                .unwrap();
             let _key2 = engine.effect(&mut tx, b"effect 2".to_vec()).unwrap();
 
             engine.rollback_to(&mut tx, "sp1").unwrap();
 
             engine.commit(&mut tx).unwrap();
 
-            // 验证最终值是 10（回滚掉了 20）
             let mut check = engine.begin();
             let val = u64::from_le_bytes(
-                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+                engine.read(&mut check, state).unwrap()[..8]
+                    .try_into()
+                    .unwrap(),
             );
             assert_eq!(val, 10);
 
-            // 验证 effect 队列已回滚（只有 effect 1 被执行）
-            // 由于 commit 时打印日志，我们通过状态值验证即可
             let _ = std::fs::remove_file(&path);
         }
 
@@ -816,22 +1101,34 @@ mod tests {
 
             let mut tx = engine.begin();
 
-            engine.write(&mut tx, state_a, 10u64.to_le_bytes().to_vec()).unwrap();
-            engine.write(&mut tx, state_b, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state_a, 10u64.to_le_bytes().to_vec())
+                .unwrap();
+            engine
+                .write(&mut tx, state_b, 20u64.to_le_bytes().to_vec())
+                .unwrap();
             engine.savepoint(&mut tx, "sp1").unwrap();
 
-            engine.write(&mut tx, state_a, 30u64.to_le_bytes().to_vec()).unwrap();
-            engine.write(&mut tx, state_b, 40u64.to_le_bytes().to_vec()).unwrap();
+            engine
+                .write(&mut tx, state_a, 30u64.to_le_bytes().to_vec())
+                .unwrap();
+            engine
+                .write(&mut tx, state_b, 40u64.to_le_bytes().to_vec())
+                .unwrap();
 
             engine.rollback_to(&mut tx, "sp1").unwrap();
             engine.commit(&mut tx).unwrap();
 
             let mut check = engine.begin();
             let val_a = u64::from_le_bytes(
-                engine.read(&mut check, state_a).unwrap()[..8].try_into().unwrap(),
+                engine.read(&mut check, state_a).unwrap()[..8]
+                    .try_into()
+                    .unwrap(),
             );
             let val_b = u64::from_le_bytes(
-                engine.read(&mut check, state_b).unwrap()[..8].try_into().unwrap(),
+                engine.read(&mut check, state_b).unwrap()[..8]
+                    .try_into()
+                    .unwrap(),
             );
             assert_eq!(val_a, 10);
             assert_eq!(val_b, 20);

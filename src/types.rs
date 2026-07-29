@@ -14,9 +14,65 @@ pub struct StateEntry {
     pub version: Version,
 }
 
+// ============ Scope 类型（新增） ============
+
+#[derive(Debug, Clone)]
+pub struct ScopeEntry {
+    pub members: Vec<StateId>,
+    pub struct_version: Version,
+    pub owner: ModuleId,
+}
+
+impl ScopeEntry {
+    pub fn new() -> Self {
+        ScopeEntry {
+            members: Vec::new(),
+            struct_version: 0,
+            owner: 0,
+        }
+    }
+
+    /// 返回 true 表示真的发生了变化
+    pub fn bind(&mut self, state: StateId) -> bool {
+        if self.members.contains(&state) {
+            false
+        } else {
+            self.members.push(state);
+            self.struct_version += 1;
+            true
+        }
+    }
+
+    pub fn unbind(&mut self, state: StateId) -> bool {
+        if let Some(pos) = self.members.iter().position(|s| *s == state) {
+            self.members.remove(pos);
+            self.struct_version += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScopeChangeType {
+    Bind,
+    Unbind,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopeChange {
+    pub scope_id: ScopeId,
+    pub state_id: StateId,
+    pub change_type: ScopeChangeType,
+}
+
+// ============ 事务核心结构 ============
+
 #[derive(Debug, Clone, Default)]
 pub struct ReadSet {
     pub states: HashMap<StateId, Version>,
+    pub scopes: HashMap<ScopeId, Version>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -26,12 +82,10 @@ pub struct WriteSet {
 }
 
 impl WriteSet {
-    /// 插入一条写入记录
     pub fn push(&mut self, state_id: StateId, value: Vec<u8>) {
         self.changes.push((state_id, value));
     }
 
-    /// 获取某个 state 的最新值
     pub fn get_latest(&self, state_id: StateId) -> Option<&Vec<u8>> {
         self.changes
             .iter()
@@ -40,27 +94,22 @@ impl WriteSet {
             .map(|(_, val)| val)
     }
 
-    /// 检查某个 state 是否在写入集中
     pub fn contains_key(&self, state_id: StateId) -> bool {
         self.changes.iter().any(|(id, _)| *id == state_id)
     }
 
-    /// 获取写入集的长度（用于 savepoint）
     pub fn len(&self) -> usize {
         self.changes.len()
     }
 
-    /// 检查是否为空
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
 
-    /// 截断到指定长度（用于 rollback）
     pub fn truncate(&mut self, len: usize) {
         self.changes.truncate(len);
     }
 
-    /// 获取所有 state_id 的集合（用于迭代）
     pub fn keys(&self) -> Vec<StateId> {
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();
@@ -73,7 +122,6 @@ impl WriteSet {
         result
     }
 
-    /// 获取所有写入记录的迭代器
     pub fn iter(&self) -> std::slice::Iter<'_, (StateId, Vec<u8>)> {
         self.changes.iter()
     }
@@ -111,6 +159,7 @@ pub struct Savepoint {
     pub name: String,
     pub write_set_len: usize,
     pub effect_queue_len: usize,
+    pub scope_write_set_len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +168,7 @@ pub struct TransactionContext {
     pub snapshot_version: Version,
     pub read_set: ReadSet,
     pub write_set: WriteSet,
+    pub scope_write_set: Vec<ScopeChange>,
     pub effect_queue: EffectQueue,
     pub savepoints: Vec<Savepoint>,
     pub aborted: bool,
@@ -131,6 +181,7 @@ impl TransactionContext {
             snapshot_version,
             read_set: ReadSet::default(),
             write_set: WriteSet::default(),
+            scope_write_set: Vec::new(),
             effect_queue: EffectQueue::default(),
             savepoints: Vec::new(),
             aborted: false,
@@ -155,7 +206,9 @@ impl TransactionContext {
 
     pub fn clear(&mut self) {
         self.read_set.states.clear();
+        self.read_set.scopes.clear();
         self.write_set.changes.clear();
+        self.scope_write_set.clear();
         self.effect_queue = EffectQueue::default();
         self.savepoints.clear();
         self.aborted = false;
@@ -168,6 +221,7 @@ pub enum AbortReason {
     ReadFutureVersion,
     AlreadyAborted,
     StateNotFound,
+    PhantomConflict,
 }
 
 impl std::fmt::Display for AbortReason {
@@ -177,6 +231,7 @@ impl std::fmt::Display for AbortReason {
             AbortReason::ReadFutureVersion => write!(f, "Read future version"),
             AbortReason::AlreadyAborted => write!(f, "Transaction already aborted"),
             AbortReason::StateNotFound => write!(f, "State not found"),
+            AbortReason::PhantomConflict => write!(f, "Scope structure changed (phantom read)"),
         }
     }
 }
