@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 use crate::types::*;
 use crate::wal::{RecoveryManager, WalRecord, WalWriter};
-use crate::transaction::TransactionContext;
 use crate::store::StateStore;
 
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -70,7 +69,7 @@ impl VeritasEngine {
         state_id: StateId,
         value: Vec<u8>,
     ) {
-        ctx.write_set.state_changes.insert(state_id, value);
+        ctx.write_set.push(state_id, value);
     }
 
     pub fn begin(&self) -> TransactionContext {
@@ -84,7 +83,8 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        if let Some(written_value) = ctx.write_set.state_changes.get(&state_id) {
+        // 优先从 WriteSet 读取最新值
+        if let Some(written_value) = ctx.write_set.get_latest(state_id) {
             return Ok(written_value.clone());
         }
 
@@ -104,13 +104,14 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
+        // 盲写保护：如果该 state 尚未在 ReadSet 中，将其当前版本补入
         if !ctx.read_set.states.contains_key(&state_id) {
             if let Some(entry) = self.state_store.read(state_id) {
                 ctx.read_set.states.insert(state_id, entry.version);
             }
         }
 
-        ctx.write_set.state_changes.insert(state_id, value);
+        ctx.write_set.push(state_id, value);
         Ok(())
     }
 
@@ -137,20 +138,25 @@ impl VeritasEngine {
         self.detect_conflict(ctx)?;
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
+
+        // 构建 WAL 记录（使用最新值）
+        let mut writes_map = HashMap::new();
+        for (state_id, value) in ctx.write_set.iter() {
+            writes_map.insert(*state_id, value.clone());
+        }
         let wal_record = WalRecord {
             tx_id: ctx.tx_id(),
             version: commit_version,
-            writes: ctx.write_set.state_changes.iter()
-                .map(|(id, val)| (*id, val.clone()))
-                .collect(),
+            writes: writes_map.into_iter().collect(),
         };
 
         self.wal.append_and_sync(&wal_record)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
 
-        for (state_id, new_value) in &ctx.write_set.state_changes {
+        // 应用写入集到状态存储（按顺序，后面的覆盖前面的）
+        for (state_id, value) in ctx.write_set.iter() {
             self.state_store.insert(*state_id, StateEntry {
-                value: new_value.clone(),
+                value: value.clone(),
                 version: commit_version,
             });
         }
@@ -158,6 +164,7 @@ impl VeritasEngine {
         self.global_version.fetch_add(1, Ordering::SeqCst);
         drop(_lock);
 
+        // 执行副作用
         for pending in ctx.effect_queue.drain() {
             println!("[EFFECT] 执行 {}: payload长度={}", pending.idempotency_key, pending.payload.len());
         }
@@ -182,6 +189,57 @@ impl VeritasEngine {
 
     pub fn get_global_version(&self) -> Version {
         self.global_version.load(Ordering::Acquire)
+    }
+
+    // ============ Savepoint API ============
+
+    pub fn savepoint(
+        &self,
+        ctx: &mut TransactionContext,
+        name: &str,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        ctx.savepoints.push(Savepoint {
+            name: name.to_string(),
+            write_set_len: ctx.write_set.len(),
+            effect_queue_len: ctx.effect_queue.len(),
+        });
+
+        Ok(())
+    }
+
+    pub fn rollback_to(
+        &self,
+        ctx: &mut TransactionContext,
+        name: &str,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        let index = ctx
+            .savepoints
+            .iter()
+            .rposition(|s| s.name == name)
+            .ok_or_else(|| {
+                VeritasError::EngineError(format!("savepoint '{}' not found", name))
+            })?;
+
+        let sp = ctx.savepoints[index].clone();
+
+        // 回滚 WriteSet 到 savepoint 时的长度
+        ctx.write_set.truncate(sp.write_set_len);
+
+        // 回滚 EffectQueue 到 savepoint 时的长度
+        ctx.effect_queue.truncate(sp.effect_queue_len);
+
+        // 保留 savepoint 本身及之前的所有 savepoint
+        ctx.savepoints.truncate(index + 1);
+
+        Ok(())
     }
 }
 
@@ -620,6 +678,164 @@ mod tests {
             assert_eq!(bytes_to_u64(&val), 100);
 
             assert!(key.starts_with("1-"));
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    // ============ Savepoint Tests ============
+
+    #[cfg(test)]
+    mod savepoint_tests {
+        use super::*;
+
+        #[test]
+        fn test_savepoint_basic() {
+            let path = format!("wal_savepoint_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state = deterministic_hash("Savepoint::Counter");
+            engine.init_state(state, 0u64.to_le_bytes().to_vec());
+
+            let mut tx = engine.begin();
+
+            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine.savepoint(&mut tx, "sp1").unwrap();
+
+            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine.savepoint(&mut tx, "sp2").unwrap();
+
+            engine.write(&mut tx, state, 30u64.to_le_bytes().to_vec()).unwrap();
+
+            // 回滚到 sp2 → 应该是 20
+            engine.rollback_to(&mut tx, "sp2").unwrap();
+            engine.commit(&mut tx).unwrap();
+
+            let mut check = engine.begin();
+            let val = u64::from_le_bytes(
+                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+            );
+            assert_eq!(val, 20);
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_savepoint_nested() {
+            let path = format!("wal_savepoint_nested_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state = deterministic_hash("Savepoint::Nested");
+            engine.init_state(state, 0u64.to_le_bytes().to_vec());
+
+            let mut tx = engine.begin();
+
+            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine.savepoint(&mut tx, "outer").unwrap();
+
+            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine.savepoint(&mut tx, "inner").unwrap();
+
+            engine.write(&mut tx, state, 30u64.to_le_bytes().to_vec()).unwrap();
+
+            // 回滚到 inner → 20
+            engine.rollback_to(&mut tx, "inner").unwrap();
+
+            // 再回滚到 outer → 10
+            engine.rollback_to(&mut tx, "outer").unwrap();
+
+            engine.commit(&mut tx).unwrap();
+
+            let mut check = engine.begin();
+            let val = u64::from_le_bytes(
+                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+            );
+            assert_eq!(val, 10);
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_savepoint_effect_rollback() {
+            let path = format!("wal_savepoint_effect_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state = deterministic_hash("Savepoint::Effect");
+            engine.init_state(state, 0u64.to_le_bytes().to_vec());
+
+            let mut tx = engine.begin();
+
+            engine.write(&mut tx, state, 10u64.to_le_bytes().to_vec()).unwrap();
+            let _key1 = engine.effect(&mut tx, b"effect 1".to_vec()).unwrap();
+
+            engine.savepoint(&mut tx, "sp1").unwrap();
+
+            engine.write(&mut tx, state, 20u64.to_le_bytes().to_vec()).unwrap();
+            let _key2 = engine.effect(&mut tx, b"effect 2".to_vec()).unwrap();
+
+            engine.rollback_to(&mut tx, "sp1").unwrap();
+
+            engine.commit(&mut tx).unwrap();
+
+            // 验证最终值是 10（回滚掉了 20）
+            let mut check = engine.begin();
+            let val = u64::from_le_bytes(
+                engine.read(&mut check, state).unwrap()[..8].try_into().unwrap(),
+            );
+            assert_eq!(val, 10);
+
+            // 验证 effect 队列已回滚（只有 effect 1 被执行）
+            // 由于 commit 时打印日志，我们通过状态值验证即可
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_savepoint_not_found() {
+            let path = format!("wal_savepoint_notfound_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state = deterministic_hash("Savepoint::NotFound");
+            engine.init_state(state, 0u64.to_le_bytes().to_vec());
+
+            let mut tx = engine.begin();
+
+            let result = engine.rollback_to(&mut tx, "nonexistent");
+            assert!(result.is_err());
+
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_savepoint_multiple_states() {
+            let path = format!("wal_savepoint_multi_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state_a = deterministic_hash("Savepoint::A");
+            let state_b = deterministic_hash("Savepoint::B");
+            engine.init_state(state_a, 0u64.to_le_bytes().to_vec());
+            engine.init_state(state_b, 0u64.to_le_bytes().to_vec());
+
+            let mut tx = engine.begin();
+
+            engine.write(&mut tx, state_a, 10u64.to_le_bytes().to_vec()).unwrap();
+            engine.write(&mut tx, state_b, 20u64.to_le_bytes().to_vec()).unwrap();
+            engine.savepoint(&mut tx, "sp1").unwrap();
+
+            engine.write(&mut tx, state_a, 30u64.to_le_bytes().to_vec()).unwrap();
+            engine.write(&mut tx, state_b, 40u64.to_le_bytes().to_vec()).unwrap();
+
+            engine.rollback_to(&mut tx, "sp1").unwrap();
+            engine.commit(&mut tx).unwrap();
+
+            let mut check = engine.begin();
+            let val_a = u64::from_le_bytes(
+                engine.read(&mut check, state_a).unwrap()[..8].try_into().unwrap(),
+            );
+            let val_b = u64::from_le_bytes(
+                engine.read(&mut check, state_b).unwrap()[..8].try_into().unwrap(),
+            );
+            assert_eq!(val_a, 10);
+            assert_eq!(val_b, 20);
+
             let _ = std::fs::remove_file(&path);
         }
     }

@@ -5,7 +5,6 @@ mod types;
 mod wal;
 mod scope;
 mod effect;
-mod transaction;
 mod store;
 mod extension;
 
@@ -15,7 +14,7 @@ use engine::VeritasEngine;
 fn main() {
     println!("╔════════════════════════════════════╗");
     println!("║   Veritas Kernel V0.2 - Phase 6    ║");
-    println!("║   Extension 系统                   ║");
+    println!("║   Savepoint 完成                   ║");
     println!("╚════════════════════════════════════╝\n");
 
     let engine = VeritasEngine::new();
@@ -31,5 +30,5 @@ fn main() {
     engine.commit(&mut tx).unwrap();
     println!("[事务 {}] COMMIT + EFFECT 执行 ✓", tx.tx_id);
 
-    println!("\n✓ Phase 6 Extension 系统已就绪");
+    println!("\n✓ Phase 6 Savepoint 完成");
 }

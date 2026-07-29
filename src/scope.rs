@@ -1,13 +1,7 @@
 // Veritas Kernel - Phase 4: INVARIANT_SCOPE
-//
-// 设计原则：Scope不需要独立的检测机制。
-// 每个Scope是一个"幽灵状态"，其value无业务含义，version代表结构变更次数。
-// 聚合查询=读幽灵状态（纳入read_set），成员变更=写幽灵状态（推高version）。
-// 现有的 commit() 冲突检测原样复用，无需修改 engine.rs 核心逻辑。
 
 use crate::engine::VeritasEngine;
 use crate::types::*;
-use crate::transaction::TransactionContext;
 
 pub fn scope_state_id(scope_name: &str) -> StateId {
     deterministic_hash(&format!("__scope__:{}", scope_name))
