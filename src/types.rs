@@ -7,6 +7,7 @@ pub type StateId = u64;
 pub type ScopeId = u64;
 pub type TxId = u64;
 pub type ModuleId = u64;
+pub type CapabilityId = u64;
 
 #[derive(Debug, Clone)]
 pub struct StateEntry {

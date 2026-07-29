@@ -5,6 +5,7 @@ mod types;
 mod wal;
 mod scope;
 mod scope_registry;
+mod capability;
 mod effect;
 mod store;
 mod extension;
