@@ -4,6 +4,7 @@
 mod engine;
 mod types;
 mod wal;
+mod scope;
 
 use types::*;
 use engine::VeritasEngine;

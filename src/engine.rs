@@ -1,11 +1,15 @@
 // Veritas Kernel V0.2 - 事务引擎核心
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::types::*;
 use crate::wal::{RecoveryManager, WalRecord, WalWriter};
+
+fn bytes_to_u64(bytes: &[u8]) -> u64 {
+    u64::from_le_bytes(bytes[..8].try_into().unwrap())
+}
 
 const WAL_PATH: &str = "wal.log";
 
@@ -30,7 +34,6 @@ impl VeritasEngine {
             });
 
         let mut state_store = HashMap::new();
-        // 直接使用 apply_records 统一恢复逻辑
         RecoveryManager::apply_records(&records, &mut state_store);
 
         let engine = VeritasEngine {
@@ -53,6 +56,20 @@ impl VeritasEngine {
         store.insert(state_id, StateEntry { value: initial_value, version: 0 });
     }
 
+    pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
+        let store = self.state_store.lock().unwrap();
+        store.get(&state_id).cloned()
+    }
+
+    pub fn init_state_in_tx(
+        &self,
+        ctx: &mut TransactionContext,
+        state_id: StateId,
+        value: Vec<u8>,
+    ) {
+        ctx.write_set.state_changes.insert(state_id, value);
+    }
+
     pub fn begin(&self) -> TransactionContext {
         let tx_id = self.tx_id_counter.fetch_add(1, Ordering::SeqCst);
         let snapshot_version = self.global_version.load(Ordering::Acquire);
@@ -61,6 +78,7 @@ impl VeritasEngine {
             snapshot_version,
             read_set: ReadSet::default(),
             write_set: WriteSet::default(),
+            effect_queue: EffectQueue::default(),
             aborted: false,
         }
     }
@@ -102,6 +120,19 @@ impl VeritasEngine {
         Ok(())
     }
 
+    pub fn effect(&self, ctx: &mut TransactionContext, payload: Vec<u8>) -> Result<String, VeritasError> {
+        if ctx.aborted {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+        let seq = ctx.effect_queue.effects.len();
+        let idempotency_key = format!("{}-{}", ctx.tx_id, seq);
+        ctx.effect_queue.effects.push(PendingEffect {
+            idempotency_key: idempotency_key.clone(),
+            payload,
+        });
+        Ok(idempotency_key)
+    }
+
     pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
         if ctx.aborted {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
@@ -138,6 +169,11 @@ impl VeritasEngine {
 
         self.global_version.fetch_add(1, Ordering::SeqCst);
         drop(_lock);
+
+        for pending in &ctx.effect_queue.effects {
+            println!("[EFFECT] 执行 {}: payload长度={}", pending.idempotency_key, pending.payload.len());
+        }
+
         Ok(())
     }
 
@@ -186,10 +222,6 @@ mod tests {
         let state_a = deterministic_hash("Account::A::Balance");
         engine.init_state(state_a, 100u64.to_le_bytes().to_vec());
         (engine, state_a, path)
-    }
-
-    fn bytes_to_u64(bytes: &[u8]) -> u64 {
-        u64::from_le_bytes(bytes[..8].try_into().unwrap())
     }
 
     #[test]
@@ -391,9 +423,6 @@ mod tests {
 
         cleanup_wal(&path);
     }
-}
-
-    // ==================== Phase 2.5 并发压力测试 ====================
 
     use std::sync::Arc;
     use std::thread;
@@ -424,7 +453,7 @@ mod tests {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
-                            let current = u64::from_le_bytes(val[..8].try_into().unwrap());
+                            let current = bytes_to_u64(&val);
                             engine
                                 .write(&mut ctx, state_x, (current + 1).to_le_bytes().to_vec())
                                 .unwrap();
@@ -449,17 +478,9 @@ mod tests {
         let expected = success_count.load(Ordering::SeqCst);
         let mut ctx = engine.begin();
         let final_val = engine.read(&mut ctx, state_x).unwrap();
-        let final_count = u64::from_le_bytes(final_val[..8].try_into().unwrap());
-        assert_eq!(
-            final_count, expected,
-            "最终计数应等于成功提交次数（无更新丢失）"
-        );
-        assert_eq!(
-            expected,
-            (N_THREADS * OPS_PER_THREAD) as u64,
-            "所有操作最终都应通过重试成功"
-        );
-
+        let final_count = bytes_to_u64(&final_val);
+        assert_eq!(final_count, expected);
+        assert_eq!(expected, (N_THREADS * OPS_PER_THREAD) as u64);
         assert_eq!(engine.get_global_version(), expected);
 
         drop(engine);
@@ -467,12 +488,152 @@ mod tests {
         let engine2 = VeritasEngine::with_wal_path(path.clone());
         let mut ctx2 = engine2.begin();
         let recovered_val = engine2.read(&mut ctx2, state_x).unwrap();
-        let recovered_count = u64::from_le_bytes(recovered_val[..8].try_into().unwrap());
-        assert_eq!(
-            recovered_count, expected,
-            "恢复后的值应与运行时最终值一致"
-        );
+        let recovered_count = bytes_to_u64(&recovered_val);
+        assert_eq!(recovered_count, expected);
         assert_eq!(engine2.get_global_version(), expected);
 
         let _ = std::fs::remove_file(&path);
     }
+
+    #[cfg(test)]
+    mod scope_tests {
+        use super::*;
+        use crate::scope::ScopeExt;
+
+        #[test]
+        fn test_family_shared_limit_phantom_read_protection() {
+            let path = format!("wal_scope_test_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+
+            let account_a = deterministic_hash("Family::AccountA::Used");
+            let account_b = deterministic_hash("Family::AccountB::Used");
+            engine.init_state(account_a, 0u64.to_le_bytes().to_vec());
+            engine.init_state(account_b, 0u64.to_le_bytes().to_vec());
+            engine.declare_scope("family_group_1");
+
+            const LIMIT: u64 = 10000;
+
+            let mut tx1 = engine.begin();
+            engine.touch_scope_read(&mut tx1, "family_group_1").unwrap();
+            let used_a = bytes_to_u64(
+                &engine.read(&mut tx1, account_a).unwrap()[..8],
+            );
+            let used_b = bytes_to_u64(
+                &engine.read(&mut tx1, account_b).unwrap()[..8],
+            );
+            assert!(used_a + used_b + 6000 <= LIMIT);
+            engine
+                .write(&mut tx1, account_a, (used_a + 6000).to_le_bytes().to_vec())
+                .unwrap();
+
+            let mut tx2 = engine.begin();
+            let account_c = deterministic_hash("Family::AccountC::Used");
+            engine.touch_scope_write(&mut tx2, "family_group_1").unwrap();
+            engine.init_state_in_tx(&mut tx2, account_c, 5000u64.to_le_bytes().to_vec());
+            engine.commit(&mut tx2).unwrap();
+            println!("[事务2] 添加成员C(初始额度5000) COMMIT 成功");
+
+            let result = engine.commit(&mut tx1);
+            assert!(result.is_err());
+            println!("[事务1] 提现6000 COMMIT 失败: {:?} ✓ Scope幻读保护生效", result);
+
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[cfg(test)]
+    mod scope_regression_tests {
+        use super::*;
+        use crate::scope::ScopeExt;
+
+        #[test]
+        fn test_scope_read_only_does_not_cause_false_conflict() {
+            let path = format!("wal_scope_regress_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+
+            let account_a = deterministic_hash("Regress::AccountA::Used");
+            let account_b = deterministic_hash("Regress::AccountB::Used");
+            engine.init_state(account_a, 0u64.to_le_bytes().to_vec());
+            engine.init_state(account_b, 0u64.to_le_bytes().to_vec());
+            engine.declare_scope("family_group_regress");
+
+            let mut tx1 = engine.begin();
+            engine.touch_scope_read(&mut tx1, "family_group_regress").unwrap();
+            let used_a = bytes_to_u64(
+                &engine.read(&mut tx1, account_a).unwrap()[..8],
+            );
+            engine
+                .write(&mut tx1, account_a, (used_a + 2000).to_le_bytes().to_vec())
+                .unwrap();
+
+            let mut tx2 = engine.begin();
+            engine.touch_scope_read(&mut tx2, "family_group_regress").unwrap();
+            let used_b = bytes_to_u64(
+                &engine.read(&mut tx2, account_b).unwrap()[..8],
+            );
+            engine
+                .write(&mut tx2, account_b, (used_b + 3000).to_le_bytes().to_vec())
+                .unwrap();
+            engine.commit(&mut tx2).unwrap();
+
+            let result = engine.commit(&mut tx1);
+            assert!(result.is_ok());
+
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[cfg(test)]
+    mod effect_tests {
+        use super::*;
+
+        #[test]
+        fn test_effect_not_executed_on_abort() {
+            let path = format!("wal_effect_abort_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state_a = deterministic_hash("Effect::A");
+            engine.init_state(state_a, 0u64.to_le_bytes().to_vec());
+
+            let mut tx1 = engine.begin();
+            engine.write(&mut tx1, state_a, 10u64.to_le_bytes().to_vec()).unwrap();
+
+            let mut tx2 = engine.begin();
+            let _key = engine.effect(&mut tx2, b"notification: should not execute".to_vec()).unwrap();
+            let _ = engine.read(&mut tx2, state_a).unwrap();
+            engine.write(&mut tx2, state_a, 20u64.to_le_bytes().to_vec()).unwrap();
+
+            engine.commit(&mut tx1).unwrap();
+            let result = engine.commit(&mut tx2);
+
+            assert!(result.is_err());
+            let mut ctx_check = engine.begin();
+            let val = engine.read(&mut ctx_check, state_a).unwrap();
+            assert_eq!(bytes_to_u64(&val), 10);
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn test_effect_executed_after_commit() {
+            let path = format!("wal_effect_commit_{}.log", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let state_a = deterministic_hash("Effect::A");
+            engine.init_state(state_a, 0u64.to_le_bytes().to_vec());
+
+            let mut ctx = engine.begin();
+            let key = engine.effect(&mut ctx, b"notification: send email".to_vec()).unwrap();
+            engine.write(&mut ctx, state_a, 100u64.to_le_bytes().to_vec()).unwrap();
+            engine.commit(&mut ctx).unwrap();
+
+            let mut ctx_check = engine.begin();
+            let val = engine.read(&mut ctx_check, state_a).unwrap();
+            assert_eq!(bytes_to_u64(&val), 100);
+
+            assert!(key.starts_with("1-"));
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
