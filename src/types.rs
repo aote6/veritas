@@ -70,6 +70,9 @@ pub struct ScopeChange {
 
 // ============ 事务核心结构 ============
 
+// Runtime Object 基础类型
+pub type ObjectId = u64;
+
 #[derive(Debug, Clone, Default)]
 pub struct ReadSet {
     pub states: HashMap<StateId, Version>,
@@ -172,6 +175,7 @@ pub struct TransactionContext {
     pub scope_write_set: Vec<ScopeChange>,
     pub effect_queue: EffectQueue,
     pub savepoints: Vec<Savepoint>,
+    pub pending_objects: Vec<ObjectId>,
     pub aborted: bool,
 }
 
@@ -185,6 +189,7 @@ impl TransactionContext {
             scope_write_set: Vec::new(),
             effect_queue: EffectQueue::default(),
             savepoints: Vec::new(),
+            pending_objects: Vec::new(),
             aborted: false,
         }
     }

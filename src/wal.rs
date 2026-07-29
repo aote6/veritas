@@ -7,7 +7,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TxId, Version};
+use crate::types::{ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TxId, Version};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {
@@ -37,6 +37,10 @@ pub enum WalEntry {
     },
     Checkpoint {
         version: Version,
+    },
+    ObjectBirth {
+        tx_id: TxId,
+        object_id: ObjectId,
     },
 }
 
@@ -81,7 +85,12 @@ impl WalEntry {
                 format!("EFFECTACK TX={} KEY={} END\n", tx_id, idempotency_key)
             }
             WalEntry::Checkpoint { version } => {
-                format!("CHECKPOINT VERSION={} END\n", version)
+                format!("CHECKPOINT VERSION={} END
+", version)
+            }
+            WalEntry::ObjectBirth { tx_id, object_id } => {
+                format!("OBJECTBIRTH TX={} OBJECT={} END
+", tx_id, object_id)
             }
         }
     }
@@ -100,6 +109,7 @@ impl WalEntry {
             "COMMIT" => Self::deserialize_commit(&parts),
             "EFFECTACK" => Self::deserialize_effect_ack(&parts),
             "CHECKPOINT" => Self::deserialize_checkpoint(&parts),
+            "OBJECTBIRTH" => Self::deserialize_object_birth(&parts),
             _ => None,
         }
     }
@@ -199,6 +209,22 @@ impl WalEntry {
             .ok()?;
         Some(WalEntry::Checkpoint { version })
     }
+
+    fn deserialize_object_birth(parts: &[&str]) -> Option<Self> {
+        let tx_id = parts
+            .iter()
+            .find(|p| p.starts_with("TX="))?
+            .strip_prefix("TX=")?
+            .parse::<TxId>()
+            .ok()?;
+        let object_id = parts
+            .iter()
+            .find(|p| p.starts_with("OBJECT="))?
+            .strip_prefix("OBJECT=")?
+            .parse::<ObjectId>()
+            .ok()?;
+        Some(WalEntry::ObjectBirth { tx_id, object_id })
+    }
 }
 
 pub struct WalWriter {
@@ -256,6 +282,7 @@ impl RecoveryManager {
                             max_version = *version;
                         }
                     }
+                    WalEntry::ObjectBirth { .. } => {}
                     _ => {}
                 }
                 records.push(entry);
@@ -327,6 +354,7 @@ impl RecoveryManager {
                     acked_keys.insert(idempotency_key.clone());
                 }
                 WalEntry::Checkpoint { .. } => {}
+                WalEntry::ObjectBirth { .. } => {}
             }
         }
 
