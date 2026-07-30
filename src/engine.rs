@@ -34,7 +34,7 @@ pub struct VeritasEngine {
     capability_graph: Mutex<CapabilityGraph>,
     tx_mgr: Arc<TransactionManager>,
     lock_mgr: Arc<LockManager>,
-    pub controller: TransactionController,
+    controller: TransactionController,
 }
 
 impl VeritasEngine {
