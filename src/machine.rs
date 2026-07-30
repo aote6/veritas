@@ -363,6 +363,8 @@ impl<'a> Machine<'a> {
 
     pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
 
+    pub fn state_root(&self) -> u64 { self.engine.state_root() }
+
     pub fn is_halted(&self) -> bool {
         matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_))
     }

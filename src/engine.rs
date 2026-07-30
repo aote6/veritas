@@ -1,3 +1,4 @@
+use crate::state_memory::StateMemory;
 // Veritas Kernel V0.3 - 事务引擎核心
 // P1: WAL 格式扩展 + Effect 崩溃恢复重试 + tx_id_counter 恢复续接
 
@@ -35,9 +36,22 @@ pub struct VeritasEngine {
     tx_mgr: Arc<TransactionManager>,
     lock_mgr: Arc<LockManager>,
     controller: TransactionController,
+    pub state_memory: std::sync::Mutex<StateMemory>,
 }
 
 impl VeritasEngine {
+    pub fn apply_state_memory(&self, write_set: &crate::types::WriteSet) {
+        if let Ok(mut mem) = self.state_memory.lock() {
+            for (state_id, payload) in &write_set.changes {
+                mem.write(*state_id, payload.clone());
+            }
+        }
+    }
+
+    pub fn state_root(&self) -> u64 {
+        self.state_memory.lock().unwrap().root_hash()
+    }
+
     pub fn new() -> Self {
         Self::with_wal_path(WAL_PATH.to_string())
     }
@@ -103,6 +117,7 @@ impl VeritasEngine {
             tx_mgr,
             lock_mgr,
             controller,
+            state_memory: std::sync::Mutex::new(StateMemory::new()),
         };
 
         if !records.is_empty() {
@@ -404,6 +419,7 @@ impl VeritasEngine {
         }
 
         self.controller.post_commit(ctx.tx_id());
+        self.apply_state_memory(&ctx.write_set);
 
         Ok(())
     }
@@ -2436,4 +2452,38 @@ mod tests {
         assert_eq!(frame.pc, 0);
     }
 
+}
+#[cfg(test)]
+mod p17_2_tests {
+    use super::*;
+
+    #[test]
+    fn test_deterministic_state_root() {
+        let e1 = VeritasEngine::new();
+        let e2 = VeritasEngine::new();
+
+        let mut t1 = e1.begin();
+        e1.write(&mut t1, 0xFFFFFFFFFFFFFF01, vec![10, 20, 30]).unwrap();
+        e1.commit(&mut t1).unwrap();
+
+        let mut t2 = e2.begin();
+        e2.write(&mut t2, 0xFFFFFFFFFFFFFF01, vec![10, 20, 30]).unwrap();
+        e2.commit(&mut t2).unwrap();
+
+        assert_eq!(e1.state_root(), e2.state_root());
+        assert_ne!(e1.state_root(), 0);
+    }
+
+    #[test]
+    fn test_uncommitted_does_not_change_root() {
+        let e = VeritasEngine::new();
+        let root_before = e.state_root();
+
+        let mut tx = e.begin();
+        e.write(&mut tx, 100, vec![1, 2, 3]).unwrap();
+        assert_eq!(e.state_root(), root_before);
+
+        e.abort(&mut tx, AbortReason::WriteConflict);
+        assert_eq!(e.state_root(), root_before);
+    }
 }
