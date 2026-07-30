@@ -1,6 +1,7 @@
 pub mod runtime;
 pub mod module;
 pub mod memory;
+pub mod state_memory;
 pub mod machine;
 pub mod instruction;
 pub mod instruction_codec;
