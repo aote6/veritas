@@ -7,6 +7,8 @@ use std::sync::Mutex;
 
 use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
+use crate::view::TransactionObjectView;
+use crate::guard::ObjectGuard;
 use crate::types::*;
 use crate::wal::{RecoveryManager, WalEffect, WalEntry, WalScopeChange, WalWriter};
 use crate::store::StateStore;
@@ -398,15 +400,10 @@ impl VeritasEngine {
         }
 
         // Alive 检查
-        let reg = self.object_registry.lock().unwrap();
-        match reg.get(&grantee) {
-            Some(ObjectState::Alive) => {}
-            _ => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
-        }
-        drop(reg);
-
-        if ctx.pending_deaths.contains(&grantee) {
-            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        {
+            let reg = self.object_registry.lock().unwrap();
+            let view = TransactionObjectView::new(&reg, &ctx.pending_objects, &ctx.pending_deaths);
+            ObjectGuard::ensure_can_grant(&view, grantee)?;
         }
 
         // grantor 暂时用 grantee 自身（自授权），后续可扩展
@@ -496,11 +493,11 @@ impl VeritasEngine {
         }
 
         // 检查全局注册表：若已存在则拒绝
-        let registry = self.object_registry.lock().unwrap();
-        if registry.contains_key(&object_id) {
-            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        {
+            let reg = self.object_registry.lock().unwrap();
+            let view = TransactionObjectView::new(&reg, &ctx.pending_objects, &ctx.pending_deaths);
+            ObjectGuard::ensure_not_exists(&view, object_id)?;
         }
-        drop(registry);
 
         // 检查当前事务暂存区：防重复
         if ctx.pending_objects.contains(&object_id) {
