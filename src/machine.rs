@@ -1,6 +1,7 @@
 use crate::engine::VeritasEngine;
 use crate::executor::Executor;
 use crate::program::Program;
+use crate::memory::Memory;
 use crate::verifier::Verifier;
 use crate::types::{TransactionContext, VeritasError, AbortReason};
 use crate::instruction::Instruction;
@@ -91,6 +92,7 @@ pub struct Machine<'a> {
     engine: &'a VeritasEngine,
     executor: Executor<'a>,
     program: Program,
+    ram: Memory,
     pc: usize,
     status: MachineStatus,
     registers: RegisterFile,
@@ -106,6 +108,7 @@ impl<'a> Machine<'a> {
             engine,
             executor,
             program: Program::new(),
+            ram: Memory::new(65536),
             pc: 0,
             status: MachineStatus::Ready,
             registers: RegisterFile::new(),
@@ -121,124 +124,137 @@ impl<'a> Machine<'a> {
             MachineStatus::Running => {}
         }
 
-        if self.pc >= self.program.len() {
-            self.status = MachineStatus::Halted;
-            return Ok(());
-        }
-
-        let instruction = self.program.get(self.pc)
-            .ok_or_else(|| VeritasError::EngineError("Invalid PC address".into()))?;
+        let is_legacy = !self.program.is_empty();
+        let (instruction, consumed) = if is_legacy {
+            if self.pc >= self.program.len() {
+                self.status = MachineStatus::Halted;
+                return Ok(());
+            }
+            let inst = self.program.get(self.pc)
+                .ok_or_else(|| VeritasError::EngineError("Invalid PC".into()))?;
+            (inst.clone(), 1)
+        } else {
+            let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.status = MachineStatus::Halted;
+                return Ok(());
+            }
+            let stream = self.ram.slice_from(self.pc)
+                .map_err(|e| VeritasError::EngineError(e))?;
+            crate::instruction::Instruction::decode(stream)?
+        };
+        let step_len = if is_legacy { 1 } else { consumed };
 
         // P13.1: 本地指令直接在 Machine 内部消化
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
-                self.registers.set(*reg, RegisterValue::U64(*val));
-                self.pc += 1;
-                if self.pc >= self.program.len() {
+                self.registers.set(reg, RegisterValue::U64(val));
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Add { dst, src1, src2 } => {
-                let v1 = self.registers.get_u64(*src1);
-                let v2 = self.registers.get_u64(*src2);
+                let v1 = self.registers.get_u64(src1);
+                let v2 = self.registers.get_u64(src2);
                 let (res, overflow) = v1.overflowing_add(v2);
-                self.registers.set(*dst, RegisterValue::U64(res));
+                self.registers.set(dst, RegisterValue::U64(res));
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = false;
-                self.pc += 1;
-                if self.pc >= self.program.len() {
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Sub { dst, src1, src2 } => {
-                let v1 = self.registers.get_u64(*src1);
-                let v2 = self.registers.get_u64(*src2);
+                let v1 = self.registers.get_u64(src1);
+                let v2 = self.registers.get_u64(src2);
                 let (res, overflow) = v1.overflowing_sub(v2);
-                self.registers.set(*dst, RegisterValue::U64(res));
+                self.registers.set(dst, RegisterValue::U64(res));
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = v1 < v2;
-                self.pc += 1;
-                if self.pc >= self.program.len() {
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Cmp { src1, src2 } => {
-                let v1 = self.registers.get_u64(*src1);
-                let v2 = self.registers.get_u64(*src2);
+                let v1 = self.registers.get_u64(src1);
+                let v2 = self.registers.get_u64(src2);
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
-                self.pc += 1;
-                if self.pc >= self.program.len() {
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::LoadStateU64 { reg, state_id } => {
-                let bytes = self.executor.read_state(&mut self.ctx, *state_id)?;
+                let bytes = self.executor.read_state(&mut self.ctx, state_id)?;
                 let mut arr = [0u8; 8];
                 let len = bytes.len().min(8);
                 arr[..len].copy_from_slice(&bytes[..len]);
                 let val = u64::from_le_bytes(arr);
-                self.registers.set(*reg, RegisterValue::U64(val));
+                self.registers.set(reg, RegisterValue::U64(val));
             }
             Instruction::LoadStateBytes { reg, state_id } => {
-                let bytes = self.executor.read_state(&mut self.ctx, *state_id)?;
-                self.registers.set(*reg, RegisterValue::Bytes(bytes));
+                let bytes = self.executor.read_state(&mut self.ctx, state_id)?;
+                self.registers.set(reg, RegisterValue::Bytes(bytes));
             }
             Instruction::WriteRegister { state_id, reg } => {
-                let payload = match self.registers.get(*reg) {
+                let payload = match self.registers.get(reg) {
                     RegisterValue::U64(v) => v.to_le_bytes().to_vec(),
                     RegisterValue::Bytes(b) => b.clone(),
                     RegisterValue::Empty => vec![],
                 };
-                self.executor.write_state(&mut self.ctx, *state_id, payload)?;
-                self.pc += 1;
-                if self.pc >= self.program.len() {
+                self.executor.write_state(&mut self.ctx, state_id, payload)?;
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Nop => {
-                self.pc += 1;
-                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                self.pc += step_len;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Halt => {
+                self.pc += step_len;
                 self.status = MachineStatus::Halted;
                 return Ok(());
             }
             Instruction::Jmp { target } => {
-                self.pc = *target;
-                if self.pc >= self.program.len() {
+                self.pc = target;
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Jz { target } => {
-                if self.flags.zero { self.pc = *target; } else { self.pc += 1; }
-                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                if self.flags.zero { self.pc = target; } else { self.pc += step_len; }
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Jnz { target } => {
-                if !self.flags.zero { self.pc = *target; } else { self.pc += 1; }
-                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                if !self.flags.zero { self.pc = target; } else { self.pc += step_len; }
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Jn { target } => {
-                if self.flags.negative { self.pc = *target; } else { self.pc += 1; }
-                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                if self.flags.negative { self.pc = target; } else { self.pc += step_len; }
+                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             _ => {}
         }
 
-        if let Err(e) = self.executor.execute_instruction(&mut self.ctx, instruction) {
+        if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction) {
             let reason = match e {
                 VeritasError::Abort(r) => r,
                 _ => AbortReason::WriteConflict,
@@ -248,9 +264,9 @@ impl<'a> Machine<'a> {
             return Err(e);
         }
 
-        self.pc += 1;
+        self.pc += step_len;
 
-        if self.pc >= self.program.len() {
+        let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
             self.status = MachineStatus::Halted;
         }
 
@@ -296,10 +312,16 @@ impl<'a> Machine<'a> {
     pub fn boot(&mut self, image: crate::program::ProgramImage) -> Result<(), VeritasError> {
         self.registers.reset();
         self.flags.reset();
-        self.program = Program::new();
+        self.ram.clear();
+
+        let mut addr = 0usize;
         for inst in &image.instructions {
-            self.program = self.program.clone().push(inst.clone());
+            let encoded = inst.encode()?;
+            self.ram.write_bytes(addr, &encoded)
+                .map_err(|e| VeritasError::EngineError(e))?;
+            addr += encoded.len();
         }
+
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
         Ok(())

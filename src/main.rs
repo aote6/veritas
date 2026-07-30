@@ -1,3 +1,4 @@
+mod memory;
 mod machine;
 mod instruction;
 mod instruction_codec;

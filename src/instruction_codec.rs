@@ -17,6 +17,17 @@ pub mod opcodes {
     pub const COMMIT: u8 = 0x23;
     pub const ABORT: u8 = 0x24;
     pub const HALT: u8 = 0xFF;
+
+    // Kernel reserved opcodes (P15.6.1)
+    pub const READ: u8 = 0x30;
+    pub const WRITE: u8 = 0x31;
+    pub const EFFECT: u8 = 0x32;
+    pub const OBJECT_BIRTH: u8 = 0x33;
+    pub const OBJECT_DEATH: u8 = 0x34;
+    pub const OBJECT_LINK: u8 = 0x35;
+    pub const CAPABILITY_GRANT: u8 = 0x36;
+    pub const SAVEPOINT: u8 = 0x37;
+    pub const ROLLBACK_TO: u8 = 0x38;
 }
 
 impl Instruction {
@@ -75,9 +86,55 @@ impl Instruction {
             Instruction::Commit => buf.push(opcodes::COMMIT),
             Instruction::Abort { .. } => buf.push(opcodes::ABORT),
             Instruction::Halt => buf.push(opcodes::HALT),
-            _ => return Err(VeritasError::EngineError(
-                "Kernel instruction not encodable yet".into()
-            )),
+            Instruction::Read { state_id } => {
+                buf.push(opcodes::READ);
+                buf.extend_from_slice(&state_id.to_le_bytes());
+            }
+            Instruction::Write { state_id, payload } => {
+                buf.push(opcodes::WRITE);
+                buf.extend_from_slice(&state_id.to_le_bytes());
+                buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+                buf.extend_from_slice(payload);
+            }
+            Instruction::Effect { payload } => {
+                buf.push(opcodes::EFFECT);
+                buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+                buf.extend_from_slice(payload);
+            }
+            Instruction::ObjectBirth { object_id } => {
+                buf.push(opcodes::OBJECT_BIRTH);
+                buf.extend_from_slice(&object_id.to_le_bytes());
+            }
+            Instruction::ObjectDeath { object_id } => {
+                buf.push(opcodes::OBJECT_DEATH);
+                buf.extend_from_slice(&object_id.to_le_bytes());
+            }
+            Instruction::ObjectLink { from, to, relation } => {
+                buf.push(opcodes::OBJECT_LINK);
+                buf.extend_from_slice(&from.to_le_bytes());
+                buf.extend_from_slice(&to.to_le_bytes());
+                buf.push(*relation as u8);
+            }
+            Instruction::CapabilityGrant { holder, permission, resource } => {
+                buf.push(opcodes::CAPABILITY_GRANT);
+                buf.extend_from_slice(&holder.to_le_bytes());
+                let perm_bytes = permission.as_bytes();
+                buf.extend_from_slice(&(perm_bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(perm_bytes);
+                buf.extend_from_slice(&resource.to_le_bytes());
+            }
+            Instruction::Savepoint { name } => {
+                buf.push(opcodes::SAVEPOINT);
+                let name_bytes = name.as_bytes();
+                buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(name_bytes);
+            }
+            Instruction::RollbackTo { name } => {
+                buf.push(opcodes::ROLLBACK_TO);
+                let name_bytes = name.as_bytes();
+                buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+                buf.extend_from_slice(name_bytes);
+            }
         }
         Ok(buf)
     }
@@ -88,79 +145,81 @@ impl Instruction {
         }
         let opcode = bytes[0];
         let mut pos = 1;
-        let check = |need: usize| -> Result<(), VeritasError> {
-            if pos + need > bytes.len() {
-                Err(VeritasError::EngineError(format!("EOF for 0x{:02X}", opcode)))
-            } else { Ok(()) }
-        };
+        macro_rules! check {
+            ($need:expr) => {
+                if pos + $need > bytes.len() {
+                    return Err(VeritasError::EngineError(format!("EOF for 0x{:02X}", opcode)));
+                }
+            };
+        }
 
         Ok((match opcode {
             opcodes::NOP => Instruction::Nop,
             opcodes::LOAD_CONST => {
-                check(9)?;
+                check!(9);
                 let reg = bytes[pos];
                 let val = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
                 pos += 9;
                 Instruction::LoadConst { reg, val }
             }
             opcodes::ADD => {
-                check(3)?;
+                check!(3);
                 let (dst, s1, s2) = (bytes[pos], bytes[pos+1], bytes[pos+2]);
                 pos += 3;
                 Instruction::Add { dst, src1: s1, src2: s2 }
             }
             opcodes::SUB => {
-                check(3)?;
+                check!(3);
                 let (dst, s1, s2) = (bytes[pos], bytes[pos+1], bytes[pos+2]);
                 pos += 3;
                 Instruction::Sub { dst, src1: s1, src2: s2 }
             }
             opcodes::CMP => {
-                check(2)?;
+                check!(2);
                 let (s1, s2) = (bytes[pos], bytes[pos+1]);
                 pos += 2;
                 Instruction::Cmp { src1: s1, src2: s2 }
             }
             opcodes::JMP => {
-                check(8)?;
+                check!(8);
                 let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
                 pos += 8;
                 Instruction::Jmp { target: t }
             }
             opcodes::JZ => {
-                check(8)?;
+                check!(8);
                 let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
                 pos += 8;
                 Instruction::Jz { target: t }
             }
             opcodes::JNZ => {
-                check(8)?;
+                check!(8);
                 let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
                 pos += 8;
                 Instruction::Jnz { target: t }
             }
             opcodes::JN => {
-                check(8)?;
+                check!(8);
                 let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
                 pos += 8;
                 Instruction::Jn { target: t }
             }
             opcodes::LOAD_STATE_U64 => {
-                check(9)?;
+                check!(9);
                 let reg = bytes[pos];
                 let sid = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
                 pos += 9;
                 Instruction::LoadStateU64 { reg, state_id: sid }
             }
             opcodes::LOAD_STATE_BYTES => {
-                check(9)?;
+                check!(9);
                 let reg = bytes[pos];
                 let sid = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
                 pos += 9;
                 Instruction::LoadStateBytes { reg, state_id: sid }
             }
             opcodes::WRITE_REGISTER => {
-                check(9)?;
+                check!(9);
                 let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
                 let reg = bytes[pos+8];
                 pos += 9;
@@ -169,6 +228,81 @@ impl Instruction {
             opcodes::COMMIT => Instruction::Commit,
             opcodes::ABORT => Instruction::Abort { reason: crate::types::AbortReason::WriteConflict },
             opcodes::HALT => Instruction::Halt,
+            opcodes::READ => {
+                check!(8);
+                let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                pos += 8;
+                Instruction::Read { state_id: sid }
+            }
+            opcodes::WRITE => {
+                check!(12);
+                let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                let len = u32::from_le_bytes(bytes[pos+8..pos+12].try_into().unwrap()) as usize;
+                pos += 12;
+                check!(len);
+                let payload = bytes[pos..pos+len].to_vec();
+                pos += len;
+                Instruction::Write { state_id: sid, payload }
+            }
+            opcodes::EFFECT => {
+                check!(4);
+                let len = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+                pos += 4;
+                check!(len);
+                let payload = bytes[pos..pos+len].to_vec();
+                pos += len;
+                Instruction::Effect { payload }
+            }
+            opcodes::OBJECT_BIRTH => {
+                check!(8);
+                let oid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                pos += 8;
+                Instruction::ObjectBirth { object_id: oid }
+            }
+            opcodes::OBJECT_DEATH => {
+                check!(8);
+                let oid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                pos += 8;
+                Instruction::ObjectDeath { object_id: oid }
+            }
+            opcodes::OBJECT_LINK => {
+                check!(17);
+                let from = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                let to = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap());
+                let rel = bytes[pos+16];
+                pos += 17;
+                Instruction::ObjectLink { from, to, relation: unsafe { std::mem::transmute(rel) } }
+            }
+            opcodes::CAPABILITY_GRANT => {
+                check!(16);
+                let holder = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                let plen = u32::from_le_bytes(bytes[pos+8..pos+12].try_into().unwrap()) as usize;
+                pos += 12;
+                check!(plen + 8);
+                let perm = String::from_utf8(bytes[pos..pos+plen].to_vec()).unwrap_or_default();
+                pos += plen;
+                let res = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                pos += 8;
+                Instruction::CapabilityGrant { holder, permission: perm, resource: res }
+            }
+            opcodes::SAVEPOINT => {
+                check!(4);
+                let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+                pos += 4;
+                check!(nlen);
+                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).unwrap_or_default();
+                pos += nlen;
+                Instruction::Savepoint { name }
+            }
+            opcodes::ROLLBACK_TO => {
+                check!(4);
+                let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+                pos += 4;
+                check!(nlen);
+                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).unwrap_or_default();
+                pos += nlen;
+                Instruction::RollbackTo { name }
+            }
             _ => return Err(VeritasError::EngineError(format!("Unknown opcode: 0x{:02X}", opcode))),
         }, pos))
     }
