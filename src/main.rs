@@ -2,6 +2,7 @@ mod memory;
 mod machine;
 mod instruction;
 mod instruction_codec;
+mod assembler;
 mod program;
 mod verifier;
 mod executor;
