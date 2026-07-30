@@ -59,7 +59,7 @@ impl VeritasEngine {
         self.apply_state_memory(write_set);
         let after = self.state_root();
         if let Ok(mut hist) = self.history.lock() {
-            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, 0, write_set.changes.clone(), before, after));
+            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, ctx.program_hash.unwrap_or(0), write_set.changes.clone(), before, after));
         }
     }
 
@@ -2602,5 +2602,38 @@ mod p18_tests {
         let mut tx = e.begin();
         e.write(&mut tx, 0x2000, vec![5, 6]).unwrap();
         assert!(e.commit(&mut tx).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod p18_6_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::Program;
+
+    #[test]
+    fn test_program_hash_in_replay_record() {
+        let e = VeritasEngine::new();
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 42 })
+            .push(Instruction::Halt);
+        let p_hash = program.hash();
+
+        let mut tx = e.begin();
+        tx.program_hash = Some(p_hash);
+        e.attach_capability(&mut tx, 1);
+        e.write(&mut tx, 1, vec![7]).unwrap();
+        e.commit(&mut tx).unwrap();
+
+        let entries = e.history.lock().unwrap().entries().to_vec();
+        assert_eq!(entries[0].record.program_hash, p_hash);
+        assert_ne!(p_hash, 0);
+    }
+
+    #[test]
+    fn test_different_programs_different_hashes() {
+        let p1 = Program::new().push(Instruction::Halt);
+        let p2 = Program::new().push(Instruction::Nop).push(Instruction::Halt);
+        assert_ne!(p1.hash(), p2.hash());
     }
 }

@@ -26,6 +26,17 @@ impl Program {
     pub fn is_empty(&self) -> bool {
         self.instructions.is_empty()
     }
+
+    pub fn hash(&self) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for inst in &self.instructions {
+            for b in inst.encode().unwrap_or_default() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+        }
+        h
+    }
 }
 
 // ===== P15.2: ProgramImage 二进制镜像格式 =====
