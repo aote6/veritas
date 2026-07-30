@@ -19,6 +19,10 @@ pub enum Opcode {
     LoadStateU64,
     LoadStateBytes,
     WriteRegister,
+    Jmp,
+    Jz,
+    Jnz,
+    Jn,
     Commit,
     Abort,
 }
@@ -41,6 +45,10 @@ pub enum Instruction {
     LoadStateU64 { reg: u8, state_id: StateId },
     LoadStateBytes { reg: u8, state_id: StateId },
     WriteRegister { state_id: StateId, reg: u8 },
+    Jmp { target: usize },
+    Jz { target: usize },
+    Jnz { target: usize },
+    Jn { target: usize },
     Commit,
     Abort { reason: AbortReason },
 }
@@ -64,6 +72,10 @@ impl Instruction {
             Instruction::LoadStateU64 { .. } => Opcode::LoadStateU64,
             Instruction::LoadStateBytes { .. } => Opcode::LoadStateBytes,
             Instruction::WriteRegister { .. } => Opcode::WriteRegister,
+            Instruction::Jmp { .. } => Opcode::Jmp,
+            Instruction::Jz { .. } => Opcode::Jz,
+            Instruction::Jnz { .. } => Opcode::Jnz,
+            Instruction::Jn { .. } => Opcode::Jn,
             Instruction::Commit => Opcode::Commit,
             Instruction::Abort { .. } => Opcode::Abort,
         }

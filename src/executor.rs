@@ -71,7 +71,7 @@ impl<'a> Executor<'a> {
             Instruction::Commit => {
                 self.engine.commit(ctx)?;
             }
-            Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } => { /* handled by Machine locally */ }
+            Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } | Instruction::Jmp { .. } | Instruction::Jz { .. } | Instruction::Jnz { .. } | Instruction::Jn { .. } => { /* handled by Machine locally */ }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
                 return Err(VeritasError::Abort(*reason));

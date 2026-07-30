@@ -2409,4 +2409,128 @@ mod tests {
         assert_eq!(u64::from_le_bytes(arr), 150);
     }
 
+
+    #[test]
+    fn test_p13_3_transactional_isolation() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, MachineStatus};
+
+        let engine = VeritasEngine::new();
+
+        let mut ctx = engine.begin();
+        engine.write(&mut ctx, 30, 50u64.to_le_bytes().to_vec()).unwrap();
+        engine.commit(&mut ctx).unwrap();
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 999 })
+            .push(Instruction::WriteRegister { state_id: 30, reg: 0 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+        assert_eq!(*machine.status(), MachineStatus::Halted);
+
+        let mut ctx2 = engine.begin();
+        let bytes = engine.read(&mut ctx2, 30).unwrap();
+        let mut arr = [0u8; 8];
+        let len = bytes.len().min(8);
+        arr[..len].copy_from_slice(&bytes[..len]);
+        assert_eq!(u64::from_le_bytes(arr), 50,
+            "Uncommitted write must not leak to global StateStore");
+    }
+
+
+    // ========== P14.1: 控制流基础指令单元测试 ==========
+
+
+
+
+
+
+
+    // ========== P14.1: 控制流基础指令测试 ==========
+
+    #[test]
+    fn test_p14_1_jmp_unconditional() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::Jmp { target: 3 })
+            .push(Instruction::LoadConst { reg: 0, val: 999 })
+            .push(Instruction::LoadConst { reg: 1, val: 42 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(1));
+        assert_eq!(machine.registers().get(1), &RegisterValue::U64(42));
+    }
+
+    #[test]
+    fn test_p14_1_jz_branch() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 5 })
+            .push(Instruction::LoadConst { reg: 1, val: 5 })
+            .push(Instruction::Cmp { src1: 0, src2: 1 })
+            .push(Instruction::Jz { target: 5 })
+            .push(Instruction::LoadConst { reg: 2, val: 111 })
+            .push(Instruction::LoadConst { reg: 2, val: 222 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
+    }
+
+    #[test]
+    fn test_p14_1_jnz_branch() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 5 })
+            .push(Instruction::LoadConst { reg: 1, val: 3 })
+            .push(Instruction::Cmp { src1: 0, src2: 1 })
+            .push(Instruction::Jnz { target: 5 })
+            .push(Instruction::LoadConst { reg: 2, val: 111 })
+            .push(Instruction::LoadConst { reg: 2, val: 222 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
+    }
+
+    #[test]
+    fn test_p14_1_jn_branch() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 3 })
+            .push(Instruction::LoadConst { reg: 1, val: 5 })
+            .push(Instruction::Cmp { src1: 0, src2: 1 })
+            .push(Instruction::Jn { target: 5 })
+            .push(Instruction::LoadConst { reg: 2, val: 111 })
+            .push(Instruction::LoadConst { reg: 2, val: 222 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
+    }
+
 }

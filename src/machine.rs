@@ -160,6 +160,33 @@ impl<'a> Machine<'a> {
                     RegisterValue::Empty => vec![],
                 };
                 self.executor.write_state(&mut self.ctx, *state_id, payload)?;
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            Instruction::Jmp { target } => {
+                self.pc = *target;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            Instruction::Jz { target } => {
+                if self.flags.zero { self.pc = *target; } else { self.pc += 1; }
+                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Jnz { target } => {
+                if !self.flags.zero { self.pc = *target; } else { self.pc += 1; }
+                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Jn { target } => {
+                if self.flags.negative { self.pc = *target; } else { self.pc += 1; }
+                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
             }
             _ => {}
         }
