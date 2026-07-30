@@ -68,6 +68,25 @@ impl RegisterFile {
     }
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExecutionConfig {
+    pub max_cycles: u64,
+}
+
+impl Default for ExecutionConfig {
+    fn default() -> Self {
+        Self { max_cycles: 1_000_000 }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionResult {
+    Halted { cycles: u64 },
+    CycleLimitReached { cycles: u64 },
+    Aborted(String),
+}
+
 pub struct Machine<'a> {
     engine: &'a VeritasEngine,
     executor: Executor<'a>,
@@ -243,6 +262,24 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
         Ok(())
+    }
+
+    pub fn run_with_config(&mut self, config: ExecutionConfig) -> Result<ExecutionResult, VeritasError> {
+        let mut cycles = 0;
+        while self.status == MachineStatus::Running || self.status == MachineStatus::Ready {
+            if cycles >= config.max_cycles {
+                return Ok(ExecutionResult::CycleLimitReached { cycles });
+            }
+            if self.status == MachineStatus::Ready {
+                self.status = MachineStatus::Running;
+            }
+            self.step()?;
+            cycles += 1;
+            if self.is_halted() {
+                return Ok(ExecutionResult::Halted { cycles });
+            }
+        }
+        Ok(ExecutionResult::Halted { cycles })
     }
 
     pub fn pc(&self) -> usize {

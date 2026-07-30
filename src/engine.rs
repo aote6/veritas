@@ -2595,4 +2595,47 @@ mod tests {
         assert!(machine.is_halted());
     }
 
+
+
+    #[test]
+    fn test_p15_4_normal_halt() {
+        use crate::instruction::Instruction;
+        use crate::program::{Program, ProgramImage};
+        use crate::machine::{Machine, MachineStatus, RegisterValue, ExecutionResult};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(program.instructions);
+
+        machine.boot(image).unwrap();
+        let res = machine.run_with_config(Default::default()).unwrap();
+
+        assert_eq!(res, ExecutionResult::Halted { cycles: 2 });
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(100));
+        assert!(machine.is_halted());
+    }
+
+    #[test]
+    fn test_p15_4_cycle_limit() {
+        use crate::instruction::Instruction;
+        use crate::program::{Program, ProgramImage};
+        use crate::machine::{Machine, ExecutionConfig, ExecutionResult};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+
+        let program = Program::new()
+            .push(Instruction::Jmp { target: 0 });
+        let image = ProgramImage::new(program.instructions);
+
+        machine.boot(image).unwrap();
+        let res = machine.run_with_config(ExecutionConfig { max_cycles: 10 }).unwrap();
+
+        assert_eq!(res, ExecutionResult::CycleLimitReached { cycles: 10 });
+    }
+
 }
