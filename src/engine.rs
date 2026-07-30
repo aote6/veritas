@@ -23,7 +23,7 @@ pub struct VeritasEngine {
     tx_id_counter: AtomicU64,
     commit_lock: Mutex<()>,
     wal: WalWriter,
-    object_registry: Mutex<HashSet<ObjectId>>,
+    object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
 }
 
@@ -43,12 +43,17 @@ impl VeritasEngine {
             RecoveryManager::apply_records(&records);
 
         // P7.5: 从 WAL records 重建 object_registry 和 topology
-        let mut recovered_objects: HashSet<ObjectId> = HashSet::new();
+        let mut recovered_objects: HashMap<ObjectId, ObjectState> = HashMap::new();
         let mut recovered_links: Vec<LinkEdge> = Vec::new();
         for record in &records {
             match record {
                 WalEntry::ObjectBirth { object_id, .. } => {
-                    recovered_objects.insert(*object_id);
+                    recovered_objects.insert(*object_id, ObjectState::Alive);
+                }
+                WalEntry::ObjectDeath { object_id, .. } => {
+                    recovered_objects.insert(*object_id, ObjectState::Dead);
+                    // P8.2: 确定性推导——剔除关联边
+                    recovered_links.retain(|edge| edge.from != *object_id && edge.to != *object_id);
                 }
                 WalEntry::ObjectLink { from, to, relation_kind, .. } => {
                     let relation = match relation_kind {
@@ -287,7 +292,33 @@ impl VeritasEngine {
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &ctx.pending_objects {
-                registry.insert(*object_id);
+                registry.insert(*object_id, ObjectState::Alive);
+            }
+        }
+
+        // P8.1: 写入 ObjectDeath WAL 条目并更新状态
+        for object_id in &ctx.pending_deaths {
+            let death_entry = WalEntry::ObjectDeath {
+                tx_id: ctx.tx_id(),
+                object_id: *object_id,
+            };
+            self.wal
+                .append_and_sync(&death_entry)
+                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectDeath write failed: {}", e)))?;
+        }
+        {
+            let mut registry = self.object_registry.lock().unwrap();
+            for object_id in &ctx.pending_deaths {
+                registry.insert(*object_id, ObjectState::Dead);
+            }
+        }
+
+        // P8.2: 确定性拓扑清理——剔除所有涉及已死亡 Object 的边
+        {
+            let dead_set: HashSet<ObjectId> = ctx.pending_deaths.iter().copied().collect();
+            if !dead_set.is_empty() {
+                let mut topo = self.topology.lock().unwrap();
+                topo.retain(|edge| !dead_set.contains(&edge.from) && !dead_set.contains(&edge.to));
             }
         }
 
@@ -334,6 +365,36 @@ impl VeritasEngine {
         Ok(())
     }
 
+    /// P8.1: OBJECT_DEATH 物理原语
+    pub fn object_death(
+        &self,
+        ctx: &mut TransactionContext,
+        object_id: ObjectId,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // 检查 Object 存在且状态为 Alive
+        let registry = self.object_registry.lock().unwrap();
+        let state = registry.get(&object_id).copied();
+        drop(registry);
+
+        match state {
+            None => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
+            Some(ObjectState::Dead) => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
+            Some(ObjectState::Alive) => {}
+        }
+
+        // 防重复死亡
+        if ctx.pending_deaths.contains(&object_id) {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        ctx.pending_deaths.push(object_id);
+        Ok(())
+    }
+
     /// P6: OBJECT_LINK 物理原语
     pub fn object_link(
         &self,
@@ -353,11 +414,20 @@ impl VeritasEngine {
 
         // 检查源和目标是否存在（全局注册表或当前事务 pending）
         let registry = self.object_registry.lock().unwrap();
-        let from_exists = registry.contains(&from) || ctx.pending_objects.contains(&from);
-        let to_exists = registry.contains(&to) || ctx.pending_objects.contains(&to);
+        let from_exists = registry.contains_key(&from) || ctx.pending_objects.contains(&from);
+        let to_exists = registry.contains_key(&to) || ctx.pending_objects.contains(&to);
         drop(registry);
 
         if !from_exists || !to_exists {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        // P8.2: 死亡检查——源或目标已死则拒绝
+        let reg = self.object_registry.lock().unwrap();
+        let from_dead = reg.get(&from) == Some(&ObjectState::Dead) || ctx.pending_deaths.contains(&from);
+        let to_dead = reg.get(&to) == Some(&ObjectState::Dead) || ctx.pending_deaths.contains(&to);
+        drop(reg);
+        if from_dead || to_dead {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
@@ -377,7 +447,7 @@ impl VeritasEngine {
 
         // 检查全局注册表：若已存在则拒绝
         let registry = self.object_registry.lock().unwrap();
-        if registry.contains(&object_id) {
+        if registry.contains_key(&object_id) {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
         drop(registry);
@@ -437,6 +507,7 @@ impl VeritasEngine {
             scope_write_set_len: ctx.scope_write_set.len(),
             pending_objects_len: ctx.pending_objects.len(),
             pending_links_len: ctx.pending_links.len(),
+            pending_deaths_len: ctx.pending_deaths.len(),
         });
 
         Ok(())
@@ -466,6 +537,7 @@ impl VeritasEngine {
         ctx.scope_write_set.truncate(sp.scope_write_set_len);
         ctx.pending_objects.truncate(sp.pending_objects_len);
         ctx.pending_links.truncate(sp.pending_links_len);
+        ctx.pending_deaths.truncate(sp.pending_deaths_len);
 
         ctx.savepoints.truncate(index + 1);
 
@@ -1279,7 +1351,7 @@ mod tests {
         engine.commit(&mut tx).unwrap();
 
         let registry = engine.object_registry.lock().unwrap();
-        assert!(registry.contains(&obj_id), "commit 后注册表应包含 Object");
+        assert!(registry.contains_key(&obj_id), "commit 后注册表应包含 Object");
         drop(registry);
 
         // 测试2: abort 后 Object 不存在
@@ -1365,8 +1437,8 @@ mod tests {
 
         // 3. 校验最终物理状态
         let registry = engine.object_registry.lock().unwrap();
-        assert!(registry.contains(&obj_a), "registry 应包含 A");
-        assert!(registry.contains(&obj_b), "registry 应包含 B");
+        assert!(registry.contains_key(&obj_a), "registry 应包含 A");
+        assert!(registry.contains_key(&obj_b), "registry 应包含 B");
         drop(registry);
 
         let topo = engine.topology.lock().unwrap();
@@ -1484,8 +1556,8 @@ mod tests {
         let engine2 = VeritasEngine::with_wal_path(wal_path.to_string());
 
         let reg = engine2.object_registry.lock().unwrap();
-        assert!(reg.contains(&obj_a), "WAL replay: obj_a should be restored");
-        assert!(reg.contains(&obj_b), "WAL replay: obj_b should be restored");
+        assert!(reg.contains_key(&obj_a), "WAL replay: obj_a should be restored");
+        assert!(reg.contains_key(&obj_b), "WAL replay: obj_b should be restored");
         drop(reg);
 
         let topo = engine2.topology.lock().unwrap();
@@ -1493,6 +1565,236 @@ mod tests {
         assert_eq!(topo[0].from, obj_a);
         assert_eq!(topo[0].to, obj_b);
         assert_eq!(topo[0].relation, RelationKind::ContractDependency);
+        drop(topo);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    // ========== P8.1: OBJECT_DEATH 测试 ==========
+
+    #[test]
+    fn test_object_death_normal() {
+        let wal_path = "target/test_p8_1_death.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        // birth 并 commit
+        let mut tx = engine.begin();
+        let obj: ObjectId = 601;
+        engine.object_birth(&mut tx, obj).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        // death 并 commit
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, obj).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        // 验证状态为 Dead
+        let reg = engine.object_registry.lock().unwrap();
+        assert_eq!(reg.get(&obj), Some(&ObjectState::Dead), "Object 应为 Dead");
+        drop(reg);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_object_death_reject_unknown() {
+        let wal_path = "target/test_p8_1_reject.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let mut tx = engine.begin();
+        let result = engine.object_death(&mut tx, 999);
+        assert!(result.is_err(), "死亡不存在的 Object 应报错");
+        engine.abort(&mut tx, AbortReason::WriteConflict);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_object_death_reject_double_death() {
+        let wal_path = "target/test_p8_1_double.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj: ObjectId = 602;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, obj).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let mut tx3 = engine.begin();
+        let result = engine.object_death(&mut tx3, obj);
+        assert!(result.is_err(), "重复死亡应报错");
+        engine.abort(&mut tx3, AbortReason::WriteConflict);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_object_death_savepoint_rollback() {
+        let wal_path = "target/test_p8_1_sp.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj: ObjectId = 603;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        engine.savepoint(&mut tx2, "before_death").unwrap();
+        engine.object_death(&mut tx2, obj).unwrap();
+        engine.rollback_to(&mut tx2, "before_death").unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let reg = engine.object_registry.lock().unwrap();
+        assert_eq!(reg.get(&obj), Some(&ObjectState::Alive), "Savepoint 回滚后 Object 应为 Alive");
+        drop(reg);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_object_death_replay() {
+        let wal_path = "target/test_p8_1_replay.wal";
+        let _ = std::fs::remove_file(wal_path);
+
+        let obj: ObjectId = 604;
+        {
+            let engine1 = VeritasEngine::with_wal_path(wal_path.to_string());
+            let mut tx = engine1.begin();
+            engine1.object_birth(&mut tx, obj).unwrap();
+            engine1.commit(&mut tx).unwrap();
+            let mut tx2 = engine1.begin();
+            engine1.object_death(&mut tx2, obj).unwrap();
+            engine1.commit(&mut tx2).unwrap();
+        }
+
+        let engine2 = VeritasEngine::with_wal_path(wal_path.to_string());
+        let reg = engine2.object_registry.lock().unwrap();
+        assert_eq!(reg.get(&obj), Some(&ObjectState::Dead), "WAL replay 后 Object 应为 Dead");
+        drop(reg);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    // ========== P8.2: 确定性拓扑清理测试 ==========
+
+    #[test]
+    fn test_death_cleans_outgoing_link() {
+        let wal_path = "target/test_p8_2_out.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let a: ObjectId = 701;
+        let b: ObjectId = 702;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.object_link(&mut tx, a, b, RelationKind::CapabilityDelegation).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        // 死亡 A，A->B 的边应被清理
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, a).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 0, "A 死后 A->B 应被清理");
+        drop(topo);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_death_cleans_incoming_link() {
+        let wal_path = "target/test_p8_2_in.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let a: ObjectId = 703;
+        let b: ObjectId = 704;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.object_link(&mut tx, a, b, RelationKind::ContractDependency).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        // 死亡 B，A->B 的边应被清理
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, b).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let topo = engine.topology.lock().unwrap();
+        assert_eq!(topo.len(), 0, "B 死后 A->B 应被清理");
+        drop(topo);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_link_to_dead_rejected() {
+        let wal_path = "target/test_p8_2_reject.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let a: ObjectId = 705;
+        let b: ObjectId = 706;
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        // 死亡 A
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, a).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        // 尝试连接死 A 到 B
+        let mut tx3 = engine.begin();
+        let result = engine.object_link(&mut tx3, a, b, RelationKind::EffectPropagation);
+        assert!(result.is_err(), "连接已死 Object 应报错");
+        engine.abort(&mut tx3, AbortReason::WriteConflict);
+
+        // 尝试连接 B 到死 A
+        let mut tx4 = engine.begin();
+        let result2 = engine.object_link(&mut tx4, b, a, RelationKind::EffectPropagation);
+        assert!(result2.is_err(), "连接到已死 Object 应报错");
+        engine.abort(&mut tx4, AbortReason::WriteConflict);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_death_topology_replay_cleanup() {
+        let wal_path = "target/test_p8_2_replay.wal";
+        let _ = std::fs::remove_file(wal_path);
+
+        let a: ObjectId = 707;
+        let b: ObjectId = 708;
+        {
+            let engine1 = VeritasEngine::with_wal_path(wal_path.to_string());
+            let mut tx = engine1.begin();
+            engine1.object_birth(&mut tx, a).unwrap();
+            engine1.object_birth(&mut tx, b).unwrap();
+            engine1.object_link(&mut tx, a, b, RelationKind::CapabilityDelegation).unwrap();
+            engine1.commit(&mut tx).unwrap();
+            let mut tx2 = engine1.begin();
+            engine1.object_death(&mut tx2, a).unwrap();
+            engine1.commit(&mut tx2).unwrap();
+        }
+
+        // Replay: A 死，拓扑应为空
+        let engine2 = VeritasEngine::with_wal_path(wal_path.to_string());
+        let reg = engine2.object_registry.lock().unwrap();
+        assert_eq!(reg.get(&a), Some(&ObjectState::Dead));
+        drop(reg);
+        let topo = engine2.topology.lock().unwrap();
+        assert_eq!(topo.len(), 0, "Replay 后拓扑应自动清理");
         drop(topo);
 
         let _ = std::fs::remove_file(wal_path);

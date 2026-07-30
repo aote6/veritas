@@ -73,6 +73,13 @@ pub struct ScopeChange {
 // Runtime Object 基础类型
 pub type ObjectId = u64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectState {
+    Alive,
+    Dead,
+}
+
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelationKind {
     CapabilityDelegation = 0,
@@ -181,6 +188,7 @@ pub struct Savepoint {
     pub scope_write_set_len: usize,
     pub pending_objects_len: usize,
     pub pending_links_len: usize,
+    pub pending_deaths_len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +201,7 @@ pub struct TransactionContext {
     pub effect_queue: EffectQueue,
     pub savepoints: Vec<Savepoint>,
     pub pending_links: Vec<LinkEdge>,
+    pub pending_deaths: Vec<ObjectId>,
     pub pending_objects: Vec<ObjectId>,
     pub aborted: bool,
 }
@@ -209,6 +218,7 @@ impl TransactionContext {
             savepoints: Vec::new(),
             pending_objects: Vec::new(),
             pending_links: Vec::new(),
+            pending_deaths: Vec::new(),
             aborted: false,
         }
     }
