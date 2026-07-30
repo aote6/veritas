@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use crate::program::ProgramImage;
+use crate::module::{ModuleImage, ModuleVersion};
 use crate::instruction::Instruction;
 use crate::types::{VeritasError, AbortReason};
 
@@ -146,5 +148,63 @@ mod tests {
         ";
         let insts = assemble(src).unwrap();
         assert!(matches!(insts[2], Instruction::Jnz { .. }));
+    }
+}
+
+pub fn assemble_module(source: &str) -> Result<ModuleImage, VeritasError> {
+    let mut name = String::new();
+    let mut version = ModuleVersion::new(0, 1, 0);
+    let mut code_lines = Vec::new();
+
+    for line in source.lines() {
+        let cleaned = clean_line(line);
+        if cleaned.is_empty() { continue; }
+        let parts: Vec<&str> = cleaned.split_whitespace().collect();
+        if parts.is_empty() { continue; }
+
+        match parts[0].to_lowercase().as_str() {
+            "module" => { if parts.len() >= 2 { name = parts[1].to_string(); } }
+            "version" => {
+                if parts.len() >= 2 {
+                    let v: Vec<&str> = parts[1].split('.').collect();
+                    if v.len() == 3 {
+                        version = ModuleVersion::new(
+                            v[0].parse().unwrap_or(0),
+                            v[1].parse().unwrap_or(0),
+                            v[2].parse().unwrap_or(0),
+                        );
+                    }
+                }
+            }
+            _ => { code_lines.push(line); }
+        }
+    }
+
+    if name.is_empty() {
+        return Err(VeritasError::EngineError("Missing module name".into()));
+    }
+
+    let instructions = assemble(&code_lines.join("\n"))?;
+    let program_image = ProgramImage::new(instructions);
+    Ok(ModuleImage::new(&name, version, program_image))
+}
+
+#[cfg(test)]
+mod module_asm_tests {
+    use super::*;
+
+    #[test]
+    fn test_assemble_module() {
+        let src = concat!(
+            "module math.add\n",
+            "version 1.2.3\n",
+            "entry_add:\n",
+            "    LOAD_CONST R0, 1\n",
+            "    HALT\n"
+        );
+        let m = assemble_module(src).unwrap();
+        assert_eq!(m.name, "math.add");
+        assert_eq!(m.version, ModuleVersion::new(1, 2, 3));
+        assert_eq!(m.program_image.instructions.len(), 2);
     }
 }
