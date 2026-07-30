@@ -12,7 +12,7 @@ pub enum MachineStatus {
     Running,
     Halted,
     Aborted(AbortReason),
-    Panicked,
+    Trapped(crate::types::TrapReason),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +98,7 @@ pub struct Machine<'a> {
     registers: RegisterFile,
     flags: FlagsRegister,
     ctx: TransactionContext,
+    trap_frame: Option<crate::types::TrapFrame>,
 }
 
 impl<'a> Machine<'a> {
@@ -114,12 +115,13 @@ impl<'a> Machine<'a> {
             registers: RegisterFile::new(),
             flags: FlagsRegister::default(),
             ctx,
+            trap_frame: None,
         }
     }
 
     pub fn step(&mut self) -> Result<(), VeritasError> {
         match self.status {
-            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Panicked => return Ok(()),
+            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_) => return Ok(()),
             MachineStatus::Ready => self.status = MachineStatus::Running,
             MachineStatus::Running => {}
         }
@@ -138,8 +140,19 @@ impl<'a> Machine<'a> {
                 self.status = MachineStatus::Halted;
                 return Ok(());
             }
-            let stream = self.ram.slice_from(self.pc)
-                .map_err(|e| VeritasError::EngineError(e))?;
+            let stream = match self.ram.slice_from(self.pc) {
+                Ok(s) => s,
+                Err(_) => {
+                    let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
+            };
             crate::instruction::Instruction::decode(stream)?
         };
         let step_len = if is_legacy { 1 } else { consumed };
@@ -306,6 +319,7 @@ impl<'a> Machine<'a> {
         Verifier::verify(&program)?;
         self.program = program;
         self.status = MachineStatus::Ready;
+        self.trap_frame = None;
         Ok(self)
     }
 
@@ -324,6 +338,7 @@ impl<'a> Machine<'a> {
 
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
+        self.trap_frame = None;
         Ok(())
     }
 

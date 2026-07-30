@@ -300,3 +300,20 @@ pub struct PendingEffect {
     pub idempotency_key: String,
     pub payload: Vec<u8>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrapReason {
+    InvalidOpcode { opcode: u8 },
+    InvalidEncoding { pc: usize },
+    MemoryFault { addr: usize, size: usize },
+    DivisionByZero,
+    ArithmeticOverflow,
+    IllegalInstruction { opcode: u8 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrapFrame {
+    pub pc: usize,
+    pub reason: TrapReason,
+    pub cycles: u64,
+}
