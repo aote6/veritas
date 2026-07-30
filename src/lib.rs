@@ -27,3 +27,84 @@ use types::*;
 use engine::VeritasEngine;
 
 
+#[cfg(test)]
+mod integration_tests {
+    use crate::assembler::assemble;
+    use crate::program::ProgramImage;
+    use crate::engine::VeritasEngine;
+    use crate::machine::{Machine, RegisterValue};
+
+    #[test]
+    fn test_e2e_asm_to_machine() {
+        let src = "
+            LOAD_CONST R0, 10
+            LOAD_CONST R1, 20
+            ADD R2, R0, R1
+            HALT
+        ";
+        let insts = assemble(src).unwrap();
+        let image = ProgramImage::new(insts);
+        let bytes = image.encode().unwrap();
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        machine.boot_bytes(&bytes).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(30));
+        assert!(machine.is_halted());
+    }
+
+    #[test]
+    fn test_e2e_loop_sum() {
+        let src = "
+            LOAD_CONST R0, 0
+            LOAD_CONST R1, 5
+            LOAD_CONST R2, 1
+            LOAD_CONST R3, 0
+        loop:
+            ADD R0, R0, R1
+            SUB R1, R1, R2
+            CMP R1, R3
+            JNZ loop
+            HALT
+        ";
+        let insts = assemble(src).unwrap();
+        let image = ProgramImage::new(insts);
+        let bytes = image.encode().unwrap();
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        machine.boot_bytes(&bytes).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(15));
+        assert!(machine.is_halted());
+    }
+
+    #[test]
+    fn test_e2e_corrupted_image_rejected() {
+        let src = "LOAD_CONST R0, 1
+HALT";
+        let insts = assemble(src).unwrap();
+        let image = ProgramImage::new(insts);
+        let mut bytes = image.encode().unwrap();
+        bytes[20] ^= 0xFF;
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        assert!(machine.boot_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_e2e_trap_invalid_opcode() {
+        // 只在 RAM 中放入一个非法 opcode
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        machine.ram_mut().write_bytes(0, &[0xEE]).unwrap();
+        machine.set_pc(0);
+        machine.step().unwrap();
+        assert!(matches!(machine.status(), crate::machine::MachineStatus::Trapped(_)));
+
+    }
+}
