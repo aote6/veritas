@@ -1,3 +1,4 @@
+pub mod runtime;
 pub mod module;
 pub mod memory;
 pub mod machine;

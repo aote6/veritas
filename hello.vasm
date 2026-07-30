@@ -1,0 +1,4 @@
+module hello
+version 1.0.0
+    LOAD_CONST R0, 123
+    HALT
