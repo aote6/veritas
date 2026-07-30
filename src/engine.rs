@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
+use crate::lock::{LockManager, LockMode};
 use crate::view::TransactionObjectView;
 use crate::guard::ObjectGuard;
 use crate::types::*;
@@ -29,6 +30,7 @@ pub struct VeritasEngine {
     object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
+    pub lock_mgr: LockManager,
 }
 
 impl VeritasEngine {
@@ -91,6 +93,7 @@ impl VeritasEngine {
             object_registry: Mutex::new(recovered_objects),
             topology: Mutex::new(recovered_links),
             capability_graph: Mutex::new(CapabilityGraph::new()),
+            lock_mgr: LockManager::new(),
         };
 
         if !records.is_empty() {

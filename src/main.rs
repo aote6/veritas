@@ -5,6 +5,7 @@ mod types;
 mod wal;
 mod view;
 mod guard;
+mod lock;
 mod scope;
 mod scope_registry;
 mod capability;
