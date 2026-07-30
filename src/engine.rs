@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
 use crate::types::*;
 use crate::wal::{RecoveryManager, WalEffect, WalEntry, WalScopeChange, WalWriter};
@@ -25,6 +26,7 @@ pub struct VeritasEngine {
     wal: WalWriter,
     object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
+    capability_graph: Mutex<CapabilityGraph>,
 }
 
 impl VeritasEngine {
@@ -77,6 +79,7 @@ impl VeritasEngine {
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
             object_registry: Mutex::new(recovered_objects),
             topology: Mutex::new(recovered_links),
+            capability_graph: Mutex::new(CapabilityGraph::new()),
         };
 
         if !records.is_empty() {
@@ -363,6 +366,36 @@ impl VeritasEngine {
         }
 
         Ok(())
+    }
+
+    /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权
+    pub fn capability_grant(
+        &self,
+        ctx: &mut TransactionContext,
+        grantee: ObjectId,
+        capability_type: &str,
+        resource: StateId,
+    ) -> Result<CapabilityId, VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // Alive 检查
+        let reg = self.object_registry.lock().unwrap();
+        match reg.get(&grantee) {
+            Some(ObjectState::Alive) => {}
+            _ => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
+        }
+        drop(reg);
+
+        if ctx.pending_deaths.contains(&grantee) {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        // grantor 暂时用 grantee 自身（自授权），后续可扩展
+        let mut graph = self.capability_graph.lock().unwrap();
+        let cap_id = graph.grant(capability_type.to_string(), grantee, grantee, resource);
+        Ok(cap_id)
     }
 
     /// P8.1: OBJECT_DEATH 物理原语
@@ -1796,6 +1829,73 @@ mod tests {
         let topo = engine2.topology.lock().unwrap();
         assert_eq!(topo.len(), 0, "Replay 后拓扑应自动清理");
         drop(topo);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    // ========== P8.3: 能力授权原语测试 ==========
+
+    #[test]
+    fn test_capability_grant_to_alive_object() {
+        let wal_path = "target/test_p8_3_alive.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj_a: ObjectId = 801;
+        let resource: StateId = 100;
+        engine.init_state(resource, vec![0]);
+
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        let cap_res = engine.capability_grant(&mut tx2, obj_a, "ReadStorage", resource);
+        assert!(cap_res.is_ok(), "向 Alive 的 Object 授权应成功");
+        engine.commit(&mut tx2).unwrap();
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_capability_grant_to_dead_object_rejected() {
+        let wal_path = "target/test_p8_3_dead.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj_a: ObjectId = 802;
+        let resource: StateId = 101;
+        engine.init_state(resource, vec![0]);
+
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        engine.object_death(&mut tx2, obj_a).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        let mut tx3 = engine.begin();
+        let res = engine.capability_grant(&mut tx3, obj_a, "ReadStorage", resource);
+        assert!(res.is_err(), "向 Dead 的 Object 授权必须拒绝");
+        engine.abort(&mut tx3, AbortReason::WriteConflict);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_capability_grant_to_nonexistent_rejected() {
+        let wal_path = "target/test_p8_3_nonexist.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let resource: StateId = 102;
+        engine.init_state(resource, vec![0]);
+
+        let mut tx = engine.begin();
+        let res = engine.capability_grant(&mut tx, 999, "ReadStorage", resource);
+        assert!(res.is_err(), "向不存在的 Object 授权必须拒绝");
+        engine.abort(&mut tx, AbortReason::WriteConflict);
 
         let _ = std::fs::remove_file(wal_path);
     }
