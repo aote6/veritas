@@ -103,6 +103,23 @@ pub struct Machine<'a> {
 }
 
 impl<'a> Machine<'a> {
+    fn record_trace(&mut self, pc_before: usize, regs_before: [u64; 8], instruction: &crate::instruction::Instruction, consumed: usize) {
+        let regs_after = [
+            self.registers.get_u64(0), self.registers.get_u64(1),
+            self.registers.get_u64(2), self.registers.get_u64(3),
+            self.registers.get_u64(4), self.registers.get_u64(5),
+            self.registers.get_u64(6), self.registers.get_u64(7),
+        ];
+        self.trace.push(crate::trace::InstructionTrace {
+            pc: pc_before,
+            opcode: instruction.opcode() as u8,
+            instruction: instruction.clone(),
+            registers_before: regs_before,
+            registers_after: regs_after,
+            state_reads: vec![],
+            state_writes: vec![],
+        });
+    }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
@@ -152,6 +169,7 @@ impl<'a> Machine<'a> {
             }
         };
 
+        let pc_before = self.pc;
         let regs_before = [
             self.registers.get_u64(0), self.registers.get_u64(1),
             self.registers.get_u64(2), self.registers.get_u64(3),
@@ -176,6 +194,7 @@ impl<'a> Machine<'a> {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(reg, RegisterValue::U64(val));
                 self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
@@ -248,11 +267,13 @@ impl<'a> Machine<'a> {
             }
             Instruction::Nop => {
                 self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Halt => {
                 self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction, consumed);
                 self.status = MachineStatus::Halted;
                 return Ok(());
             }
@@ -390,6 +411,8 @@ impl<'a> Machine<'a> {
     }
 
     pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
+
+    pub fn trace_hash(&self) -> u64 { self.trace.trace_hash() }
 
     pub fn state_root(&self) -> u64 { self.engine.state_root() }
 

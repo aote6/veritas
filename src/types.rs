@@ -280,6 +280,7 @@ pub enum VeritasError {
     Abort(AbortReason),
     EngineError(String),
     PermissionDenied,
+    DeterminismViolation,
 }
 
 impl From<AbortReason> for VeritasError {
