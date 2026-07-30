@@ -8,6 +8,8 @@ use std::sync::Mutex;
 use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
 use crate::lock::{LockManager, LockMode};
+use crate::tx_manager::TransactionManager;
+use std::sync::Arc;
 use crate::view::TransactionObjectView;
 use crate::guard::ObjectGuard;
 use crate::types::*;
@@ -24,12 +26,12 @@ pub struct VeritasEngine {
     global_version: AtomicU64,
     state_store: StateStore,
     scope_registry: ScopeRegistry,
-    tx_id_counter: AtomicU64,
     commit_lock: Mutex<()>,
     wal: WalWriter,
     object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
+    pub tx_mgr: Arc<TransactionManager>,
     pub lock_mgr: LockManager,
 }
 
@@ -83,17 +85,20 @@ impl VeritasEngine {
             }
         }
 
+        let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
+        let lock_mgr = LockManager::new(Arc::clone(&tx_mgr));
+
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
             state_store: StateStore::from_map(state_map),
             scope_registry: ScopeRegistry::from_map(scope_map),
-            tx_id_counter: AtomicU64::new(max_tx_id + 1),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
             object_registry: Mutex::new(recovered_objects),
             topology: Mutex::new(recovered_links),
             capability_graph: Mutex::new(CapabilityGraph::new()),
-            lock_mgr: LockManager::new(),
+            tx_mgr,
+            lock_mgr,
         };
 
         if !records.is_empty() {
@@ -151,7 +156,7 @@ impl VeritasEngine {
     }
 
     pub fn begin(&self) -> TransactionContext {
-        let tx_id = self.tx_id_counter.fetch_add(1, Ordering::SeqCst);
+        let tx_id = self.tx_mgr.begin();
         let snapshot_version = self.global_version.load(Ordering::Acquire);
         TransactionContext::new(tx_id, snapshot_version)
     }
@@ -225,6 +230,11 @@ impl VeritasEngine {
     pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // P9.4 闭环：查询 PCB 权威状态，若已被 Wound 击毙则拦截提交
+        if !self.tx_mgr.is_active(ctx.tx_id()) {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
         let _lock = self.commit_lock.lock().unwrap();
@@ -2058,4 +2068,30 @@ mod tests {
 
         let _ = std::fs::remove_file(wal_path);
     }
+
+    // ========== P9.3: TxId 崩溃恢复续接测试 ==========
+
+    #[test]
+    fn test_tx_id_counter_survives_restart() {
+        let path = format!("wal_txid_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+        let engine1 = VeritasEngine::with_wal_path(path.clone());
+        let state = deterministic_hash("TxId::Continuity");
+        engine1.init_state(state, 0u64.to_le_bytes().to_vec());
+
+        let mut ctx = engine1.begin();
+        let last_tx_id = ctx.tx_id();
+        engine1
+            .write(&mut ctx, state, 1u64.to_le_bytes().to_vec())
+            .unwrap();
+        engine1.commit(&mut ctx).unwrap();
+        drop(engine1);
+
+        let engine2 = VeritasEngine::with_wal_path(path.clone());
+        let ctx2 = engine2.begin();
+        assert!(ctx2.tx_id() > last_tx_id, "重启后 tx_id 不应该撞车");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
 }
