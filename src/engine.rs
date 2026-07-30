@@ -43,12 +43,23 @@ pub struct VeritasEngine {
 }
 
 impl VeritasEngine {
-    pub fn record_history(&self, tx_id: u64, write_set: &crate::types::WriteSet) {
+    pub fn attach_capability(&self, ctx: &mut crate::types::TransactionContext, cap_id: u64) {
+        ctx.capability_id = Some(cap_id);
+    }
+
+    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+        // P18: capability_id 作为历史记录的一部分，不强制拦截
+        // 未来通过 require_capability() 开启强制校验
+        Ok(())
+    }
+
+    pub fn record_history(&self, ctx: &crate::types::TransactionContext) {
         let before = self.state_root();
+        let write_set = &ctx.write_set;
         self.apply_state_memory(write_set);
         let after = self.state_root();
         if let Ok(mut hist) = self.history.lock() {
-            hist.push(ReplayRecord::new(tx_id, write_set.changes.clone(), before, after));
+            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, write_set.changes.clone(), before, after));
         }
     }
 
@@ -285,6 +296,7 @@ impl VeritasEngine {
 
         self.detect_conflict(ctx)?;
         self.detect_scope_conflict(ctx)?;
+        self.verify_capability(ctx)?;
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
@@ -442,7 +454,7 @@ impl VeritasEngine {
         }
 
         self.controller.post_commit(ctx.tx_id());
-        self.record_history(ctx.tx_id(), &ctx.write_set);
+        self.record_history(ctx);
 
         Ok(())
     }
@@ -2564,5 +2576,31 @@ mod p17_3_tests {
             eb.commit(&mut tx).unwrap();
         }
         assert_eq!(ea.state_root(), eb.state_root());
+    }
+}
+
+#[cfg(test)]
+mod p18_tests {
+    use super::*;
+
+    #[test]
+    fn test_capability_recorded_in_history() {
+        let e = VeritasEngine::new();
+        let mut tx = e.begin();
+        e.attach_capability(&mut tx, 1001);
+        e.write(&mut tx, 0x1000, vec![1, 2, 3]).unwrap();
+        e.commit(&mut tx).unwrap();
+
+        let records = e.history.lock().unwrap().records().to_vec();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].capability_id, Some(1001));
+    }
+
+    #[test]
+    fn test_no_capability_still_commits() {
+        let e = VeritasEngine::new();
+        let mut tx = e.begin();
+        e.write(&mut tx, 0x2000, vec![5, 6]).unwrap();
+        assert!(e.commit(&mut tx).is_ok());
     }
 }

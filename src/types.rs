@@ -193,6 +193,7 @@ pub struct Savepoint {
 
 #[derive(Debug, Clone)]
 pub struct TransactionContext {
+    pub capability_id: Option<u64>,
     pub tx_id: TxId,
     pub snapshot_version: Version,
     pub read_set: ReadSet,
@@ -209,6 +210,7 @@ pub struct TransactionContext {
 impl TransactionContext {
     pub fn new(tx_id: TxId, snapshot_version: Version) -> Self {
         TransactionContext {
+            capability_id: None,
             tx_id,
             snapshot_version,
             read_set: ReadSet::default(),
@@ -275,6 +277,7 @@ impl std::fmt::Display for AbortReason {
 pub enum VeritasError {
     Abort(AbortReason),
     EngineError(String),
+    PermissionDenied,
 }
 
 impl From<AbortReason> for VeritasError {
