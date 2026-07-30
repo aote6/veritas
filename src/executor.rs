@@ -27,7 +27,7 @@ impl<'a> Executor<'a> {
         Ok(())
     }
 
-    fn execute_instruction(
+    pub fn execute_instruction(
         &self,
         ctx: &mut TransactionContext,
         inst: &Instruction,

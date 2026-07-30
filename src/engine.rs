@@ -2248,4 +2248,82 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+
+    // ========== P12: Machine / PC 取指执行周期测试 ==========
+
+    #[test]
+    fn test_p12_machine_fetch_execute_cycle() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::Machine;
+
+        let path = format!("wal_p12_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+        let engine = VeritasEngine::with_wal_path(path.clone());
+
+        let res_id: StateId = 12001;
+        engine.init_state(res_id, vec![0]);
+
+        let program = Program::new()
+            .push(Instruction::ObjectBirth { object_id: 1201 })
+            .push(Instruction::Write {
+                state_id: res_id,
+                payload: vec![0xFE, 0xED],
+            })
+            .push(Instruction::Commit);
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+
+        assert_eq!(machine.pc(), 0);
+        assert!(!machine.halted());
+
+        machine.step().unwrap();
+        assert_eq!(machine.pc(), 1);
+
+        machine.step().unwrap();
+        assert_eq!(machine.pc(), 2);
+
+        machine.step().unwrap();
+        assert_eq!(machine.pc(), 3);
+        assert!(machine.halted());
+
+        let state_entry = engine.peek_state(res_id).unwrap();
+        assert_eq!(state_entry.value, vec![0xFE, 0xED]);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_p12_machine_run_full_program() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::Machine;
+
+        let path = format!("wal_p12b_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+        let engine = VeritasEngine::with_wal_path(path.clone());
+
+        let res_id: StateId = 12002;
+        engine.init_state(res_id, vec![0]);
+
+        let program = Program::new()
+            .push(Instruction::ObjectBirth { object_id: 1202 })
+            .push(Instruction::Write {
+                state_id: res_id,
+                payload: vec![0xCA, 0xFE],
+            })
+            .push(Instruction::Commit);
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.pc(), 3);
+        assert!(machine.halted());
+
+        let state_entry = engine.peek_state(res_id).unwrap();
+        assert_eq!(state_entry.value, vec![0xCA, 0xFE]);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
 }

@@ -19,6 +19,10 @@ impl Program {
         self.instructions.len()
     }
 
+    pub fn get(&self, index: usize) -> Option<&Instruction> {
+        self.instructions.get(index)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.instructions.is_empty()
     }

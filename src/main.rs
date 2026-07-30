@@ -1,3 +1,4 @@
+mod machine;
 mod instruction;
 mod program;
 mod verifier;
