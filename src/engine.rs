@@ -2857,3 +2857,29 @@ mod p20_2_tests {
         ReplayVerifier::verify(&r1, &r2).unwrap();
     }
 }
+
+#[cfg(test)]
+mod p21_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+
+    #[test]
+    fn test_receipt_includes_write_set_hash() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(p.instructions.clone());
+        let e = VeritasEngine::new();
+        let mut m = Machine::new(&e);
+        m.boot(image).unwrap();
+        m.run().unwrap();
+
+        let receipt = m.execution_receipt();
+        assert!(receipt.write_set_hash != 0, "write_set_hash must reflect state changes");
+        assert!(receipt.verify());
+    }
+}

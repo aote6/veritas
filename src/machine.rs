@@ -259,7 +259,8 @@ impl<'a> Machine<'a> {
                     RegisterValue::Bytes(b) => b.clone(),
                     RegisterValue::Empty => vec![],
                 };
-                self.executor.write_state(&mut self.ctx, state_id, payload)?;
+                self.executor.write_state(&mut self.ctx, state_id, payload.clone())?;
+                self.execution.writes.push(state_id, payload.clone());
                 self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
