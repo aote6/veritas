@@ -29,7 +29,7 @@ pub enum Opcode {
     Abort,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     Read { state_id: StateId },
     Write { state_id: StateId, payload: Vec<u8> },
