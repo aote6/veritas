@@ -2683,13 +2683,13 @@ mod p19_1_tests {
         let mut m1 = Machine::new(&e1);
         m1.boot(image.clone()).unwrap();
         m1.run().unwrap();
-        let h1 = m1.trace.trace_hash();
+        let h1 = m1.execution.trace.trace_hash();
 
         let e2 = VeritasEngine::new();
         let mut m2 = Machine::new(&e2);
         m2.boot(image).unwrap();
         m2.run().unwrap();
-        let h2 = m2.trace.trace_hash();
+        let h2 = m2.execution.trace.trace_hash();
 
         assert_eq!(h1, h2, "相同程序在不同 Machine 上必须产生相同 trace_hash");
         assert_ne!(h1, 0);

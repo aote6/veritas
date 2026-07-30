@@ -99,7 +99,7 @@ pub struct Machine<'a> {
     flags: FlagsRegister,
     ctx: TransactionContext,
     trap_frame: Option<crate::types::TrapFrame>,
-    pub trace: crate::trace::TraceRecorder,
+    pub execution: crate::execution::ExecutionContext,
 }
 
 impl<'a> Machine<'a> {
@@ -110,7 +110,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
-        self.trace.push(crate::trace::InstructionTrace {
+        self.execution.trace.push(crate::trace::InstructionTrace {
             pc: pc_before,
             opcode: instruction.opcode() as u8,
             instruction: instruction.clone(),
@@ -137,7 +137,7 @@ impl<'a> Machine<'a> {
             flags: FlagsRegister::default(),
             ctx,
             trap_frame: None,
-            trace: crate::trace::TraceRecorder::new(),
+            execution: crate::execution::ExecutionContext::new(0, 0),
         }
     }
 
@@ -321,7 +321,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
-        self.trace.push(crate::trace::InstructionTrace {
+        self.execution.trace.push(crate::trace::InstructionTrace {
             pc: self.pc.saturating_sub(consumed),
             opcode: instruction.opcode() as u8,
             instruction: instruction.clone(),
@@ -372,7 +372,7 @@ impl<'a> Machine<'a> {
         self.program = program;
         self.status = MachineStatus::Ready;
         self.trap_frame = None;
-        self.trace = crate::trace::TraceRecorder::new();
+        self.execution = crate::execution::ExecutionContext::new(0, 0);
         Ok(self)
     }
 
@@ -392,7 +392,7 @@ impl<'a> Machine<'a> {
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
         self.trap_frame = None;
-        self.trace = crate::trace::TraceRecorder::new();
+        self.execution = crate::execution::ExecutionContext::new(0, 0);
         Ok(())
     }
 
@@ -412,7 +412,7 @@ impl<'a> Machine<'a> {
 
     pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
 
-    pub fn trace_hash(&self) -> u64 { self.trace.trace_hash() }
+    pub fn trace_hash(&self) -> u64 { self.execution.trace.trace_hash() }
 
     pub fn state_root(&self) -> u64 { self.engine.state_root() }
 
