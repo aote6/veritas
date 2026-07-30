@@ -129,64 +129,45 @@ impl<'a> Machine<'a> {
             MachineStatus::Running => {}
         }
 
-        let is_legacy = !self.program.is_empty();
-        let (instruction, consumed) = if is_legacy {
-            if self.pc >= self.program.len() {
-                self.status = MachineStatus::Halted;
+        if self.pc >= self.ram.len() {
+            let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+            self.trap_frame = Some(crate::types::TrapFrame {
+                pc: self.pc, reason: reason.clone(), cycles: 0,
+            });
+            self.status = MachineStatus::Trapped(reason);
+            return Ok(());
+        }
+
+        let stream = match self.ram.slice_from(self.pc) {
+            Ok(s) => s,
+            Err(_) => {
+                let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+                self.trap_frame = Some(crate::types::TrapFrame {
+                    pc: self.pc, reason: reason.clone(), cycles: 0,
+                });
+                self.status = MachineStatus::Trapped(reason);
                 return Ok(());
-            }
-            let inst = self.program.get(self.pc)
-                .ok_or_else(|| VeritasError::EngineError("Invalid PC".into()))?;
-            (inst.clone(), 1)
-        } else {
-            let limit = if is_legacy { self.program.len() } else { self.ram.len() };
-            if self.pc >= limit {
-                if !is_legacy {
-                    let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc, reason: reason.clone(), cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                } else {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            let stream = match self.ram.slice_from(self.pc) {
-                Ok(s) => s,
-                Err(_) => {
-                    let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-            };
-            match crate::instruction::Instruction::decode(stream) {
-                Ok(v) => v,
-                Err(_) => {
-                    let reason = crate::types::TrapReason::InvalidEncoding { pc: self.pc };
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
             }
         };
-        let step_len = if is_legacy { 1 } else { consumed };
+
+        let (instruction, consumed) = match crate::instruction::Instruction::decode(stream) {
+            Ok(v) => v,
+            Err(_) => {
+                let reason = crate::types::TrapReason::InvalidEncoding { pc: self.pc };
+                self.trap_frame = Some(crate::types::TrapFrame {
+                    pc: self.pc, reason: reason.clone(), cycles: 0,
+                });
+                self.status = MachineStatus::Trapped(reason);
+                return Ok(());
+            }
+        };
 
         // P13.1: 本地指令直接在 Machine 内部消化
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(reg, RegisterValue::U64(val));
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
@@ -199,8 +180,8 @@ impl<'a> Machine<'a> {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = false;
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
@@ -213,8 +194,8 @@ impl<'a> Machine<'a> {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = v1 < v2;
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
@@ -225,8 +206,8 @@ impl<'a> Machine<'a> {
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
@@ -250,42 +231,42 @@ impl<'a> Machine<'a> {
                     RegisterValue::Empty => vec![],
                 };
                 self.executor.write_state(&mut self.ctx, state_id, payload)?;
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Nop => {
-                self.pc += step_len;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Halt => {
-                self.pc += step_len;
+                self.pc += consumed;
                 self.status = MachineStatus::Halted;
                 return Ok(());
             }
             Instruction::Jmp { target } => {
                 self.pc = target;
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+                if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Jz { target } => {
-                if self.flags.zero { self.pc = target; } else { self.pc += step_len; }
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
+                if self.flags.zero { self.pc = target; } else { self.pc += consumed; }
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Jnz { target } => {
-                if !self.flags.zero { self.pc = target; } else { self.pc += step_len; }
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
+                if !self.flags.zero { self.pc = target; } else { self.pc += consumed; }
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Jn { target } => {
-                if self.flags.negative { self.pc = target; } else { self.pc += step_len; }
-                let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit { self.status = MachineStatus::Halted; }
+                if self.flags.negative { self.pc = target; } else { self.pc += consumed; }
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             _ => {}
@@ -301,9 +282,9 @@ impl<'a> Machine<'a> {
             return Err(e);
         }
 
-        self.pc += step_len;
+        self.pc += consumed;
 
-        let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
+        if self.pc >= self.ram.len() {
             self.status = MachineStatus::Halted;
         }
 
