@@ -2661,3 +2661,37 @@ mod p18_6_tests {
         assert_ne!(p1.hash(), p2.hash());
     }
 }
+
+#[cfg(test)]
+mod p19_1_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+
+    #[test]
+    fn test_deterministic_trace_hash() {
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 10 })
+            .push(Instruction::LoadConst { reg: 1, val: 20 })
+            .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+
+        let e1 = VeritasEngine::new();
+        let mut m1 = Machine::new(&e1);
+        m1.boot(image.clone()).unwrap();
+        m1.run().unwrap();
+        let h1 = m1.trace.trace_hash();
+
+        let e2 = VeritasEngine::new();
+        let mut m2 = Machine::new(&e2);
+        m2.boot(image).unwrap();
+        m2.run().unwrap();
+        let h2 = m2.trace.trace_hash();
+
+        assert_eq!(h1, h2, "相同程序在不同 Machine 上必须产生相同 trace_hash");
+        assert_ne!(h1, 0);
+    }
+}

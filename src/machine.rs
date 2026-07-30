@@ -99,6 +99,7 @@ pub struct Machine<'a> {
     flags: FlagsRegister,
     ctx: TransactionContext,
     trap_frame: Option<crate::types::TrapFrame>,
+    pub trace: crate::trace::TraceRecorder,
 }
 
 impl<'a> Machine<'a> {
@@ -119,6 +120,7 @@ impl<'a> Machine<'a> {
             flags: FlagsRegister::default(),
             ctx,
             trap_frame: None,
+            trace: crate::trace::TraceRecorder::new(),
         }
     }
 
@@ -149,6 +151,13 @@ impl<'a> Machine<'a> {
                 return Ok(());
             }
         };
+
+        let regs_before = [
+            self.registers.get_u64(0), self.registers.get_u64(1),
+            self.registers.get_u64(2), self.registers.get_u64(3),
+            self.registers.get_u64(4), self.registers.get_u64(5),
+            self.registers.get_u64(6), self.registers.get_u64(7),
+        ];
 
         let (instruction, consumed) = match crate::instruction::Instruction::decode(stream) {
             Ok(v) => v,
@@ -284,6 +293,23 @@ impl<'a> Machine<'a> {
 
         self.pc += consumed;
 
+        // P19.1: 记录指令执行 trace
+        let regs_after = [
+            self.registers.get_u64(0), self.registers.get_u64(1),
+            self.registers.get_u64(2), self.registers.get_u64(3),
+            self.registers.get_u64(4), self.registers.get_u64(5),
+            self.registers.get_u64(6), self.registers.get_u64(7),
+        ];
+        self.trace.push(crate::trace::InstructionTrace {
+            pc: self.pc.saturating_sub(consumed),
+            opcode: instruction.opcode() as u8,
+            instruction: instruction.clone(),
+            registers_before: regs_before,
+            registers_after: regs_after,
+            state_reads: vec![],
+            state_writes: vec![],
+        });
+
         if self.pc >= self.ram.len() {
             self.status = MachineStatus::Halted;
         }
@@ -325,6 +351,7 @@ impl<'a> Machine<'a> {
         self.program = program;
         self.status = MachineStatus::Ready;
         self.trap_frame = None;
+        self.trace = crate::trace::TraceRecorder::new();
         Ok(self)
     }
 
@@ -344,6 +371,7 @@ impl<'a> Machine<'a> {
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
         self.trap_frame = None;
+        self.trace = crate::trace::TraceRecorder::new();
         Ok(())
     }
 
