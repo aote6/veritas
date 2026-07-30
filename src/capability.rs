@@ -149,6 +149,54 @@ impl CapabilityGraph {
             .collect()
     }
 
+    /// P8-final: 原子撤销 holder 的所有能力（含子树），维护四表一致性
+    pub fn revoke_holder(&mut self, object_id: ObjectId) {
+        let caps = self.caps_for_holder(object_id);
+        for cap_id in caps {
+            self.purge_subtree_strictly(cap_id, object_id);
+        }
+    }
+
+    fn purge_subtree_strictly(&mut self, cap_id: CapabilityId, node: ObjectId) {
+        let kids: Vec<ObjectId> = self
+            .children
+            .remove(&(cap_id, node))
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
+        for child in kids {
+            self.purge_subtree_strictly(cap_id, child);
+        }
+
+        self.holders.remove(&(cap_id, node));
+        self.edges.retain(|e| !(e.capability_id == cap_id && (e.from == node || e.to == node)));
+
+        if !self.has_any_remaining_holders(cap_id) {
+            self.grants.remove(&cap_id);
+        }
+    }
+
+    fn has_any_remaining_holders(&self, cap_id: CapabilityId) -> bool {
+        self.holders.keys().any(|(cid, _)| *cid == cap_id)
+    }
+
+    pub fn holder_count(&self) -> usize {
+        self.holders.len()
+    }
+
+    pub fn grant_count(&self) -> usize {
+        self.grants.len()
+    }
+
+    pub fn child_count(&self) -> usize {
+        self.children.len()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
     pub fn is_capability_valid(&self, cap_id: CapabilityId) -> bool {
         self.grants.contains_key(&cap_id)
     }
