@@ -48,8 +48,25 @@ impl VeritasEngine {
     }
 
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
-        // P18: capability_id 作为历史记录的一部分，不强制拦截
-        // 未来通过 require_capability() 开启强制校验
+        let cap_id = match ctx.capability_id {
+            Some(id) => id,
+            None => return Ok(()), // 未声明 capability 的事务暂不拦截
+        };
+
+        let cap_graph = self.capability_graph.lock().unwrap();
+        if !cap_graph.is_capability_valid(cap_id) {
+            return Err(crate::types::VeritasError::PermissionDenied);
+        }
+
+        // 验证 write_set 中每个 state_id 都在 capability 的 resource 范围内
+        if let Some(info) = cap_graph.info(cap_id) {
+            for (state_id, _) in &ctx.write_set.changes {
+                if *state_id != info.resource {
+                    return Err(crate::types::VeritasError::PermissionDenied);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -2586,14 +2603,18 @@ mod p18_tests {
     #[test]
     fn test_capability_recorded_in_history() {
         let e = VeritasEngine::new();
+        // 先 grant 一个真实 capability
+        let cap_id = e.capability_graph.lock().unwrap().grant(
+            "WritePermission".into(), 0, 0, 0x1000
+        );
         let mut tx = e.begin();
-        e.attach_capability(&mut tx, 1001);
+        e.attach_capability(&mut tx, cap_id);
         e.write(&mut tx, 0x1000, vec![1, 2, 3]).unwrap();
         e.commit(&mut tx).unwrap();
 
         let records = e.history.lock().unwrap().entries().to_vec();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].record.capability_id, Some(1001));
+        assert_eq!(records[0].record.capability_id, Some(cap_id));
     }
 
     #[test]
@@ -2619,10 +2640,13 @@ mod p18_6_tests {
             .push(Instruction::Halt);
         let p_hash = program.hash();
 
+        let cap_id = e.capability_graph.lock().unwrap().grant(
+            "WritePermission".into(), 0, 0, 0x1000
+        );
         let mut tx = e.begin();
         tx.program_hash = Some(p_hash);
-        e.attach_capability(&mut tx, 1);
-        e.write(&mut tx, 1, vec![7]).unwrap();
+        e.attach_capability(&mut tx, cap_id);
+        e.write(&mut tx, 0x1000, vec![7]).unwrap();
         e.commit(&mut tx).unwrap();
 
         let entries = e.history.lock().unwrap().entries().to_vec();
