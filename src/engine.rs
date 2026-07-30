@@ -397,6 +397,11 @@ impl VeritasEngine {
             }
         }
 
+        // P9.2: 释放事务持有的所有锁
+        self.lock_mgr.release_all(ctx.tx_id());
+        // P9.5: 清理 PCB，防止泄漏
+        self.tx_mgr.remove(ctx.tx_id());
+
         Ok(())
     }
 
@@ -523,6 +528,10 @@ impl VeritasEngine {
 
     pub fn abort(&self, ctx: &mut TransactionContext, _reason: AbortReason) {
         ctx.set_aborted();
+        // P9.2: 释放事务持有的所有锁
+        self.lock_mgr.release_all(ctx.tx_id());
+        // P9.5: 清理 PCB，防止泄漏
+        self.tx_mgr.remove(ctx.tx_id());
     }
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
@@ -2177,6 +2186,27 @@ mod tests {
 
         drop(reg);
         let _ = std::fs::remove_file(&path);
+    }
+
+
+    #[test]
+    fn test_p9_5_commit_removes_pcb() {
+        let engine = VeritasEngine::new();
+        let mut tx = engine.begin();
+        let id = tx.tx_id();
+        engine.commit(&mut tx).unwrap();
+        assert!(!engine.tx_mgr.is_active(id),
+            "commit 后 PCB 应从 tx_table 中移除");
+    }
+
+    #[test]
+    fn test_p9_5_abort_removes_pcb() {
+        let engine = VeritasEngine::new();
+        let mut tx = engine.begin();
+        let id = tx.tx_id();
+        engine.abort(&mut tx, AbortReason::WriteConflict);
+        assert!(!engine.tx_mgr.is_active(id),
+            "abort 后 PCB 应从 tx_table 中移除");
     }
 
 }
