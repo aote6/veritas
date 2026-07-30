@@ -2684,4 +2684,34 @@ mod tests {
             "Machine must stay Ready after rejected boot");
     }
 
+
+
+    #[test]
+    fn test_p15_7_memory_fault_trap() {
+        use crate::machine::{Machine, MachineStatus};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        machine.set_pc(70000);
+        machine.step().unwrap();
+
+        assert!(matches!(machine.status(), MachineStatus::Trapped(_)));
+        let frame = machine.trap_frame().unwrap();
+        assert_eq!(frame.pc, 70000);
+    }
+
+    #[test]
+    fn test_p15_7_invalid_opcode_trap() {
+        use crate::machine::{Machine, MachineStatus};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+        machine.ram_mut().write_bytes(0, &[0xEE, 0x00, 0x00]).unwrap();
+        machine.step().unwrap();
+
+        assert!(matches!(machine.status(), MachineStatus::Trapped(_)));
+        let frame = machine.trap_frame().unwrap();
+        assert_eq!(frame.pc, 0);
+    }
+
 }

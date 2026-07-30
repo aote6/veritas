@@ -102,6 +102,9 @@ pub struct Machine<'a> {
 }
 
 impl<'a> Machine<'a> {
+    pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
+    pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
+
     pub fn new(engine: &'a VeritasEngine) -> Self {
         let executor = Executor::new(engine);
         let ctx = engine.begin();
@@ -136,8 +139,17 @@ impl<'a> Machine<'a> {
                 .ok_or_else(|| VeritasError::EngineError("Invalid PC".into()))?;
             (inst.clone(), 1)
         } else {
-            let limit = if is_legacy { self.program.len() } else { self.ram.len() }; if self.pc >= limit {
-                self.status = MachineStatus::Halted;
+            let limit = if is_legacy { self.program.len() } else { self.ram.len() };
+            if self.pc >= limit {
+                if !is_legacy {
+                    let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc, reason: reason.clone(), cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                } else {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             let stream = match self.ram.slice_from(self.pc) {
@@ -153,7 +165,19 @@ impl<'a> Machine<'a> {
                     return Ok(());
                 }
             };
-            crate::instruction::Instruction::decode(stream)?
+            match crate::instruction::Instruction::decode(stream) {
+                Ok(v) => v,
+                Err(_) => {
+                    let reason = crate::types::TrapReason::InvalidEncoding { pc: self.pc };
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
+            }
         };
         let step_len = if is_legacy { 1 } else { consumed };
 
@@ -355,6 +379,8 @@ impl<'a> Machine<'a> {
     pub fn status(&self) -> &MachineStatus {
         &self.status
     }
+
+    pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
 
     pub fn is_halted(&self) -> bool {
         matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_))
