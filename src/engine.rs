@@ -2275,7 +2275,7 @@ mod tests {
         let mut machine = Machine::new(&engine, program).unwrap();
 
         assert_eq!(machine.pc(), 0);
-        assert!(!machine.halted());
+        assert_eq!(machine.status(), &crate::machine::MachineStatus::Ready);
 
         machine.step().unwrap();
         assert_eq!(machine.pc(), 1);
@@ -2285,7 +2285,7 @@ mod tests {
 
         machine.step().unwrap();
         assert_eq!(machine.pc(), 3);
-        assert!(machine.halted());
+        assert!(machine.is_halted());
 
         let state_entry = engine.peek_state(res_id).unwrap();
         assert_eq!(state_entry.value, vec![0xFE, 0xED]);
@@ -2318,7 +2318,7 @@ mod tests {
         machine.run().unwrap();
 
         assert_eq!(machine.pc(), 3);
-        assert!(machine.halted());
+        assert!(machine.is_halted());
 
         let state_entry = engine.peek_state(res_id).unwrap();
         assert_eq!(state_entry.value, vec![0xCA, 0xFE]);
