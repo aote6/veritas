@@ -139,6 +139,20 @@ impl CapabilityGraph {
     }
 
     /// holder 当前是否持有该能力（不做树遍历，只看自己的 active 标志）
+    /// P8.4: 检查能力是否仍然有效（未被撤销）
+    /// P8.4: 获取某个 Object 持有的所有能力 ID
+    pub fn caps_for_holder(&self, holder: ObjectId) -> Vec<CapabilityId> {
+        self.holders
+            .keys()
+            .filter(|(_, h)| *h == holder)
+            .map(|(cap_id, _)| *cap_id)
+            .collect()
+    }
+
+    pub fn is_capability_valid(&self, cap_id: CapabilityId) -> bool {
+        self.grants.contains_key(&cap_id)
+    }
+
     pub fn holds(&self, cap_id: CapabilityId, holder: ObjectId) -> bool {
         self.holders
             .get(&(cap_id, holder))
@@ -223,7 +237,13 @@ impl CapabilityGraph {
         Ok(())
     }
 
-    fn deactivate_subtree(&mut self, cap_id: CapabilityId, node: ObjectId) {
+    pub fn deactivate_subtree(&mut self, cap_id: CapabilityId, node: ObjectId) {
+        // P8.4 fix: 删除 grants 和 holders
+        self.grants.remove(&cap_id);
+        if let Some(rec) = self.holders.get_mut(&(cap_id, node)) {
+            rec.active = false;
+        }
+
         let kids: Vec<ObjectId> = self
             .children
             .get(&(cap_id, node))
@@ -231,9 +251,6 @@ impl CapabilityGraph {
             .unwrap_or_default();
 
         for child in kids {
-            if let Some(rec) = self.holders.get_mut(&(cap_id, child)) {
-                rec.active = false;
-            }
             self.deactivate_subtree(cap_id, child);
         }
     }

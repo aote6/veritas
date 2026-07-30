@@ -56,6 +56,7 @@ impl VeritasEngine {
                     recovered_objects.insert(*object_id, ObjectState::Dead);
                     // P8.2: 确定性推导——剔除关联边
                     recovered_links.retain(|edge| edge.from != *object_id && edge.to != *object_id);
+                    // P8.4: 能力级联撤销——标记待清理
                 }
                 WalEntry::ObjectLink { from, to, relation_kind, .. } => {
                     let relation = match relation_kind {
@@ -322,6 +323,17 @@ impl VeritasEngine {
             if !dead_set.is_empty() {
                 let mut topo = self.topology.lock().unwrap();
                 topo.retain(|edge| !dead_set.contains(&edge.from) && !dead_set.contains(&edge.to));
+            }
+        }
+
+        // P8.4: 能力级联撤销——死亡对象的所有能力及其派生树全部作废
+        {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            for &dead_obj in &ctx.pending_deaths {
+                let caps: Vec<CapabilityId> = cap_graph.caps_for_holder(dead_obj);
+                for cap_id in caps {
+                    cap_graph.deactivate_subtree(cap_id, dead_obj);
+                }
             }
         }
 
@@ -1899,4 +1911,78 @@ mod tests {
 
         let _ = std::fs::remove_file(wal_path);
     }
+
+    // ========== P8.4: 能力级联撤销测试 ==========
+
+    #[test]
+    fn test_death_cascades_capability_revocation() {
+        let wal_path = "target/test_p8_4_cascade.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj_a: ObjectId = 901;
+        let resource: StateId = 200;
+        engine.init_state(resource, vec![0]);
+
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        let cap_a = engine.capability_grant(&mut tx2, obj_a, "ReadStorage", resource).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        // 验证能力有效
+        {
+            let cap_graph = engine.capability_graph.lock().unwrap();
+            assert!(cap_graph.is_capability_valid(cap_a), "死亡前能力应有效");
+        }
+
+        // 消亡 A
+        let mut tx3 = engine.begin();
+        engine.object_death(&mut tx3, obj_a).unwrap();
+        engine.commit(&mut tx3).unwrap();
+
+        // 验证能力被级联作废
+        let cap_graph = engine.capability_graph.lock().unwrap();
+        assert!(!cap_graph.is_capability_valid(cap_a), "A 死后能力应被级联作废");
+        drop(cap_graph);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
+    #[test]
+    fn test_death_spares_unrelated_capabilities() {
+        let wal_path = "target/test_p8_4_spare.wal";
+        let _ = std::fs::remove_file(wal_path);
+        let engine = VeritasEngine::with_wal_path(wal_path.to_string());
+
+        let obj_a: ObjectId = 902;
+        let obj_b: ObjectId = 903;
+        let resource: StateId = 201;
+        engine.init_state(resource, vec![0]);
+
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, obj_a).unwrap();
+        engine.object_birth(&mut tx, obj_b).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        let cap_a = engine.capability_grant(&mut tx2, obj_a, "ReadStorage", resource).unwrap();
+        let cap_b = engine.capability_grant(&mut tx2, obj_b, "ReadStorage", resource).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        // 只死 A
+        let mut tx3 = engine.begin();
+        engine.object_death(&mut tx3, obj_a).unwrap();
+        engine.commit(&mut tx3).unwrap();
+
+        let cap_graph = engine.capability_graph.lock().unwrap();
+        assert!(!cap_graph.is_capability_valid(cap_a), "A 的能力应被撤销");
+        assert!(cap_graph.is_capability_valid(cap_b), "B 的能力应保留");
+        drop(cap_graph);
+
+        let _ = std::fs::remove_file(wal_path);
+    }
+
 }
