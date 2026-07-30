@@ -43,7 +43,7 @@ impl TransactionController {
     }
 
     /// 终止事务
-    pub fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
+    pub fn abort(&self, ctx: &mut TransactionContext, _reason: AbortReason) {
         ctx.set_aborted();
         self.tx_mgr.mark_aborted(ctx.tx_id());
         self.lock_mgr.release_all(ctx.tx_id());

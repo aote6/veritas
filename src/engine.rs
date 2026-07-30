@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
-use crate::lock::{LockManager, LockMode};
+use crate::lock::LockManager;
 use crate::tx_manager::TransactionManager;
 use crate::controller::TransactionController;
 use std::sync::Arc;
@@ -32,8 +32,8 @@ pub struct VeritasEngine {
     object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
-    pub tx_mgr: Arc<TransactionManager>,
-    pub lock_mgr: Arc<LockManager>,
+    tx_mgr: Arc<TransactionManager>,
+    lock_mgr: Arc<LockManager>,
     pub controller: TransactionController,
 }
 
@@ -157,6 +157,16 @@ impl VeritasEngine {
         value: Vec<u8>,
     ) {
         ctx.write_set.push(state_id, value);
+    }
+
+    #[cfg(test)]
+    pub fn tx_mgr(&self) -> &Arc<TransactionManager> {
+        &self.tx_mgr
+    }
+
+    #[cfg(test)]
+    pub fn lock_mgr(&self) -> &Arc<LockManager> {
+        &self.lock_mgr
     }
 
     pub fn begin(&self) -> TransactionContext {
@@ -2113,7 +2123,7 @@ mod tests {
         assert!(result.is_ok(), "老事务应成功抢占");
 
         // 验证 PCB 状态已变为 Aborted
-        assert!(engine.tx_mgr.is_aborted(young.tx_id()),
+        assert!(engine.tx_mgr().is_aborted(young.tx_id()),
             "被 Wound 的事务 PCB 必须标记为 Aborted");
 
         // young 提交被拦截
@@ -2143,7 +2153,7 @@ mod tests {
             .unwrap();
 
         // old 释放锁
-        engine.lock_mgr.release_all(old.tx_id());
+        engine.lock_mgr().release_all(old.tx_id());
 
         // third 能立即获得锁
         assert!(engine.lock_mgr
@@ -2163,7 +2173,7 @@ mod tests {
             let mut tx = engine.begin();
             engine.object_birth(&mut tx, obj).unwrap();
             // 被击毙，不提交
-            engine.tx_mgr.mark_aborted(tx.tx_id());
+            engine.tx_mgr().mark_aborted(tx.tx_id());
             let _ = engine.commit(&mut tx);
         }
 
@@ -2184,7 +2194,7 @@ mod tests {
         let mut tx = engine.begin();
         let id = tx.tx_id();
         engine.commit(&mut tx).unwrap();
-        assert!(!engine.tx_mgr.is_active(id),
+        assert!(!engine.tx_mgr().is_active(id),
             "commit 后 PCB 应从 tx_table 中移除");
     }
 
@@ -2194,7 +2204,7 @@ mod tests {
         let mut tx = engine.begin();
         let id = tx.tx_id();
         engine.abort(&mut tx, AbortReason::WriteConflict);
-        assert!(!engine.tx_mgr.is_active(id),
+        assert!(!engine.tx_mgr().is_active(id),
             "abort 后 PCB 应从 tx_table 中移除");
     }
 
