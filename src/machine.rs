@@ -20,7 +20,14 @@ pub enum RegisterValue {
     Bytes(Vec<u8>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FlagsRegister {
+    pub zero: bool,
+    pub negative: bool,
+    pub overflow: bool,
+    pub carry: bool,
+}
+
 pub struct RegisterFile {
     regs: [RegisterValue; 8],
 }
@@ -53,6 +60,7 @@ pub struct Machine<'a> {
     pc: usize,
     status: MachineStatus,
     registers: RegisterFile,
+    flags: FlagsRegister,
     ctx: TransactionContext,
 }
 
@@ -68,6 +76,7 @@ impl<'a> Machine<'a> {
             pc: 0,
             status: MachineStatus::Ready,
             registers: RegisterFile::new(),
+            flags: FlagsRegister::default(),
             ctx,
         })
     }
@@ -91,6 +100,46 @@ impl<'a> Machine<'a> {
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(*reg, RegisterValue::U64(*val));
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            Instruction::Add { dst, src1, src2 } => {
+                let v1 = self.registers.get_u64(*src1);
+                let v2 = self.registers.get_u64(*src2);
+                let (res, overflow) = v1.overflowing_add(v2);
+                self.registers.set(*dst, RegisterValue::U64(res));
+                self.flags.zero = res == 0;
+                self.flags.overflow = overflow;
+                self.flags.negative = false;
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            Instruction::Sub { dst, src1, src2 } => {
+                let v1 = self.registers.get_u64(*src1);
+                let v2 = self.registers.get_u64(*src2);
+                let (res, overflow) = v1.overflowing_sub(v2);
+                self.registers.set(*dst, RegisterValue::U64(res));
+                self.flags.zero = res == 0;
+                self.flags.overflow = overflow;
+                self.flags.negative = v1 < v2;
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            Instruction::Cmp { src1, src2 } => {
+                let v1 = self.registers.get_u64(*src1);
+                let v2 = self.registers.get_u64(*src2);
+                self.flags.zero = v1 == v2;
+                self.flags.negative = v1 < v2;
+                self.flags.overflow = false;
                 self.pc += 1;
                 if self.pc >= self.program.len() {
                     self.status = MachineStatus::Halted;
@@ -129,6 +178,10 @@ impl<'a> Machine<'a> {
     pub fn pc(&self) -> usize {
         self.pc
     }
+
+    pub fn registers(&self) -> &RegisterFile { &self.registers }
+
+    pub fn flags(&self) -> &FlagsRegister { &self.flags }
 
     pub fn status(&self) -> &MachineStatus {
         &self.status

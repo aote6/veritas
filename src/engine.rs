@@ -2353,4 +2353,28 @@ mod tests {
         assert!(machine.is_halted());
     }
 
+
+    // ========== P13.2: Machine ALU + Flags 测试 ==========
+    #[test]
+    fn test_p13_2_alu_and_flags() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 10 })
+            .push(Instruction::LoadConst { reg: 1, val: 20 })
+            .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
+            .push(Instruction::Cmp { src1: 0, src2: 0 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(30));
+        assert!(machine.flags().zero);
+        assert!(!machine.flags().negative);
+    }
+
 }

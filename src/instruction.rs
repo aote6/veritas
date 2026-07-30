@@ -13,6 +13,9 @@ pub enum Opcode {
     Savepoint,
     RollbackTo,
     LoadConst,
+    Add,
+    Sub,
+    Cmp,
     Commit,
     Abort,
 }
@@ -29,6 +32,9 @@ pub enum Instruction {
     Savepoint { name: String },
     RollbackTo { name: String },
     LoadConst { reg: u8, val: u64 },
+    Add { dst: u8, src1: u8, src2: u8 },
+    Sub { dst: u8, src1: u8, src2: u8 },
+    Cmp { src1: u8, src2: u8 },
     Commit,
     Abort { reason: AbortReason },
 }
@@ -46,6 +52,9 @@ impl Instruction {
             Instruction::Savepoint { .. } => Opcode::Savepoint,
             Instruction::RollbackTo { .. } => Opcode::RollbackTo,
             Instruction::LoadConst { .. } => Opcode::LoadConst,
+            Instruction::Add { .. } => Opcode::Add,
+            Instruction::Sub { .. } => Opcode::Sub,
+            Instruction::Cmp { .. } => Opcode::Cmp,
             Instruction::Commit => Opcode::Commit,
             Instruction::Abort { .. } => Opcode::Abort,
         }
