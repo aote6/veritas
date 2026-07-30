@@ -13,6 +13,14 @@ impl<'a> Executor<'a> {
         Self { engine }
     }
 
+    pub fn read_state(&self, ctx: &mut TransactionContext, state_id: crate::types::StateId) -> Result<Vec<u8>, VeritasError> {
+        self.engine.read(ctx, state_id)
+    }
+
+    pub fn write_state(&mut self, ctx: &mut TransactionContext, state_id: crate::types::StateId, payload: Vec<u8>) -> Result<(), VeritasError> {
+        self.engine.write(ctx, state_id, payload)
+    }
+
     pub fn run_program(&self, program: &Program) -> Result<(), VeritasError> {
         Verifier::verify(program)?;
         let mut ctx = self.engine.begin();
@@ -63,7 +71,7 @@ impl<'a> Executor<'a> {
             Instruction::Commit => {
                 self.engine.commit(ctx)?;
             }
-            Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } => { /* handled by Machine locally */ }
+            Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } => { /* handled by Machine locally */ }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
                 return Err(VeritasError::Abort(*reason));

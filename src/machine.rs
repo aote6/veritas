@@ -140,11 +140,26 @@ impl<'a> Machine<'a> {
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
-                self.pc += 1;
-                if self.pc >= self.program.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
+            }
+            Instruction::LoadStateU64 { reg, state_id } => {
+                let bytes = self.executor.read_state(&mut self.ctx, *state_id)?;
+                let mut arr = [0u8; 8];
+                let len = bytes.len().min(8);
+                arr[..len].copy_from_slice(&bytes[..len]);
+                let val = u64::from_le_bytes(arr);
+                self.registers.set(*reg, RegisterValue::U64(val));
+            }
+            Instruction::LoadStateBytes { reg, state_id } => {
+                let bytes = self.executor.read_state(&mut self.ctx, *state_id)?;
+                self.registers.set(*reg, RegisterValue::Bytes(bytes));
+            }
+            Instruction::WriteRegister { state_id, reg } => {
+                let payload = match self.registers.get(*reg) {
+                    RegisterValue::U64(v) => v.to_le_bytes().to_vec(),
+                    RegisterValue::Bytes(b) => b.clone(),
+                    RegisterValue::Empty => vec![],
+                };
+                self.executor.write_state(&mut self.ctx, *state_id, payload)?;
             }
             _ => {}
         }

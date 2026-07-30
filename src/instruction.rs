@@ -16,6 +16,9 @@ pub enum Opcode {
     Add,
     Sub,
     Cmp,
+    LoadStateU64,
+    LoadStateBytes,
+    WriteRegister,
     Commit,
     Abort,
 }
@@ -35,6 +38,9 @@ pub enum Instruction {
     Add { dst: u8, src1: u8, src2: u8 },
     Sub { dst: u8, src1: u8, src2: u8 },
     Cmp { src1: u8, src2: u8 },
+    LoadStateU64 { reg: u8, state_id: StateId },
+    LoadStateBytes { reg: u8, state_id: StateId },
+    WriteRegister { state_id: StateId, reg: u8 },
     Commit,
     Abort { reason: AbortReason },
 }
@@ -55,6 +61,9 @@ impl Instruction {
             Instruction::Add { .. } => Opcode::Add,
             Instruction::Sub { .. } => Opcode::Sub,
             Instruction::Cmp { .. } => Opcode::Cmp,
+            Instruction::LoadStateU64 { .. } => Opcode::LoadStateU64,
+            Instruction::LoadStateBytes { .. } => Opcode::LoadStateBytes,
+            Instruction::WriteRegister { .. } => Opcode::WriteRegister,
             Instruction::Commit => Opcode::Commit,
             Instruction::Abort { .. } => Opcode::Abort,
         }

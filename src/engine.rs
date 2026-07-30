@@ -2377,4 +2377,36 @@ mod tests {
         assert!(!machine.flags().negative);
     }
 
+
+    #[test]
+    fn test_p13_3_memory_load_store() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let mut ctx = engine.begin();
+        engine.write(&mut ctx, 10, 100u64.to_le_bytes().to_vec()).unwrap();
+        engine.commit(&mut ctx).unwrap();
+
+        let program = Program::new()
+            .push(Instruction::LoadStateU64 { reg: 0, state_id: 10 })
+            .push(Instruction::LoadConst { reg: 1, val: 50 })
+            .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
+            .push(Instruction::WriteRegister { state_id: 20, reg: 2 })
+            .push(Instruction::Commit);
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(2), &RegisterValue::U64(150));
+
+        let mut ctx2 = engine.begin();
+        let bytes = engine.read(&mut ctx2, 20).unwrap();
+        let mut arr = [0u8; 8];
+        let len = bytes.len().min(8);
+        arr[..len].copy_from_slice(&bytes[..len]);
+        assert_eq!(u64::from_le_bytes(arr), 150);
+    }
+
 }
