@@ -81,3 +81,101 @@ mod tests {
         assert_eq!(decoded.program_image.instructions.len(), 1);
     }
 }
+
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModuleStatus {
+    Loaded,
+    Verified,
+    Installed,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedModule {
+    pub image: ModuleImage,
+    pub status: ModuleStatus,
+}
+
+#[derive(Debug, Default)]
+pub struct ModuleLoader {
+    modules: HashMap<String, LoadedModule>,
+}
+
+impl ModuleLoader {
+    pub fn new() -> Self {
+        Self { modules: HashMap::new() }
+    }
+
+    pub fn load_bytes(&self, bytes: &[u8]) -> Result<ModuleImage, VeritasError> {
+        ModuleImage::decode_file(bytes)
+    }
+
+    pub fn verify(&self, image: &ModuleImage) -> Result<(), VeritasError> {
+        if image.name.trim().is_empty() {
+            return Err(VeritasError::EngineError("Module name empty".into()));
+        }
+        if image.program_image.instructions.is_empty() {
+            return Err(VeritasError::EngineError("Module program empty".into()));
+        }
+        Ok(())
+    }
+
+    pub fn install(&mut self, image: ModuleImage) -> Result<String, VeritasError> {
+        self.verify(&image)?;
+        let name = image.name.clone();
+        self.modules.insert(name.clone(), LoadedModule {
+            image,
+            status: ModuleStatus::Installed,
+        });
+        Ok(name)
+    }
+
+    pub fn load_and_install(&mut self, bytes: &[u8]) -> Result<String, VeritasError> {
+        let image = self.load_bytes(bytes)?;
+        self.install(image)
+    }
+
+    pub fn get_module(&self, name: &str) -> Option<&LoadedModule> {
+        self.modules.get(name)
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.modules.contains_key(name)
+    }
+
+    pub fn len(&self) -> usize {
+        self.modules.len()
+    }
+}
+
+#[cfg(test)]
+mod loader_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+
+    #[test]
+    fn test_loader_lifecycle() {
+        let prog = ProgramImage::new(vec![Instruction::Nop, Instruction::Halt]);
+        let m = ModuleImage::new("core.sys", ModuleVersion::new(1, 0, 0), prog);
+        let bytes = m.encode_file().unwrap();
+
+        let mut loader = ModuleLoader::new();
+        let decoded = loader.load_bytes(&bytes).unwrap();
+        assert_eq!(decoded.name, "core.sys");
+        assert!(loader.verify(&decoded).is_ok());
+
+        let name = loader.install(decoded).unwrap();
+        assert_eq!(name, "core.sys");
+        assert!(loader.contains("core.sys"));
+        assert_eq!(loader.get_module("core.sys").unwrap().status, ModuleStatus::Installed);
+    }
+
+    #[test]
+    fn test_verify_empty_program_rejected() {
+        let prog = ProgramImage::new(vec![]);
+        let m = ModuleImage::new("empty", ModuleVersion::new(0, 0, 1), prog);
+        let loader = ModuleLoader::new();
+        assert!(loader.verify(&m).is_err());
+    }
+}
