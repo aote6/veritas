@@ -2208,4 +2208,44 @@ mod tests {
             "abort 后 PCB 应从 tx_table 中移除");
     }
 
+
+    // ========== P11: Instruction Layer / Program Execution 测试 ==========
+
+    #[test]
+    fn test_p11_program_execution_pipeline() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::executor::Executor;
+
+        let path = format!("wal_p11_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+        let engine = VeritasEngine::with_wal_path(path.clone());
+
+        let res_id: StateId = 11001;
+        engine.init_state(res_id, vec![0]);
+
+        let program = Program::new()
+            .push(Instruction::ObjectBirth { object_id: 1101 })
+            .push(Instruction::CapabilityGrant {
+                holder: 1101,
+                permission: "WritePermission".into(),
+                resource: res_id,
+            })
+            .push(Instruction::Write {
+                state_id: res_id,
+                payload: vec![1, 2, 3, 4],
+            })
+            .push(Instruction::Commit);
+
+        let executor = Executor::new(&engine);
+        assert!(executor.run_program(&program).is_ok(),
+            "Program 指令流应顺利执行");
+
+        let state_entry = engine.peek_state(res_id).unwrap();
+        assert_eq!(state_entry.value, vec![1, 2, 3, 4],
+            "状态应被 Program 中的 Write 指令修改");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
 }

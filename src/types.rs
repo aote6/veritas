@@ -80,7 +80,7 @@ pub enum ObjectState {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationKind {
     CapabilityDelegation = 0,
     ContractDependency = 1,
@@ -250,7 +250,7 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortReason {
     WriteConflict,
     ReadFutureVersion,

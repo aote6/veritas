@@ -1,3 +1,7 @@
+mod instruction;
+mod program;
+mod verifier;
+mod executor;
 // Veritas Kernel V0.2 - 主入口
 
 mod engine;
