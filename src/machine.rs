@@ -171,6 +171,15 @@ impl<'a> Machine<'a> {
                 }
                 return Ok(());
             }
+            Instruction::Nop => {
+                self.pc += 1;
+                if self.pc >= self.program.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Halt => {
+                self.status = MachineStatus::Halted;
+                return Ok(());
+            }
             Instruction::Jmp { target } => {
                 self.pc = *target;
                 if self.pc >= self.program.len() {

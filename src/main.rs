@@ -1,5 +1,6 @@
 mod machine;
 mod instruction;
+mod instruction_codec;
 mod program;
 mod verifier;
 mod executor;
