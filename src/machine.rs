@@ -110,6 +110,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
+        self.execution.instruction_count += 1;
         self.execution.trace.push(crate::trace::InstructionTrace {
             pc: pc_before,
             opcode: instruction.opcode() as u8,
@@ -321,6 +322,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
+        self.execution.instruction_count += 1;
         self.execution.trace.push(crate::trace::InstructionTrace {
             pc: self.pc.saturating_sub(consumed),
             opcode: instruction.opcode() as u8,
@@ -380,6 +382,10 @@ impl<'a> Machine<'a> {
         self.registers.reset();
         self.flags.reset();
         self.ram.clear();
+        let prog_hash = image.instructions.iter().fold(0u64, |h, inst| {
+            let bytes = inst.encode().unwrap_or_default();
+            bytes.iter().fold(h, |acc, &b| acc.wrapping_mul(0x100000001b3) ^ (b as u64))
+        });
 
         let mut addr = 0usize;
         for inst in &image.instructions {
@@ -392,7 +398,10 @@ impl<'a> Machine<'a> {
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
         self.trap_frame = None;
-        self.execution = crate::execution::ExecutionContext::new(0, 0);
+        self.execution = crate::execution::ExecutionContext::new(
+            prog_hash,
+            self.engine.state_root(),
+        );
         Ok(())
     }
 
@@ -413,6 +422,10 @@ impl<'a> Machine<'a> {
     pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
 
     pub fn trace_hash(&self) -> u64 { self.execution.trace.trace_hash() }
+
+    pub fn execution_receipt(&self) -> crate::receipt::ExecutionReceipt {
+        self.execution.finalize(self.state_root())
+    }
 
     pub fn state_root(&self) -> u64 { self.engine.state_root() }
 

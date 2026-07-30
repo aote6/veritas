@@ -2804,3 +2804,56 @@ mod p19_3_tests {
         assert!(ReplayVerifier::verify(&r1, &r2).is_err());
     }
 }
+
+#[cfg(test)]
+mod p20_2_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+    use crate::replay_verify::ReplayVerifier;
+
+    #[test]
+    fn test_machine_generates_receipt() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 42 })
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(p.instructions.clone());
+
+        let e = VeritasEngine::new();
+        let mut m = Machine::new(&e);
+        m.boot(image).unwrap();
+        m.run().unwrap();
+
+        let receipt = m.execution_receipt();
+        assert!(receipt.program_hash != 0);
+        assert!(receipt.trace_hash != 0);
+        assert_eq!(receipt.instruction_count, 2);
+        assert!(receipt.verify());
+    }
+
+    #[test]
+    fn test_same_execution_same_receipt() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 10 })
+            .push(Instruction::LoadConst { reg: 1, val: 20 })
+            .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(p.instructions.clone());
+
+        let e1 = VeritasEngine::new();
+        let mut m1 = Machine::new(&e1);
+        m1.boot(image.clone()).unwrap();
+        m1.run().unwrap();
+        let r1 = m1.execution_receipt();
+
+        let e2 = VeritasEngine::new();
+        let mut m2 = Machine::new(&e2);
+        m2.boot(image).unwrap();
+        m2.run().unwrap();
+        let r2 = m2.execution_receipt();
+
+        assert_eq!(r1, r2);
+        ReplayVerifier::verify(&r1, &r2).unwrap();
+    }
+}
