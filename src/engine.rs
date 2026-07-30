@@ -2533,4 +2533,38 @@ mod tests {
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
     }
 
+
+
+    #[test]
+    fn test_p14_2_loop_sum() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+
+        // R0 = sum, R1 = counter, R2 = 1, R3 = 0
+        // loop: Add R0=R0+R1, Sub R1=R1-R2, Cmp R1,R3, Jnz loop
+        // result: R0 = 10+9+...+1 = 55
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 0 })
+            .push(Instruction::LoadConst { reg: 1, val: 10 })
+            .push(Instruction::LoadConst { reg: 2, val: 1 })
+            .push(Instruction::LoadConst { reg: 3, val: 0 })
+            .push(Instruction::Add { dst: 0, src1: 0, src2: 1 })
+            .push(Instruction::Sub { dst: 1, src1: 1, src2: 2 })
+            .push(Instruction::Cmp { src1: 1, src2: 3 })
+            .push(Instruction::Jnz { target: 4 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(55),
+            "10+9+...+1 should equal 55");
+        assert_eq!(machine.registers().get(1), &RegisterValue::U64(0),
+            "counter should reach 0");
+        assert!(machine.flags().zero,
+            "ZF should be set when counter==0");
+    }
+
 }

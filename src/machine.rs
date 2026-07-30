@@ -140,6 +140,11 @@ impl<'a> Machine<'a> {
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
             }
             Instruction::LoadStateU64 { reg, state_id } => {
                 let bytes = self.executor.read_state(&mut self.ctx, *state_id)?;
