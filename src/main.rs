@@ -6,6 +6,7 @@ mod wal;
 mod view;
 mod guard;
 mod lock;
+mod controller;
 mod tx_manager;
 mod scope;
 mod scope_registry;
