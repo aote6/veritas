@@ -1,3 +1,4 @@
+pub mod module;
 pub mod memory;
 pub mod machine;
 pub mod instruction;
