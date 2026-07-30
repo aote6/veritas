@@ -59,7 +59,7 @@ impl VeritasEngine {
         self.apply_state_memory(write_set);
         let after = self.state_root();
         if let Ok(mut hist) = self.history.lock() {
-            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, write_set.changes.clone(), before, after));
+            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, 0, write_set.changes.clone(), before, after));
         }
     }
 
@@ -2564,13 +2564,13 @@ mod p17_3_tests {
             ea.commit(&mut tx).unwrap();
         }
 
-        let records = ea.history.lock().unwrap().records().to_vec();
+        let records = ea.history.lock().unwrap().entries().to_vec();
         assert_eq!(records.len(), 3);
 
         let eb = VeritasEngine::new();
         for r in &records {
             let mut tx = eb.begin();
-            for (id, val) in &r.writes {
+            for (id, val) in &r.record.writes {
                 eb.write(&mut tx, *id, val.clone()).unwrap();
             }
             eb.commit(&mut tx).unwrap();
@@ -2591,9 +2591,9 @@ mod p18_tests {
         e.write(&mut tx, 0x1000, vec![1, 2, 3]).unwrap();
         e.commit(&mut tx).unwrap();
 
-        let records = e.history.lock().unwrap().records().to_vec();
+        let records = e.history.lock().unwrap().entries().to_vec();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].capability_id, Some(1001));
+        assert_eq!(records[0].record.capability_id, Some(1001));
     }
 
     #[test]
