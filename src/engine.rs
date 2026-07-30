@@ -2094,4 +2094,89 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+
+    // ========== P9.5: Controller 闭环验证 ==========
+
+    #[test]
+    fn test_p9_5_wound_marks_pcb_aborted() {
+        let engine = VeritasEngine::new();
+        let mut old = engine.begin();
+        let mut young = engine.begin();
+        let obj: ObjectId = 9001;
+
+        // young 先拿锁
+        engine.lock_mgr
+            .acquire(young.tx_id(), obj, crate::lock::LockMode::Exclusive)
+            .unwrap();
+
+        // old 抢锁 → Wound 击毙 young
+        let result = engine.lock_mgr
+            .acquire(old.tx_id(), obj, crate::lock::LockMode::Exclusive);
+        assert!(result.is_ok(), "老事务应成功抢占");
+
+        // 验证 PCB 状态已变为 Aborted
+        assert!(engine.tx_mgr.is_aborted(young.tx_id()),
+            "被 Wound 的事务 PCB 必须标记为 Aborted");
+
+        // young 提交被拦截
+        assert!(engine.commit(&mut young).is_err(),
+            "PCB 脏态事务必须被 Engine 拒绝提交");
+
+        // old 正常提交
+        assert!(engine.commit(&mut old).is_ok());
+    }
+
+    #[test]
+    fn test_p9_5_lock_released_after_wound() {
+        let engine = VeritasEngine::new();
+        let mut old = engine.begin();
+        let mut young = engine.begin();
+        let mut third = engine.begin();
+        let obj: ObjectId = 9002;
+
+        // young 拿锁
+        engine.lock_mgr
+            .acquire(young.tx_id(), obj, crate::lock::LockMode::Exclusive)
+            .unwrap();
+
+        // old Wound 击毙 young，夺锁
+        engine.lock_mgr
+            .acquire(old.tx_id(), obj, crate::lock::LockMode::Exclusive)
+            .unwrap();
+
+        // old 释放锁
+        engine.lock_mgr.release_all(old.tx_id());
+
+        // third 能立即获得锁
+        assert!(engine.lock_mgr
+            .acquire(third.tx_id(), obj, crate::lock::LockMode::Exclusive)
+            .is_ok(),
+            "Wound 后锁应被正确释放，后续事务可获取");
+    }
+
+    #[test]
+    fn test_p9_5_aborted_no_ghost_on_replay() {
+        let path = format!("wal_p9_5_{}.log", std::process::id());
+        let _ = std::fs::remove_file(&path);
+
+        let obj: ObjectId = 9003;
+        {
+            let engine = VeritasEngine::with_wal_path(path.clone());
+            let mut tx = engine.begin();
+            engine.object_birth(&mut tx, obj).unwrap();
+            // 被击毙，不提交
+            engine.tx_mgr.mark_aborted(tx.tx_id());
+            let _ = engine.commit(&mut tx);
+        }
+
+        // 重启恢复
+        let engine2 = VeritasEngine::with_wal_path(path.clone());
+        let reg = engine2.object_registry.lock().unwrap();
+        assert!(!reg.contains_key(&obj),
+            "被 Wound 且未提交的事务，重启后不应产生幽灵 Object");
+
+        drop(reg);
+        let _ = std::fs::remove_file(&path);
+    }
+
 }

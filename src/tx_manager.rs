@@ -75,6 +75,18 @@ impl TransactionManager {
         table.get(&tx_id).map_or(false, |tx| tx.state == TransactionState::Active)
     }
 
+    /// 查询事务是否已被击毙
+    pub fn is_aborted(&self, tx_id: TxId) -> bool {
+        let table = self.tx_table.lock().unwrap();
+        table.get(&tx_id).map_or(false, |tx| tx.state == TransactionState::Aborted)
+    }
+
+    /// 从事务表中移除已结束的事务（防止 PCB 泄漏）
+    pub fn remove(&self, tx_id: TxId) {
+        let mut table = self.tx_table.lock().unwrap();
+        table.remove(&tx_id);
+    }
+
     /// Wound-Wait 裁决：TxId 越小越老
     pub fn is_older(&self, tx1: TxId, tx2: TxId) -> bool {
         tx1 < tx2
