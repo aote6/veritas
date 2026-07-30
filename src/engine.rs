@@ -9,6 +9,7 @@ use crate::capability::CapabilityGraph;
 use crate::scope_registry::ScopeRegistry;
 use crate::lock::{LockManager, LockMode};
 use crate::tx_manager::TransactionManager;
+use crate::controller::TransactionController;
 use std::sync::Arc;
 use crate::view::TransactionObjectView;
 use crate::guard::ObjectGuard;
@@ -32,7 +33,8 @@ pub struct VeritasEngine {
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
     pub tx_mgr: Arc<TransactionManager>,
-    pub lock_mgr: LockManager,
+    pub lock_mgr: Arc<LockManager>,
+    pub controller: TransactionController,
 }
 
 impl VeritasEngine {
@@ -86,7 +88,8 @@ impl VeritasEngine {
         }
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
-        let lock_mgr = LockManager::new(Arc::clone(&tx_mgr));
+        let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
+        let controller = TransactionController::new(Arc::clone(&tx_mgr), Arc::clone(&lock_mgr));
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
@@ -99,6 +102,7 @@ impl VeritasEngine {
             capability_graph: Mutex::new(CapabilityGraph::new()),
             tx_mgr,
             lock_mgr,
+            controller,
         };
 
         if !records.is_empty() {
@@ -156,9 +160,8 @@ impl VeritasEngine {
     }
 
     pub fn begin(&self) -> TransactionContext {
-        let tx_id = self.tx_mgr.begin();
         let snapshot_version = self.global_version.load(Ordering::Acquire);
-        TransactionContext::new(tx_id, snapshot_version)
+        self.controller.begin(snapshot_version)
     }
 
     pub fn read(
@@ -228,14 +231,7 @@ impl VeritasEngine {
     }
 
     pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
-        if ctx.is_aborted() {
-            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
-        }
-
-        // P9.4 闭环：查询 PCB 权威状态，若已被 Wound 击毙则拦截提交
-        if !self.tx_mgr.is_active(ctx.tx_id()) {
-            return Err(VeritasError::Abort(AbortReason::WriteConflict));
-        }
+        self.controller.pre_commit_check(ctx)?;
 
         let _lock = self.commit_lock.lock().unwrap();
 
@@ -397,10 +393,7 @@ impl VeritasEngine {
             }
         }
 
-        // P9.2: 释放事务持有的所有锁
-        self.lock_mgr.release_all(ctx.tx_id());
-        // P9.5: 清理 PCB，防止泄漏
-        self.tx_mgr.remove(ctx.tx_id());
+        self.controller.post_commit(ctx.tx_id());
 
         Ok(())
     }
@@ -526,12 +519,8 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn abort(&self, ctx: &mut TransactionContext, _reason: AbortReason) {
-        ctx.set_aborted();
-        // P9.2: 释放事务持有的所有锁
-        self.lock_mgr.release_all(ctx.tx_id());
-        // P9.5: 清理 PCB，防止泄漏
-        self.tx_mgr.remove(ctx.tx_id());
+    pub fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
+        self.controller.abort(ctx, reason);
     }
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
