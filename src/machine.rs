@@ -11,6 +11,7 @@ pub enum MachineStatus {
     Running,
     Halted,
     Aborted(AbortReason),
+    Panicked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +29,16 @@ pub struct FlagsRegister {
     pub carry: bool,
 }
 
+impl FlagsRegister {
+    pub fn new() -> Self {
+        Self { zero: false, negative: false, overflow: false, carry: false }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
+
 pub struct RegisterFile {
     regs: [RegisterValue; 8],
 }
@@ -35,6 +46,10 @@ pub struct RegisterFile {
 impl RegisterFile {
     pub fn new() -> Self {
         Self { regs: std::array::from_fn(|_| RegisterValue::Empty) }
+    }
+
+    pub fn reset(&mut self) {
+        self.regs = std::array::from_fn(|_| RegisterValue::Empty);
     }
 
     pub fn get(&self, reg: u8) -> &RegisterValue {
@@ -65,25 +80,24 @@ pub struct Machine<'a> {
 }
 
 impl<'a> Machine<'a> {
-    pub fn new(engine: &'a VeritasEngine, program: Program) -> Result<Self, VeritasError> {
-        Verifier::verify(&program)?;
-        let ctx = engine.begin();
+    pub fn new(engine: &'a VeritasEngine) -> Self {
         let executor = Executor::new(engine);
-        Ok(Self {
+        let ctx = engine.begin();
+        Self {
             engine,
             executor,
-            program,
+            program: Program::new(),
             pc: 0,
             status: MachineStatus::Ready,
             registers: RegisterFile::new(),
             flags: FlagsRegister::default(),
             ctx,
-        })
+        }
     }
 
     pub fn step(&mut self) -> Result<(), VeritasError> {
         match self.status {
-            MachineStatus::Halted | MachineStatus::Aborted(_) => return Ok(()),
+            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Panicked => return Ok(()),
             MachineStatus::Ready => self.status = MachineStatus::Running,
             MachineStatus::Running => {}
         }
@@ -233,6 +247,25 @@ impl<'a> Machine<'a> {
 
     pub fn pc(&self) -> usize {
         self.pc
+    }
+
+    pub fn with_program(mut self, program: Program) -> Result<Self, VeritasError> {
+        Verifier::verify(&program)?;
+        self.program = program;
+        self.status = MachineStatus::Ready;
+        Ok(self)
+    }
+
+    pub fn boot(&mut self, image: crate::program::ProgramImage) -> Result<(), VeritasError> {
+        self.registers.reset();
+        self.flags.reset();
+        self.program = Program::new();
+        for inst in &image.instructions {
+            self.program = self.program.clone().push(inst.clone());
+        }
+        self.pc = image.entry_point as usize;
+        self.status = MachineStatus::Running;
+        Ok(())
     }
 
     pub fn registers(&self) -> &RegisterFile { &self.registers }

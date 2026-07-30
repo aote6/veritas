@@ -2272,7 +2272,7 @@ mod tests {
             })
             .push(Instruction::Commit);
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
 
         assert_eq!(machine.pc(), 0);
         assert_eq!(machine.status(), &crate::machine::MachineStatus::Ready);
@@ -2314,7 +2314,7 @@ mod tests {
             })
             .push(Instruction::Commit);
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.pc(), 3);
@@ -2341,7 +2341,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 0, val: 42 })
             .push(Instruction::LoadConst { reg: 1, val: 99 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         assert_eq!(machine.status(), &MachineStatus::Ready);
 
         machine.step().unwrap();
@@ -2369,7 +2369,7 @@ mod tests {
             .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
             .push(Instruction::Cmp { src1: 0, src2: 0 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(30));
@@ -2396,7 +2396,7 @@ mod tests {
             .push(Instruction::WriteRegister { state_id: 20, reg: 2 })
             .push(Instruction::Commit);
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(150));
@@ -2426,7 +2426,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 0, val: 999 })
             .push(Instruction::WriteRegister { state_id: 30, reg: 0 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
         assert_eq!(*machine.status(), MachineStatus::Halted);
 
@@ -2463,7 +2463,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 0, val: 999 })
             .push(Instruction::LoadConst { reg: 1, val: 42 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(0), &RegisterValue::U64(1));
@@ -2485,7 +2485,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 2, val: 111 })
             .push(Instruction::LoadConst { reg: 2, val: 222 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
@@ -2506,7 +2506,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 2, val: 111 })
             .push(Instruction::LoadConst { reg: 2, val: 222 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
@@ -2527,7 +2527,7 @@ mod tests {
             .push(Instruction::LoadConst { reg: 2, val: 111 })
             .push(Instruction::LoadConst { reg: 2, val: 222 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(2), &RegisterValue::U64(222));
@@ -2556,7 +2556,7 @@ mod tests {
             .push(Instruction::Cmp { src1: 1, src2: 3 })
             .push(Instruction::Jnz { target: 4 });
 
-        let mut machine = Machine::new(&engine, program).unwrap();
+        let mut machine = Machine::new(&engine).with_program(program).unwrap();
         machine.run().unwrap();
 
         assert_eq!(machine.registers().get(0), &RegisterValue::U64(55),
@@ -2565,6 +2565,34 @@ mod tests {
             "counter should reach 0");
         assert!(machine.flags().zero,
             "ZF should be set when counter==0");
+    }
+
+
+
+    #[test]
+    fn test_p15_3_machine_boot() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, MachineStatus, RegisterValue};
+
+        let engine = VeritasEngine::new();
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 42 })
+            .push(Instruction::Halt);
+
+        let mut machine = Machine::new(&engine);
+        let image = crate::program::ProgramImage::new(program.instructions.clone());
+        machine.boot(image).unwrap();
+
+        assert_eq!(machine.status(), &MachineStatus::Running);
+        assert_eq!(machine.pc(), 0);
+        assert_eq!(machine.registers().get(0), &RegisterValue::Empty);
+
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(42));
+        assert!(machine.is_halted());
     }
 
 }
