@@ -1,3 +1,5 @@
+use crate::checkpoint::Checkpoint;
+use crate::history::{ExecutionHistory, ReplayRecord};
 use crate::state_memory::StateMemory;
 // Veritas Kernel V0.3 - 事务引擎核心
 // P1: WAL 格式扩展 + Effect 崩溃恢复重试 + tx_id_counter 恢复续接
@@ -37,9 +39,29 @@ pub struct VeritasEngine {
     lock_mgr: Arc<LockManager>,
     controller: TransactionController,
     pub state_memory: std::sync::Mutex<StateMemory>,
+    pub history: std::sync::Mutex<ExecutionHistory>,
 }
 
 impl VeritasEngine {
+    pub fn record_history(&self, tx_id: u64, write_set: &crate::types::WriteSet) {
+        let before = self.state_root();
+        self.apply_state_memory(write_set);
+        let after = self.state_root();
+        if let Ok(mut hist) = self.history.lock() {
+            hist.push(ReplayRecord::new(tx_id, write_set.changes.clone(), before, after));
+        }
+    }
+
+    pub fn create_checkpoint(&self) -> Checkpoint {
+        Checkpoint::new(self.state_memory.lock().unwrap().snapshot())
+    }
+
+    pub fn restore_checkpoint(&self, ck: &Checkpoint) -> bool {
+        if !ck.verify() { return false; }
+        self.state_memory.lock().unwrap().restore(&ck.snapshot);
+        true
+    }
+
     pub fn apply_state_memory(&self, write_set: &crate::types::WriteSet) {
         if let Ok(mut mem) = self.state_memory.lock() {
             for (state_id, payload) in &write_set.changes {
@@ -118,6 +140,7 @@ impl VeritasEngine {
             lock_mgr,
             controller,
             state_memory: std::sync::Mutex::new(StateMemory::new()),
+            history: std::sync::Mutex::new(ExecutionHistory::new()),
         };
 
         if !records.is_empty() {
@@ -419,7 +442,7 @@ impl VeritasEngine {
         }
 
         self.controller.post_commit(ctx.tx_id());
-        self.apply_state_memory(&ctx.write_set);
+        self.record_history(ctx.tx_id(), &ctx.write_set);
 
         Ok(())
     }
@@ -2485,5 +2508,61 @@ mod p17_2_tests {
 
         e.abort(&mut tx, AbortReason::WriteConflict);
         assert_eq!(e.state_root(), root_before);
+    }
+}
+
+#[cfg(test)]
+mod p17_3_tests {
+    use super::*;
+
+    #[test]
+    fn test_checkpoint_verify() {
+        let e = VeritasEngine::new();
+        let mut tx = e.begin();
+        e.write(&mut tx, 0x1000, vec![1, 2, 3]).unwrap();
+        e.commit(&mut tx).unwrap();
+
+        let ck = e.create_checkpoint();
+        assert!(ck.verify());
+
+        let mut bad = ck.clone();
+        bad.state_root = 0xDEAD;
+        assert!(!bad.verify());
+    }
+
+    #[test]
+    fn test_cross_engine_restore() {
+        let ea = VeritasEngine::new();
+        let mut tx = ea.begin();
+        ea.write(&mut tx, 0x2000, vec![10, 20, 30]).unwrap();
+        ea.commit(&mut tx).unwrap();
+
+        let ck = ea.create_checkpoint();
+        let eb = VeritasEngine::new();
+        assert!(eb.restore_checkpoint(&ck));
+        assert_eq!(ea.state_root(), eb.state_root());
+    }
+
+    #[test]
+    fn test_history_replay() {
+        let ea = VeritasEngine::new();
+        for i in 1..=3 {
+            let mut tx = ea.begin();
+            ea.write(&mut tx, i as u64, vec![i as u8; 4]).unwrap();
+            ea.commit(&mut tx).unwrap();
+        }
+
+        let records = ea.history.lock().unwrap().records().to_vec();
+        assert_eq!(records.len(), 3);
+
+        let eb = VeritasEngine::new();
+        for r in &records {
+            let mut tx = eb.begin();
+            for (id, val) in &r.writes {
+                eb.write(&mut tx, *id, val.clone()).unwrap();
+            }
+            eb.commit(&mut tx).unwrap();
+        }
+        assert_eq!(ea.state_root(), eb.state_root());
     }
 }

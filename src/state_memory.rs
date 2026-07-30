@@ -1,4 +1,28 @@
 use std::collections::BTreeMap;
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateSnapshot {
+    pub entries: BTreeMap<StateId, Vec<u8>>,
+    pub root_hash: u64,
+    pub version: u64,
+}
+
+impl StateMemory {
+    pub fn snapshot(&self) -> StateSnapshot {
+        StateSnapshot {
+            entries: self.entries.clone(),
+            root_hash: self.root_hash(),
+            version: self.global_version,
+        }
+    }
+
+    pub fn restore(&mut self, snap: &StateSnapshot) {
+        self.entries = snap.entries.clone();
+        self.global_version = snap.version;
+    }
+}
+
 use crate::types::StateId;
 
 #[derive(Debug, Clone, Default)]
