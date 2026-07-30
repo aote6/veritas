@@ -2326,4 +2326,31 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+
+    // ========== P13.1: RegisterFile + LoadConst 测试 ==========
+
+    #[test]
+    fn test_p13_1_register_file_and_load_const() {
+        use crate::instruction::Instruction;
+        use crate::program::Program;
+        use crate::machine::{Machine, MachineStatus};
+
+        let engine = VeritasEngine::new();
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 42 })
+            .push(Instruction::LoadConst { reg: 1, val: 99 });
+
+        let mut machine = Machine::new(&engine, program).unwrap();
+        assert_eq!(machine.status(), &MachineStatus::Ready);
+
+        machine.step().unwrap();
+        assert_eq!(machine.pc(), 1);
+        assert_eq!(machine.status(), &MachineStatus::Running);
+
+        machine.step().unwrap();
+        assert_eq!(machine.pc(), 2);
+        assert!(machine.is_halted());
+    }
+
 }

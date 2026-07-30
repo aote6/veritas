@@ -3,6 +3,7 @@ use crate::executor::Executor;
 use crate::program::Program;
 use crate::verifier::Verifier;
 use crate::types::{TransactionContext, VeritasError, AbortReason};
+use crate::instruction::Instruction;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MachineStatus {
@@ -12,12 +13,46 @@ pub enum MachineStatus {
     Aborted(AbortReason),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegisterValue {
+    Empty,
+    U64(u64),
+    Bytes(Vec<u8>),
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterFile {
+    regs: [RegisterValue; 8],
+}
+
+impl RegisterFile {
+    pub fn new() -> Self {
+        Self { regs: std::array::from_fn(|_| RegisterValue::Empty) }
+    }
+
+    pub fn get(&self, reg: u8) -> &RegisterValue {
+        &self.regs[(reg as usize) % 8]
+    }
+
+    pub fn set(&mut self, reg: u8, val: RegisterValue) {
+        self.regs[(reg as usize) % 8] = val;
+    }
+
+    pub fn get_u64(&self, reg: u8) -> u64 {
+        match self.get(reg) {
+            RegisterValue::U64(v) => *v,
+            _ => 0,
+        }
+    }
+}
+
 pub struct Machine<'a> {
     engine: &'a VeritasEngine,
     executor: Executor<'a>,
     program: Program,
     pc: usize,
     status: MachineStatus,
+    registers: RegisterFile,
     ctx: TransactionContext,
 }
 
@@ -32,6 +67,7 @@ impl<'a> Machine<'a> {
             program,
             pc: 0,
             status: MachineStatus::Ready,
+            registers: RegisterFile::new(),
             ctx,
         })
     }
@@ -50,6 +86,19 @@ impl<'a> Machine<'a> {
 
         let instruction = self.program.get(self.pc)
             .ok_or_else(|| VeritasError::EngineError("Invalid PC address".into()))?;
+
+        // P13.1: 本地指令直接在 Machine 内部消化
+        match instruction {
+            crate::instruction::Instruction::LoadConst { reg, val } => {
+                self.registers.set(*reg, RegisterValue::U64(*val));
+                self.pc += 1;
+                if self.pc >= self.program.len() {
+                    self.status = MachineStatus::Halted;
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
 
         if let Err(e) = self.executor.execute_instruction(&mut self.ctx, instruction) {
             let reason = match e {

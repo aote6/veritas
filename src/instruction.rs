@@ -12,6 +12,7 @@ pub enum Opcode {
     CapabilityGrant,
     Savepoint,
     RollbackTo,
+    LoadConst,
     Commit,
     Abort,
 }
@@ -27,6 +28,7 @@ pub enum Instruction {
     CapabilityGrant { holder: ObjectId, permission: String, resource: StateId },
     Savepoint { name: String },
     RollbackTo { name: String },
+    LoadConst { reg: u8, val: u64 },
     Commit,
     Abort { reason: AbortReason },
 }
@@ -43,6 +45,7 @@ impl Instruction {
             Instruction::CapabilityGrant { .. } => Opcode::CapabilityGrant,
             Instruction::Savepoint { .. } => Opcode::Savepoint,
             Instruction::RollbackTo { .. } => Opcode::RollbackTo,
+            Instruction::LoadConst { .. } => Opcode::LoadConst,
             Instruction::Commit => Opcode::Commit,
             Instruction::Abort { .. } => Opcode::Abort,
         }

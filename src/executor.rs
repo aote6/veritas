@@ -63,6 +63,7 @@ impl<'a> Executor<'a> {
             Instruction::Commit => {
                 self.engine.commit(ctx)?;
             }
+            Instruction::LoadConst { .. } => { /* handled by Machine locally */ }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
                 return Err(VeritasError::Abort(*reason));
