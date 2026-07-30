@@ -2638,4 +2638,50 @@ mod tests {
         assert_eq!(res, ExecutionResult::CycleLimitReached { cycles: 10 });
     }
 
+
+
+    #[test]
+    fn test_p15_5_binary_boot_normal() {
+        use crate::instruction::Instruction;
+        use crate::program::{Program, ProgramImage};
+        use crate::machine::{Machine, RegisterValue};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 77 })
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(program.instructions);
+        let bytes = image.encode().unwrap();
+
+        machine.boot_bytes(&bytes).unwrap();
+        machine.run().unwrap();
+
+        assert_eq!(machine.registers().get(0), &RegisterValue::U64(77));
+        assert!(machine.is_halted());
+    }
+
+    #[test]
+    fn test_p15_5_binary_boot_rejects_corrupted() {
+        use crate::instruction::Instruction;
+        use crate::program::{Program, ProgramImage};
+        use crate::machine::{Machine, MachineStatus};
+
+        let engine = VeritasEngine::new();
+        let mut machine = Machine::new(&engine);
+
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 99 })
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(program.instructions);
+        let mut bytes = image.encode().unwrap();
+        bytes[20] ^= 0xFF;
+
+        let result = machine.boot_bytes(&bytes);
+        assert!(result.is_err(), "Corrupted image must be rejected");
+        assert_eq!(machine.status(), &MachineStatus::Ready,
+            "Machine must stay Ready after rejected boot");
+    }
+
 }

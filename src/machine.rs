@@ -305,6 +305,12 @@ impl<'a> Machine<'a> {
         Ok(())
     }
 
+
+    pub fn boot_bytes(&mut self, bytes: &[u8]) -> Result<(), VeritasError> {
+        let image = crate::program::ProgramImage::decode(bytes)?;
+        self.boot(image)
+    }
+
     pub fn registers(&self) -> &RegisterFile { &self.registers }
 
     pub fn flags(&self) -> &FlagsRegister { &self.flags }
