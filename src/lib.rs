@@ -116,5 +116,6 @@ pub mod history;
 pub mod replay;
 pub mod trace;
 pub mod execution;
+pub mod event;
 pub mod receipt;
 pub mod replay_verify;

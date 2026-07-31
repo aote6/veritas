@@ -1,4 +1,5 @@
 use crate::trace::{TraceRecorder, InstructionTrace};
+use crate::event::{EventRecorder, ExecutionEvent};
 use crate::instruction::Instruction;
 use crate::types::{WriteSet, StateId};
 use crate::receipt::ExecutionReceipt;
@@ -22,6 +23,7 @@ pub struct ExecutionContext {
     pub program_hash: u64,
     pub input_root: u64,
     pub trace: TraceRecorder,
+    pub events: EventRecorder,
     pub writes: WriteSet,
     pub instruction_count: u64,
     pub stats: ExecutionStatistics,
@@ -34,6 +36,7 @@ impl ExecutionContext {
             program_hash,
             input_root,
             trace: TraceRecorder::new(),
+            events: EventRecorder::new(),
             writes: WriteSet { changes: vec![] },
             instruction_count: 0,
             stats: ExecutionStatistics::default(),
@@ -60,17 +63,27 @@ impl ExecutionContext {
     }
 
     pub fn record_instruction(&mut self, trace: InstructionTrace) {
+        self.events.push(ExecutionEvent::InstructionStart {
+            pc: trace.pc,
+            inst: trace.instruction.clone(),
+        });
+        self.events.push(ExecutionEvent::InstructionEnd {
+            pc: trace.pc,
+            regs_after: trace.registers_after,
+        });
         self.trace.push(trace);
         self.instruction_count += 1;
         self.stats.instructions += 1;
     }
 
     pub fn record_write(&mut self, state_id: StateId, value: Vec<u8>) {
+        self.events.push(ExecutionEvent::StateWrite { state_id, len: value.len() });
         self.writes.push(state_id, value);
         self.stats.writes += 1;
     }
 
-    pub fn record_read(&mut self, _state_id: StateId) {
+    pub fn record_read(&mut self, state_id: StateId) {
+        self.events.push(ExecutionEvent::StateRead { state_id });
         self.stats.reads += 1;
     }
 
