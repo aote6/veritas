@@ -48,9 +48,15 @@ impl VeritasEngine {
     }
 
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+        if ctx.capability_enforced
+            && !ctx.write_set.changes.is_empty()
+            && ctx.capability_id.is_none()
+        {
+            return Err(crate::types::VeritasError::PermissionDenied);
+        }
         let cap_id = match ctx.capability_id {
             Some(id) => id,
-            None => return Ok(()), // 未声明 capability 的事务暂不拦截
+            None => return Ok(()),
         };
 
         let cap_graph = self.capability_graph.lock().unwrap();
@@ -103,7 +109,12 @@ impl VeritasEngine {
     }
 
     pub fn new() -> Self {
-        Self::with_wal_path(WAL_PATH.to_string())
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = format!("wal_{}_{:?}_{}.log", std::process::id(), std::thread::current().id(), n);
+        let _ = std::fs::remove_file(&path);
+        Self::with_wal_path(path)
     }
 
     pub fn with_wal_path(wal_path: String) -> Self {
@@ -2814,6 +2825,7 @@ mod p21_tests {
         let p = Program::new()
             .push(Instruction::LoadConst { reg: 0, val: 100 })
             .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Commit)
             .push(Instruction::Halt);
 
         let image = ProgramImage::new(p.instructions.clone());
@@ -2939,5 +2951,48 @@ mod p23_tests {
         let r1 = exec_with_cap(&p, vec![1, 2]);
         let r2 = exec_with_cap(&p, vec![1, 2]);
         assert_eq!(r1.capability_hash, r2.capability_hash);
+    }
+}
+
+#[cfg(test)]
+mod p23_2_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+
+    #[test]
+    fn test_write_without_capability_rejected() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Commit)
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(p.instructions.clone());
+        let e = VeritasEngine::new();
+        let mut m = Machine::new(&e);
+        m.enable_capability_enforcement();
+        m.boot(image).unwrap();
+        // 不设 capability_ids → write 应该失败
+        let result = m.run();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_with_capability_succeeds() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Commit)
+            .push(Instruction::Halt);
+        let image = ProgramImage::new(p.instructions.clone());
+        let e = VeritasEngine::new();
+        let cap_id = e.capability_graph.lock().unwrap().grant(
+            "WritePermission".into(), 0, 0, 1
+        );
+        let mut m = Machine::new(&e);
+        m.boot(image).unwrap();
+        m.execution.capability_ids = vec![cap_id];
+        assert!(m.run().is_ok());
     }
 }

@@ -219,6 +219,7 @@ pub struct TransactionContext {
     pub pending_deaths: Vec<ObjectId>,
     pub pending_objects: Vec<ObjectId>,
     pub aborted: bool,
+    pub capability_enforced: bool,
 }
 
 impl TransactionContext {
@@ -237,7 +238,12 @@ impl TransactionContext {
             pending_links: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
+            capability_enforced: false,
         }
+    }
+
+    pub fn enforce_capability(&mut self) {
+        self.capability_enforced = true;
     }
 
     pub fn set_aborted(&mut self) {

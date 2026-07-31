@@ -121,6 +121,7 @@ impl<'a> Machine<'a> {
         });
     }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
+    pub fn enable_capability_enforcement(&mut self) { self.ctx.enforce_capability(); }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
     pub fn new(engine: &'a VeritasEngine) -> Self {
@@ -260,6 +261,9 @@ impl<'a> Machine<'a> {
                     RegisterValue::Bytes(b) => b.clone(),
                     RegisterValue::Empty => vec![],
                 };
+                if let Some(&cap_id) = self.execution.capability_ids.first() {
+                    self.ctx.capability_id = Some(cap_id);
+                }
                 self.executor.write_state(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload.clone());
                 self.pc += consumed;
