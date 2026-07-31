@@ -24,7 +24,6 @@ fn bytes_to_u64(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(bytes[..8].try_into().unwrap())
 }
 
-const WAL_PATH: &str = "wal.log";
 
 pub struct VeritasEngine {
     global_version: AtomicU64,
