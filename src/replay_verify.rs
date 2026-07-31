@@ -21,7 +21,7 @@ mod tests {
     fn test_verify_passes_on_match() {
         let r = ExecutionReceipt {
             program_hash: 1, input_root: 2, output_root: 3,
-            trace_hash: 4, write_set_hash: 5, instruction_count: 1,
+            trace_hash: 4, write_set_hash: 5, event_hash: 1, instruction_count: 1, reads: 0, writes: 0,
         };
         assert!(ReplayVerifier::verify(&r, &r).is_ok());
     }
@@ -30,11 +30,11 @@ mod tests {
     fn test_verify_detects_difference() {
         let r1 = ExecutionReceipt {
             program_hash: 1, input_root: 2, output_root: 3,
-            trace_hash: 4, write_set_hash: 5, instruction_count: 1,
+            trace_hash: 4, write_set_hash: 5, event_hash: 1, instruction_count: 1, reads: 0, writes: 0,
         };
         let r2 = ExecutionReceipt {
             program_hash: 9, input_root: 2, output_root: 3,
-            trace_hash: 4, write_set_hash: 5, instruction_count: 1,
+            trace_hash: 4, write_set_hash: 5, event_hash: 1, instruction_count: 1, reads: 0, writes: 0,
         };
         assert!(ReplayVerifier::verify(&r1, &r2).is_err());
     }

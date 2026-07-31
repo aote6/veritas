@@ -425,7 +425,7 @@ impl<'a> Machine<'a> {
     pub fn trace_hash(&self) -> u64 { self.execution.trace.trace_hash() }
 
     pub fn execution_receipt(&self) -> crate::receipt::ExecutionReceipt {
-        self.execution.finalize(self.state_root())
+        crate::receipt::ReceiptBuilder::build(&self.execution, self.state_root())
     }
 
     pub fn state_root(&self) -> u64 { self.engine.state_root() }

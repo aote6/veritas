@@ -2,7 +2,6 @@ use crate::trace::{TraceRecorder, InstructionTrace};
 use crate::event::{EventRecorder, ExecutionEvent};
 use crate::instruction::Instruction;
 use crate::types::{WriteSet, StateId};
-use crate::receipt::ExecutionReceipt;
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionStatistics {
@@ -87,16 +86,7 @@ impl ExecutionContext {
         self.stats.reads += 1;
     }
 
-    pub fn finalize(&self, output_root: u64) -> ExecutionReceipt {
-        ExecutionReceipt {
-            program_hash: self.program_hash,
-            input_root: self.input_root,
-            output_root,
-            trace_hash: self.trace.trace_hash(),
-            write_set_hash: self.writes.hash(),
-            instruction_count: self.instruction_count,
-        }
-    }
+
 }
 
 #[cfg(test)]
@@ -106,7 +96,7 @@ mod tests {
     #[test]
     fn test_context_finalize_produces_receipt() {
         let ctx = ExecutionContext::new(42, 100);
-        let receipt = ctx.finalize(200);
+        let receipt = crate::receipt::ReceiptBuilder::build(&ctx, 200);
         assert_eq!(receipt.program_hash, 42);
         assert_eq!(receipt.input_root, 100);
         assert_eq!(receipt.output_root, 200);
