@@ -22,6 +22,15 @@ impl ExecutionContext {
         }
     }
 
+    pub fn record_instruction(&mut self, trace: crate::trace::InstructionTrace) {
+        self.trace.push(trace);
+        self.instruction_count += 1;
+    }
+
+    pub fn record_write(&mut self, state_id: crate::types::StateId, value: Vec<u8>) {
+        self.writes.push(state_id, value);
+    }
+
     pub fn finalize(&self, output_root: u64) -> ExecutionReceipt {
         ExecutionReceipt {
             program_hash: self.program_hash,

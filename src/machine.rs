@@ -110,8 +110,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
-        self.execution.instruction_count += 1;
-        self.execution.trace.push(crate::trace::InstructionTrace {
+        self.execution.record_instruction(crate::trace::InstructionTrace {
             pc: pc_before,
             opcode: instruction.opcode() as u8,
             instruction: instruction.clone(),
@@ -260,7 +259,7 @@ impl<'a> Machine<'a> {
                     RegisterValue::Empty => vec![],
                 };
                 self.executor.write_state(&mut self.ctx, state_id, payload.clone())?;
-                self.execution.writes.push(state_id, payload.clone());
+                self.execution.record_write(state_id, payload.clone());
                 self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -323,8 +322,7 @@ impl<'a> Machine<'a> {
             self.registers.get_u64(4), self.registers.get_u64(5),
             self.registers.get_u64(6), self.registers.get_u64(7),
         ];
-        self.execution.instruction_count += 1;
-        self.execution.trace.push(crate::trace::InstructionTrace {
+        self.execution.record_instruction(crate::trace::InstructionTrace {
             pc: self.pc.saturating_sub(consumed),
             opcode: instruction.opcode() as u8,
             instruction: instruction.clone(),
