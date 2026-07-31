@@ -2827,3 +2827,69 @@ mod p21_tests {
         assert!(receipt.verify());
     }
 }
+
+#[cfg(test)]
+mod invariants {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+    use crate::replay_verify::ReplayVerifier;
+
+    fn exec(program: &Program) -> crate::receipt::ExecutionReceipt {
+        let image = ProgramImage::new(program.instructions.clone());
+        let e = VeritasEngine::new();
+        let mut m = Machine::new(&e);
+        m.boot(image).unwrap();
+        m.run().unwrap();
+        m.execution_receipt()
+    }
+
+    #[test]
+    fn same_program_same_receipt() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 10 })
+            .push(Instruction::LoadConst { reg: 1, val: 20 })
+            .push(Instruction::Add { dst: 2, src1: 0, src2: 1 })
+            .push(Instruction::Halt);
+        let r1 = exec(&p);
+        let r2 = exec(&p);
+        assert_eq!(r1, r2);
+        ReplayVerifier::verify(&r1, &r2).unwrap();
+    }
+
+    #[test]
+    fn different_programs_different_event_hash() {
+        let p1 = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::Halt);
+        let p2 = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 99 })
+            .push(Instruction::Halt);
+        assert_ne!(exec(&p1).event_hash, exec(&p2).event_hash);
+    }
+
+    #[test]
+    fn tampered_receipt_rejected() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 3 })
+            .push(Instruction::Halt);
+        let r1 = exec(&p);
+        let mut r2 = r1.clone();
+        r2.event_hash = 0xDEAD;
+        assert!(ReplayVerifier::verify(&r1, &r2).is_err());
+    }
+
+    #[test]
+    fn receipt_fields_match_execution() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 42 })
+            .push(Instruction::Halt);
+        let r = exec(&p);
+        assert_eq!(r.program_hash, p.hash());
+        assert_eq!(r.instruction_count, 2);
+        assert_ne!(r.trace_hash, 0);
+        assert_ne!(r.event_hash, 0);
+        assert!(r.verify());
+    }
+}

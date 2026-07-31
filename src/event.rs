@@ -21,8 +21,10 @@ impl ExecutionEvent {
             ExecutionEvent::InstructionStart { pc, inst } => {
                 h ^= *pc as u64;
                 h = h.wrapping_mul(0x100000001b3);
-                h ^= inst.opcode() as u64;
-                h = h.wrapping_mul(0x100000001b3);
+                for b in inst.encode().unwrap_or_default() {
+                    h ^= b as u64;
+                    h = h.wrapping_mul(0x100000001b3);
+                }
             }
             ExecutionEvent::StateWrite { state_id, len } => {
                 h ^= *state_id;

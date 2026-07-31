@@ -383,10 +383,7 @@ impl<'a> Machine<'a> {
         self.registers.reset();
         self.flags.reset();
         self.ram.clear();
-        let prog_hash = image.instructions.iter().fold(0u64, |h, inst| {
-            let bytes = inst.encode().unwrap_or_default();
-            bytes.iter().fold(h, |acc, &b| acc.wrapping_mul(0x100000001b3) ^ (b as u64))
-        });
+        let prog_hash = image.hash();
 
         let mut addr = 0usize;
         for inst in &image.instructions {
