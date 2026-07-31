@@ -2721,21 +2721,10 @@ mod p19_3_tests {
     fn receipt_for(p: &Program) -> ExecutionReceipt {
         let image = ProgramImage::new(p.instructions.clone());
         let e = VeritasEngine::new();
-        let input_root = e.state_root();
         let mut m = Machine::new(&e);
         m.boot(image).unwrap();
         m.run().unwrap();
-        ExecutionReceipt {
-            program_hash: p.hash(),
-            input_root,
-            output_root: e.state_root(),
-            trace_hash: m.trace_hash(),
-            write_set_hash: 0,
-            event_hash: 0,
-            instruction_count: p.instructions.len() as u64,
-            reads: 0,
-            writes: 0,
-        }
+        m.execution_receipt()
     }
 
     #[test]
