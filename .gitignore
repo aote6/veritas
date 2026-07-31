@@ -3,4 +3,5 @@ target/
 *.swp
 *.swo
 .DS_Store
-.gitignore加wal_
+wal_*.log
+wal.log
