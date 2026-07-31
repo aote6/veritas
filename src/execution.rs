@@ -1,7 +1,14 @@
 use crate::trace::{TraceRecorder, InstructionTrace};
 use crate::instruction::Instruction;
-use crate::types::WriteSet;
+use crate::types::{WriteSet, StateId};
 use crate::receipt::ExecutionReceipt;
+
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionStatistics {
+    pub instructions: u64,
+    pub reads: u64,
+    pub writes: u64,
+}
 
 #[derive(Debug, Clone)]
 pub struct PendingInstruction {
@@ -17,6 +24,7 @@ pub struct ExecutionContext {
     pub trace: TraceRecorder,
     pub writes: WriteSet,
     pub instruction_count: u64,
+    pub stats: ExecutionStatistics,
     pending: Option<PendingInstruction>,
 }
 
@@ -28,17 +36,9 @@ impl ExecutionContext {
             trace: TraceRecorder::new(),
             writes: WriteSet { changes: vec![] },
             instruction_count: 0,
+            stats: ExecutionStatistics::default(),
             pending: None,
         }
-    }
-
-    pub fn record_instruction(&mut self, trace: crate::trace::InstructionTrace) {
-        self.trace.push(trace);
-        self.instruction_count += 1;
-    }
-
-    pub fn record_write(&mut self, state_id: crate::types::StateId, value: Vec<u8>) {
-        self.writes.push(state_id, value);
     }
 
     pub fn begin_instruction(&mut self, pc: usize, regs: [u64; 8], inst: Instruction) {
@@ -59,8 +59,19 @@ impl ExecutionContext {
         }
     }
 
-    pub fn record_read(&mut self, _state_id: crate::types::StateId) {
-        // 预留: 记录状态读取
+    pub fn record_instruction(&mut self, trace: InstructionTrace) {
+        self.trace.push(trace);
+        self.instruction_count += 1;
+        self.stats.instructions += 1;
+    }
+
+    pub fn record_write(&mut self, state_id: StateId, value: Vec<u8>) {
+        self.writes.push(state_id, value);
+        self.stats.writes += 1;
+    }
+
+    pub fn record_read(&mut self, _state_id: StateId) {
+        self.stats.reads += 1;
     }
 
     pub fn finalize(&self, output_root: u64) -> ExecutionReceipt {
@@ -87,5 +98,23 @@ mod tests {
         assert_eq!(receipt.input_root, 100);
         assert_eq!(receipt.output_root, 200);
         assert!(receipt.verify());
+    }
+
+    #[test]
+    fn test_stats_count_instructions_and_writes() {
+        let mut ctx = ExecutionContext::new(1, 0);
+        ctx.record_instruction(InstructionTrace {
+            pc: 0, opcode: 1,
+            instruction: Instruction::Nop,
+            registers_before: [0; 8],
+            registers_after: [0; 8],
+            state_reads: vec![],
+            state_writes: vec![],
+        });
+        ctx.record_write(1, vec![1, 2, 3]);
+        ctx.record_read(2);
+        assert_eq!(ctx.stats.instructions, 1);
+        assert_eq!(ctx.stats.writes, 1);
+        assert_eq!(ctx.stats.reads, 1);
     }
 }
