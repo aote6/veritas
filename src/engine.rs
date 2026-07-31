@@ -78,7 +78,7 @@ impl VeritasEngine {
     pub fn record_history(&self, ctx: &crate::types::TransactionContext) {
         let before = self.state_root();
         let write_set = &ctx.write_set;
-        self.apply_state_memory(write_set);
+        self.apply_state_memory(ctx, write_set);
         let after = self.state_root();
         if let Ok(mut hist) = self.history.lock() {
             hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, ctx.program_hash.unwrap_or(0), write_set.changes.clone(), before, after));
@@ -95,10 +95,10 @@ impl VeritasEngine {
         true
     }
 
-    pub fn apply_state_memory(&self, write_set: &crate::types::WriteSet) {
+    pub fn apply_state_memory(&self, ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
         if let Ok(mut mem) = self.state_memory.lock() {
             for (state_id, payload) in &write_set.changes {
-                mem.write(*state_id, payload.clone());
+                mem.write(crate::types::Address::new(ctx.current_object, *state_id), payload.clone());
             }
         }
     }
@@ -167,7 +167,13 @@ impl VeritasEngine {
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
-            state_store: StateStore::from_map(state_map),
+            // 临时占位：WAL目前不记录object_id，恢复的状态统一归属内核Object(0)。
+            // 待WAL格式扩展支持Object寻址后应移除此转换。
+            state_store: StateStore::from_map(
+                state_map.into_iter()
+                    .map(|(sid, entry)| (crate::types::Address::new(0, sid), entry))
+                    .collect()
+            ),
             scope_registry: ScopeRegistry::from_map(scope_map),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
@@ -212,9 +218,12 @@ impl VeritasEngine {
         &self.scope_registry
     }
 
+    /// 注：当前所有非事务上下文的直接状态操作，临时统一归属内核Object(0)。
+    /// 待Object生命周期（OBJECT_BIRTH流程）接管后，此处应改为要求调用方
+    /// 显式提供object_id。这是过渡期的合理默认，非最终语义。
     pub fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
         self.state_store.insert(
-            state_id,
+            crate::types::Address::new(0, state_id),
             StateEntry {
                 value: initial_value,
                 version: 0,
@@ -223,7 +232,7 @@ impl VeritasEngine {
     }
 
     pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
-        self.state_store.read(state_id)
+        self.state_store.read(crate::types::Address::new(0, state_id))
     }
 
     pub fn init_state_in_tx(
@@ -265,7 +274,7 @@ impl VeritasEngine {
 
         let entry = self
             .state_store
-            .read(state_id)
+            .read(crate::types::Address::new(ctx.current_object, state_id))
             .ok_or(VeritasError::EngineError(format!(
                 "State {:?} not found",
                 state_id
@@ -290,7 +299,7 @@ impl VeritasEngine {
         }
 
         if !ctx.read_set.states.contains_key(&state_id) {
-            if let Some(entry) = self.state_store.read(state_id) {
+            if let Some(entry) = self.state_store.read(crate::types::Address::new(ctx.current_object, state_id)) {
                 ctx.read_set.states.insert(state_id, entry.version);
             }
         }
@@ -375,7 +384,7 @@ impl VeritasEngine {
 
         for (state_id, value) in ctx.write_set.iter() {
             self.state_store.insert(
-                *state_id,
+                crate::types::Address::new(ctx.current_object, *state_id),
                 StateEntry {
                     value: value.clone(),
                     version: commit_version,
@@ -613,7 +622,7 @@ impl VeritasEngine {
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
         for (state_id, read_version) in &ctx.read_set.states {
-            if let Some(entry) = self.state_store.read(*state_id) {
+            if let Some(entry) = self.state_store.read(crate::types::Address::new(ctx.current_object, *state_id)) {
                 if entry.version > *read_version {
                     return Err(AbortReason::WriteConflict);
                 }

@@ -21,8 +21,10 @@ impl ReplayEngine {
                     entry.version, rec.before_root, state.root_hash()
                 )));
             }
+            // 临时占位：ReplayRecord目前不记录object_id，统一归属内核Object(0)。
+            // 待ReplayRecord/WAL扩展支持Object寻址后应移除此转换。
             for (id, val) in &rec.writes {
-                state.write(*id, val.clone());
+                state.write(crate::types::Address::new(0, *id), val.clone());
             }
             if rec.after_root != state.root_hash() {
                 return Err(VeritasError::EngineError(format!(
@@ -44,12 +46,12 @@ mod tests {
     #[test]
     fn test_replay_deterministic() {
         let mut state = StateMemory::new();
-        state.write(1, vec![10]);
+        state.write(crate::types::Address::new(0, 1), vec![10]);
         let cp1 = Checkpoint::new(state.snapshot());
 
         let mut history = ExecutionHistory::new();
         let before = state.root_hash();
-        state.write(2, vec![20]);
+        state.write(crate::types::Address::new(0, 2), vec![20]);
         let after = state.root_hash();
         history.push(ReplayRecord::new(1, None, 0, vec![(2, vec![20])], before, after));
 
@@ -61,7 +63,7 @@ mod tests {
     #[test]
     fn test_replay_chain_break_detected() {
         let mut state = StateMemory::new();
-        state.write(1, vec![1]);
+        state.write(crate::types::Address::new(0, 1), vec![1]);
         let cp = Checkpoint::new(state.snapshot());
 
         let mut history = ExecutionHistory::new();
