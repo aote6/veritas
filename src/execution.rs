@@ -1,6 +1,14 @@
-use crate::trace::TraceRecorder;
+use crate::trace::{TraceRecorder, InstructionTrace};
+use crate::instruction::Instruction;
 use crate::types::WriteSet;
 use crate::receipt::ExecutionReceipt;
+
+#[derive(Debug, Clone)]
+pub struct PendingInstruction {
+    pub pc: usize,
+    pub regs_before: [u64; 8],
+    pub instruction: Instruction,
+}
 
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
@@ -9,6 +17,7 @@ pub struct ExecutionContext {
     pub trace: TraceRecorder,
     pub writes: WriteSet,
     pub instruction_count: u64,
+    pending: Option<PendingInstruction>,
 }
 
 impl ExecutionContext {
@@ -19,6 +28,7 @@ impl ExecutionContext {
             trace: TraceRecorder::new(),
             writes: WriteSet { changes: vec![] },
             instruction_count: 0,
+            pending: None,
         }
     }
 
@@ -29,6 +39,28 @@ impl ExecutionContext {
 
     pub fn record_write(&mut self, state_id: crate::types::StateId, value: Vec<u8>) {
         self.writes.push(state_id, value);
+    }
+
+    pub fn begin_instruction(&mut self, pc: usize, regs: [u64; 8], inst: Instruction) {
+        self.pending = Some(PendingInstruction { pc, regs_before: regs, instruction: inst });
+    }
+
+    pub fn finish_instruction(&mut self, regs_after: [u64; 8]) {
+        if let Some(pending) = self.pending.take() {
+            self.record_instruction(InstructionTrace {
+                pc: pending.pc,
+                opcode: pending.instruction.opcode() as u8,
+                instruction: pending.instruction,
+                registers_before: pending.regs_before,
+                registers_after: regs_after,
+                state_reads: vec![],
+                state_writes: vec![],
+            });
+        }
+    }
+
+    pub fn record_read(&mut self, _state_id: crate::types::StateId) {
+        // 预留: 记录状态读取
     }
 
     pub fn finalize(&self, output_root: u64) -> ExecutionReceipt {

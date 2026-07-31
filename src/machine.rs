@@ -189,6 +189,8 @@ impl<'a> Machine<'a> {
             }
         };
 
+        self.execution.begin_instruction(pc_before, regs_before, instruction.clone());
+
         // P13.1: 本地指令直接在 Machine 内部消化
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
