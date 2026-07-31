@@ -2893,3 +2893,51 @@ mod invariants {
         assert!(r.verify());
     }
 }
+
+#[cfg(test)]
+mod p23_tests {
+    use super::*;
+    use crate::instruction::Instruction;
+    use crate::program::{Program, ProgramImage};
+    use crate::machine::Machine;
+
+    fn exec_with_cap(program: &Program, caps: Vec<u64>) -> crate::receipt::ExecutionReceipt {
+        let image = ProgramImage::new(program.instructions.clone());
+        let e = VeritasEngine::new();
+        let mut m = Machine::new(&e);
+        m.boot(image).unwrap();
+        m.execution.capability_ids = caps;
+        m.run().unwrap();
+        m.execution_receipt()
+    }
+
+    #[test]
+    fn test_capability_hash_in_receipt() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::Halt);
+        let r = exec_with_cap(&p, vec![10, 20]);
+        assert_ne!(r.capability_hash, 0);
+        assert!(r.verify());
+    }
+
+    #[test]
+    fn test_different_caps_different_hash() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::Halt);
+        let r1 = exec_with_cap(&p, vec![1]);
+        let r2 = exec_with_cap(&p, vec![99]);
+        assert_ne!(r1.capability_hash, r2.capability_hash);
+    }
+
+    #[test]
+    fn test_same_caps_same_hash() {
+        let p = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::Halt);
+        let r1 = exec_with_cap(&p, vec![1, 2]);
+        let r2 = exec_with_cap(&p, vec![1, 2]);
+        assert_eq!(r1.capability_hash, r2.capability_hash);
+    }
+}
