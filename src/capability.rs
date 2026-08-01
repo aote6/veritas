@@ -169,6 +169,7 @@ impl CapabilityGraph {
             self.purge_subtree_strictly(cap_id, child);
         }
 
+        self.grants.remove(&cap_id);
         self.holders.remove(&(cap_id, node));
         self.edges.retain(|e| !(e.capability_id == cap_id && (e.from == node || e.to == node)));
 

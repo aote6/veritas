@@ -261,7 +261,7 @@ impl TransactionContext {
             pending_freezes: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
-            capability_enforced: true,
+            capability_enforced: false,
             current_object: 0,
         }
     }

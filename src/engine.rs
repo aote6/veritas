@@ -3030,8 +3030,8 @@ mod p23_2_tests {
         m.enable_capability_enforcement();
         m.boot(image).unwrap();
         // 不设 capability_ids → write 应该失败
-        let result = m.run();
-        assert!(result.is_err());
+        let _ = m.run();
+        assert!(matches!(m.status(), crate::machine::MachineStatus::Trapped(crate::types::TrapReason::AccessDenied { .. })));
     }
 
     #[test]
