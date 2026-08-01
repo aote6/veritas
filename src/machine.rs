@@ -463,13 +463,25 @@ impl<'a> Machine<'a> {
         }
 
         if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction) {
-            let reason = match e {
-                VeritasError::Abort(r) => r,
-                _ => AbortReason::WriteConflict,
-            };
-            self.engine.abort(&mut self.ctx, reason);
-            self.status = MachineStatus::Aborted(reason);
-            return Err(e);
+            match e {
+                VeritasError::PermissionDenied => {
+                    self.status = MachineStatus::Trapped(
+                        crate::types::TrapReason::AccessDenied { pc: self.pc }
+                    );
+                    return Ok(());
+                }
+                VeritasError::Abort(r) => {
+                    self.engine.abort(&mut self.ctx, r);
+                    self.status = MachineStatus::Aborted(r);
+                    return Err(VeritasError::Abort(r));
+                }
+                _ => {
+                    let reason = AbortReason::WriteConflict;
+                    self.engine.abort(&mut self.ctx, reason);
+                    self.status = MachineStatus::Aborted(reason);
+                    return Err(e);
+                }
+            }
         }
 
         if matches!(instruction, Instruction::Commit) {

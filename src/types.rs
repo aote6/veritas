@@ -261,7 +261,7 @@ impl TransactionContext {
             pending_freezes: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
-            capability_enforced: false,
+            capability_enforced: true,
             current_object: 0,
         }
     }
@@ -365,6 +365,8 @@ pub enum TrapReason {
     DivisionByZero,
     ArithmeticOverflow,
     IllegalInstruction { opcode: u8 },
+    /// P29: Capability检查失败，硬件级越权拦截
+    AccessDenied { pc: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
