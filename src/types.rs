@@ -95,17 +95,17 @@ pub enum ObjectState {
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelationKind {
-    CapabilityDelegation = 0,
-    ContractDependency = 1,
-    EffectPropagation = 2,
+pub enum LinkType {
+    DependsOn = 0,
+    Owns = 1,
+    References = 2,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkEdge {
     pub from: ObjectId,
     pub to: ObjectId,
-    pub relation: RelationKind,
+    pub link_type: LinkType,
 }
 
 
@@ -230,6 +230,7 @@ pub struct TransactionContext {
     pub effect_queue: EffectQueue,
     pub savepoints: Vec<Savepoint>,
     pub pending_links: Vec<LinkEdge>,
+    pub pending_unlinks: Vec<(ObjectId, ObjectId)>,
     pub pending_deaths: Vec<ObjectId>,
     pub pending_objects: Vec<ObjectId>,
     pub aborted: bool,
@@ -255,6 +256,7 @@ impl TransactionContext {
             savepoints: Vec::new(),
             pending_objects: Vec::new(),
             pending_links: Vec::new(),
+            pending_unlinks: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
             capability_enforced: false,

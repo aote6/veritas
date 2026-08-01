@@ -59,6 +59,9 @@ impl<'a> Executor<'a> {
             Instruction::ObjectLink { from, to, relation } => {
                 self.engine.object_link(ctx, *from, *to, *relation)?;
             }
+            Instruction::ObjectUnlink { from, to } => {
+                self.engine.object_unlink(ctx, *from, *to)?;
+            }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 self.engine.capability_grant(ctx, *holder, permission, *resource)?;
             }

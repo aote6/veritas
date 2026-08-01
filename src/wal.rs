@@ -46,7 +46,7 @@ pub enum WalEntry {
         tx_id: TxId,
         from: ObjectId,
         to: ObjectId,
-        relation_kind: u8,
+        link_type: u8,
     },
     ObjectDeath {
         tx_id: TxId,
@@ -102,9 +102,9 @@ impl WalEntry {
                 format!("OBJECTBIRTH TX={} OBJECT={} END
 ", tx_id, object_id)
             }
-            WalEntry::ObjectLink { tx_id, from, to, relation_kind } => {
+            WalEntry::ObjectLink { tx_id, from, to, link_type } => {
                 format!("OBJECTLINK TX={} FROM={} TO={} KIND={} END
-", tx_id, from, to, relation_kind)
+", tx_id, from, to, link_type)
             }
             WalEntry::ObjectDeath { tx_id, object_id } => {
                 format!("OBJECTDEATH TX={} OBJECT={} END
@@ -265,13 +265,13 @@ impl WalEntry {
             .strip_prefix("TO=")?
             .parse::<ObjectId>()
             .ok()?;
-        let relation_kind = parts
+        let link_type = parts
             .iter()
             .find(|p| p.starts_with("KIND="))?
             .strip_prefix("KIND=")?
             .parse::<u8>()
             .ok()?;
-        Some(WalEntry::ObjectLink { tx_id, from, to, relation_kind })
+        Some(WalEntry::ObjectLink { tx_id, from, to, link_type })
     }
 
     fn deserialize_object_death(parts: &[&str]) -> Option<Self> {

@@ -1,4 +1,4 @@
-use crate::types::{StateId, ObjectId, RelationKind};
+use crate::types::{StateId, ObjectId, LinkType};
 use crate::types::AbortReason;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,6 +9,7 @@ pub enum Opcode {
     ObjectBirth,
     ObjectDeath,
     ObjectLink,
+    ObjectUnlink,
     CapabilityGrant,
     Savepoint,
     RollbackTo,
@@ -38,7 +39,8 @@ pub enum Instruction {
     Effect { payload: Vec<u8> },
     ObjectBirth { object_id: ObjectId },
     ObjectDeath { object_id: ObjectId },
-    ObjectLink { from: ObjectId, to: ObjectId, relation: RelationKind },
+    ObjectLink { from: ObjectId, to: ObjectId, relation: LinkType },
+    ObjectUnlink { from: ObjectId, to: ObjectId },
     CapabilityGrant { holder: ObjectId, permission: String, resource: StateId },
     Savepoint { name: String },
     RollbackTo { name: String },
@@ -74,6 +76,7 @@ impl Instruction {
             Instruction::ObjectBirth { .. } => Opcode::ObjectBirth,
             Instruction::ObjectDeath { .. } => Opcode::ObjectDeath,
             Instruction::ObjectLink { .. } => Opcode::ObjectLink,
+            Instruction::ObjectUnlink { .. } => Opcode::ObjectUnlink,
             Instruction::CapabilityGrant { .. } => Opcode::CapabilityGrant,
             Instruction::Savepoint { .. } => Opcode::Savepoint,
             Instruction::RollbackTo { .. } => Opcode::RollbackTo,

@@ -141,14 +141,14 @@ impl VeritasEngine {
                     recovered_links.retain(|edge| edge.from != *object_id && edge.to != *object_id);
                     recovered_deaths.push(*object_id);
                 }
-                WalEntry::ObjectLink { from, to, relation_kind, .. } => {
-                    let relation = match relation_kind {
-                        0 => RelationKind::CapabilityDelegation,
-                        1 => RelationKind::ContractDependency,
-                        2 => RelationKind::EffectPropagation,
+                WalEntry::ObjectLink { from, to, link_type, .. } => {
+                    let relation = match link_type {
+                        0 => LinkType::DependsOn,
+                        1 => LinkType::Owns,
+                        2 => LinkType::References,
                         _ => continue,
                     };
-                    recovered_links.push(LinkEdge { from: *from, to: *to, relation });
+                    recovered_links.push(LinkEdge { from: *from, to: *to, link_type: relation });
                 }
                 _ => {}
             }
@@ -467,10 +467,10 @@ impl VeritasEngine {
                 tx_id: ctx.tx_id(),
                 from: edge.from,
                 to: edge.to,
-                relation_kind: match edge.relation {
-                    RelationKind::CapabilityDelegation => 0,
-                    RelationKind::ContractDependency => 1,
-                    RelationKind::EffectPropagation => 2,
+                link_type: match edge.link_type {
+                    LinkType::DependsOn => 0,
+                    LinkType::Owns => 1,
+                    LinkType::References => 2,
                 },
             };
             self.wal
@@ -481,6 +481,10 @@ impl VeritasEngine {
             let mut topo = self.topology.lock().unwrap();
             for edge in &ctx.pending_links {
                 topo.push(edge.clone());
+            }
+            // P26: 处理 pending_unlinks
+            for (from, to) in &ctx.pending_unlinks {
+                topo.retain(|e| e.from != *from || e.to != *to);
             }
         }
 
@@ -568,7 +572,7 @@ impl VeritasEngine {
         ctx: &mut TransactionContext,
         from: ObjectId,
         to: ObjectId,
-        relation: RelationKind,
+        relation: LinkType,
     ) -> Result<(), VeritasError> {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
@@ -598,7 +602,22 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
-        ctx.pending_links.push(LinkEdge { from, to, relation });
+        ctx.pending_links.push(LinkEdge { from, to, link_type: relation });
+        Ok(())
+    }
+
+    /// P26: OBJECT_UNLINK - 移除Object间的Link
+    pub fn object_unlink(
+        &self,
+        ctx: &mut TransactionContext,
+        from: ObjectId,
+        to: ObjectId,
+    ) -> Result<(), VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+        // 标记Link待删除，Commit时生效
+        ctx.pending_unlinks.push((from, to));
         Ok(())
     }
 
@@ -1553,20 +1572,20 @@ mod tests {
 
         // 测试1: commit 后 Link 存在
         let mut tx2 = engine.begin();
-        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation).unwrap();
+        engine.object_link(&mut tx2, obj_a, obj_b, LinkType::DependsOn).unwrap();
         engine.commit(&mut tx2).unwrap();
 
         let topo = engine.topology.lock().unwrap();
         assert_eq!(topo.len(), 1, "拓扑应包含1条边");
         assert_eq!(topo[0].from, obj_a);
         assert_eq!(topo[0].to, obj_b);
-        assert_eq!(topo[0].relation, RelationKind::CapabilityDelegation);
+        assert_eq!(topo[0].link_type, LinkType::DependsOn);
         drop(topo);
 
         // 测试2: 连接不存在的 Object 应报错
         let mut tx3 = engine.begin();
         let obj_c: ObjectId = 999;
-        let result = engine.object_link(&mut tx3, obj_a, obj_c, RelationKind::ContractDependency);
+        let result = engine.object_link(&mut tx3, obj_a, obj_c, LinkType::DependsOn);
         assert!(result.is_err(), "连接不存在的 Object 应报错");
         engine.abort(&mut tx3, AbortReason::WriteConflict);
 
@@ -1574,7 +1593,7 @@ mod tests {
         let mut tx4 = engine.begin();
         let obj_d: ObjectId = 203;
         engine.object_birth(&mut tx4, obj_d).unwrap();
-        engine.object_link(&mut tx4, obj_a, obj_d, RelationKind::EffectPropagation).unwrap();
+        engine.object_link(&mut tx4, obj_a, obj_d, LinkType::References).unwrap();
         engine.abort(&mut tx4, AbortReason::WriteConflict);
 
         let topo2 = engine.topology.lock().unwrap();
@@ -1598,7 +1617,7 @@ mod tests {
 
         // 2. 事务2：建立 Link
         let mut tx2 = engine.begin();
-        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation)
+        engine.object_link(&mut tx2, obj_a, obj_b, LinkType::DependsOn)
             .expect("Link A->B failed");
         engine.commit(&mut tx2).expect("Commit tx2 failed");
 
@@ -1612,7 +1631,7 @@ mod tests {
         assert_eq!(topo.len(), 1, "拓扑应有1条边");
         assert_eq!(topo[0].from, obj_a);
         assert_eq!(topo[0].to, obj_b);
-        assert_eq!(topo[0].relation, RelationKind::CapabilityDelegation);
+        assert_eq!(topo[0].link_type, LinkType::DependsOn);
         drop(topo);
     }
 
@@ -1629,7 +1648,7 @@ mod tests {
 
         engine.object_birth(&mut tx, obj_a).unwrap();
         engine.object_birth(&mut tx, obj_b).unwrap();
-        let link_res = engine.object_link(&mut tx, obj_a, obj_b, RelationKind::CapabilityDelegation);
+        let link_res = engine.object_link(&mut tx, obj_a, obj_b, LinkType::DependsOn);
         assert!(link_res.is_ok(), "same-tx birth+link should succeed");
         engine.commit(&mut tx).unwrap();
 
@@ -1650,7 +1669,7 @@ mod tests {
         engine.commit(&mut tx).unwrap();
 
         let mut tx2 = engine.begin();
-        let result = engine.object_link(&mut tx2, obj_a, obj_a, RelationKind::ContractDependency);
+        let result = engine.object_link(&mut tx2, obj_a, obj_a, LinkType::DependsOn);
         assert!(result.is_err(), "self-link A->A must be rejected");
     }
 
@@ -1664,11 +1683,11 @@ mod tests {
         let obj_b: ObjectId = 305;
         engine.object_birth(&mut tx, obj_a).unwrap();
         engine.object_birth(&mut tx, obj_b).unwrap();
-        engine.object_link(&mut tx, obj_a, obj_b, RelationKind::CapabilityDelegation).unwrap();
+        engine.object_link(&mut tx, obj_a, obj_b, LinkType::DependsOn).unwrap();
         engine.commit(&mut tx).unwrap();
 
         let mut tx2 = engine.begin();
-        let res = engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::CapabilityDelegation);
+        let res = engine.object_link(&mut tx2, obj_a, obj_b, LinkType::DependsOn);
         // 当前语义：重复 Link 报错（已存在）
         // 如果未来改为幂等，这里改成 assert!(res.is_ok())
         println!("[P7.5] duplicate link result: {:?}", res);
@@ -1690,7 +1709,7 @@ mod tests {
 
         let mut tx2 = engine.begin();
         engine.savepoint(&mut tx2, "sp1").unwrap();
-        engine.object_link(&mut tx2, obj_a, obj_b, RelationKind::EffectPropagation).unwrap();
+        engine.object_link(&mut tx2, obj_a, obj_b, LinkType::References).unwrap();
 
         // rollback_to 后验证
         engine.rollback_to(&mut tx2, "sp1").unwrap();
@@ -1715,7 +1734,7 @@ mod tests {
             let mut tx = engine1.begin();
             engine1.object_birth(&mut tx, obj_a).unwrap();
             engine1.object_birth(&mut tx, obj_b).unwrap();
-            engine1.object_link(&mut tx, obj_a, obj_b, RelationKind::ContractDependency).unwrap();
+            engine1.object_link(&mut tx, obj_a, obj_b, LinkType::DependsOn).unwrap();
             engine1.commit(&mut tx).unwrap();
         }
 
@@ -1731,7 +1750,7 @@ mod tests {
         assert_eq!(topo.len(), 1, "WAL replay: topology should have 1 edge");
         assert_eq!(topo[0].from, obj_a);
         assert_eq!(topo[0].to, obj_b);
-        assert_eq!(topo[0].relation, RelationKind::ContractDependency);
+        assert_eq!(topo[0].link_type, LinkType::DependsOn);
         drop(topo);
 
         let _ = std::fs::remove_file(wal_path);
@@ -1862,7 +1881,7 @@ mod tests {
         let mut tx = engine.begin();
         engine.object_birth(&mut tx, a).unwrap();
         engine.object_birth(&mut tx, b).unwrap();
-        engine.object_link(&mut tx, a, b, RelationKind::CapabilityDelegation).unwrap();
+        engine.object_link(&mut tx, a, b, LinkType::DependsOn).unwrap();
         engine.commit(&mut tx).unwrap();
 
         // 死亡 A，A->B 的边应被清理
@@ -1888,7 +1907,7 @@ mod tests {
         let mut tx = engine.begin();
         engine.object_birth(&mut tx, a).unwrap();
         engine.object_birth(&mut tx, b).unwrap();
-        engine.object_link(&mut tx, a, b, RelationKind::ContractDependency).unwrap();
+        engine.object_link(&mut tx, a, b, LinkType::DependsOn).unwrap();
         engine.commit(&mut tx).unwrap();
 
         // 死亡 B，A->B 的边应被清理
@@ -1923,13 +1942,13 @@ mod tests {
 
         // 尝试连接死 A 到 B
         let mut tx3 = engine.begin();
-        let result = engine.object_link(&mut tx3, a, b, RelationKind::EffectPropagation);
+        let result = engine.object_link(&mut tx3, a, b, LinkType::References);
         assert!(result.is_err(), "连接已死 Object 应报错");
         engine.abort(&mut tx3, AbortReason::WriteConflict);
 
         // 尝试连接 B 到死 A
         let mut tx4 = engine.begin();
-        let result2 = engine.object_link(&mut tx4, b, a, RelationKind::EffectPropagation);
+        let result2 = engine.object_link(&mut tx4, b, a, LinkType::References);
         assert!(result2.is_err(), "连接到已死 Object 应报错");
         engine.abort(&mut tx4, AbortReason::WriteConflict);
 
@@ -1948,7 +1967,7 @@ mod tests {
             let mut tx = engine1.begin();
             engine1.object_birth(&mut tx, a).unwrap();
             engine1.object_birth(&mut tx, b).unwrap();
-            engine1.object_link(&mut tx, a, b, RelationKind::CapabilityDelegation).unwrap();
+            engine1.object_link(&mut tx, a, b, LinkType::DependsOn).unwrap();
             engine1.commit(&mut tx).unwrap();
             let mut tx2 = engine1.begin();
             engine1.object_death(&mut tx2, a).unwrap();

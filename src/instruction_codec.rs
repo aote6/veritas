@@ -25,6 +25,7 @@ pub mod opcodes {
     pub const OBJECT_BIRTH: u8 = 0x33;
     pub const OBJECT_DEATH: u8 = 0x34;
     pub const OBJECT_LINK: u8 = 0x35;
+    pub const OBJECT_UNLINK: u8 = 0x39;
     pub const CAPABILITY_GRANT: u8 = 0x36;
     pub const SAVEPOINT: u8 = 0x37;
     pub const ROLLBACK_TO: u8 = 0x38;
@@ -122,6 +123,11 @@ impl Instruction {
                 buf.extend_from_slice(&from.to_le_bytes());
                 buf.extend_from_slice(&to.to_le_bytes());
                 buf.push(*relation as u8);
+            }
+            Instruction::ObjectUnlink { from, to } => {
+                buf.push(opcodes::OBJECT_UNLINK);
+                buf.extend_from_slice(&from.to_le_bytes());
+                buf.extend_from_slice(&to.to_le_bytes());
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 buf.push(opcodes::CAPABILITY_GRANT);
@@ -288,6 +294,13 @@ impl Instruction {
                 let rel = bytes[pos+16];
                 pos += 17;
                 Instruction::ObjectLink { from, to, relation: unsafe { std::mem::transmute(rel) } }
+            }
+            opcodes::OBJECT_UNLINK => {
+                check!(16);
+                let from = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                let to = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap());
+                pos += 16;
+                Instruction::ObjectUnlink { from, to }
             }
             opcodes::CAPABILITY_GRANT => {
                 check!(16);
