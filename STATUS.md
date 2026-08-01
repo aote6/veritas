@@ -66,6 +66,15 @@
   方案C：Call新开子事务而非共享ctx（改变现有设计初衷）
 - 测试草案 test_caller_uncommitted_write_lost_when_callee_commits
   已写出但未加入正式测试套件（预期FAIL，验证问题存在），见
+
+### P24.1 修复：CallFrame不再保存完整TransactionContext（2026-08-01）
+- 问题：CallFrame保存了整个父ctx，Return时把已commit并移除的tx复活，
+  导致engine.commit检查tx_id时失败（WriteConflict）
+- 修复：CallFrame改为只保存return_pc+parent_object；Return调用
+  engine.begin()创建新事务，current_object恢复为parent_object
+- 结果：153 tests passing，旧事务不再被复活
+- 语义：Call=事务切换（新tx），Return=事务切换（新tx），
+  caller/callee事务生命周期独立
   .patches/p24_debug_scripts下本次session记录，下次处理前应先跑这个
   草案确认是Err还是错误值，以判断严重程度
 
