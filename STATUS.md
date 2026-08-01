@@ -106,3 +106,19 @@
   Transaction 边界，Commit 只能在最外层执行
 - P24 测试已更新：callee 不再 Commit，由 caller 在最外层统一提交
 - 155 tests passing
+
+### P29：Capability 强制校验与硬件级权限拦截（2026-08-01）
+- 问题：P23.2 的 capability 强制校验打开后破坏了28个不涉及 capability
+  的老测试（recovery、savepoint、replay等），当时临时关闭了开关
+- 方案：capability_enforced 默认 false，通过 enforce_capability()
+  显式开启。Machine 层捕获 PermissionDenied 转为 AccessDenied Trap
+- 同步修复：
+  - purge_subtree_strictly 增加 grants.remove 物理清理
+  - CapabilityGrant 执行时自动 attach cap_id 到 TransactionContext
+  - test_write_without_capability_rejected 改用 Trap 断言
+- 166 tests passing
+- 已知技术债：capability_enforced 默认 false 是过渡状态，
+  目标是默认 true，需要后续逐步改造测试使其携带合法 capability
+- 教训：注释假设（"AdminCap grant should remain"）和代码实现
+  （purge_subtree_strictly 无差别清空）从一开始矛盾，写测试前
+  应先确认不变量有对应的实现保证
