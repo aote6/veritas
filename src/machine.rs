@@ -391,6 +391,13 @@ impl<'a> Machine<'a> {
             _ => {}
         }
 
+        // 宪法transaction.md第3节：Transaction不可嵌套。
+        // CALL/RETURN不改变Transaction边界，Commit只能在最外层执行。
+        if matches!(instruction, Instruction::Commit) && !self.call_stack.is_empty() {
+            self.status = MachineStatus::Aborted(AbortReason::WriteConflict);
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
         if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction) {
             let reason = match e {
                 VeritasError::Abort(r) => r,

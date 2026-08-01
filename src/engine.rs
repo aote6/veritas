@@ -3031,10 +3031,11 @@ mod p24_object_isolation_tests {
 
     #[test]
     fn test_call_switches_current_object_and_isolates_memory() {
+        // callee只写数据然后Return，不在嵌套调用内Commit
+        // 宪法transaction.md：Transaction不可嵌套，Commit只能在最外层
         let callee_program = Program::new()
             .push(Instruction::LoadConst { reg: 0, val: 200 })
             .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
-            .push(Instruction::Commit)
             .push(Instruction::Return);
 
         let mut callee_len = 0usize;
