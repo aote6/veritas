@@ -111,25 +111,25 @@ pub struct LinkEdge {
 
 #[derive(Debug, Clone, Default)]
 pub struct ReadSet {
-    pub states: HashMap<StateId, Version>,
+    pub states: HashMap<Address, Version>,
     pub scopes: HashMap<ScopeId, Version>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteSet {
     /// 按写入顺序存储，支持回滚到任意 savepoint
-    pub changes: Vec<(StateId, Vec<u8>)>,
+    pub changes: Vec<(Address, Vec<u8>)>,
 }
 
 impl WriteSet {
-    pub fn push(&mut self, state_id: StateId, value: Vec<u8>) {
-        self.changes.push((state_id, value));
+    pub fn push(&mut self, addr: Address, value: Vec<u8>) {
+        self.changes.push((addr, value));
     }
 
     pub fn hash(&self) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
-        for (id, data) in &self.changes {
-            h ^= id;
+        for (addr, data) in &self.changes {
+            h ^= addr.state_id;
             h = h.wrapping_mul(0x100000001b3);
             for &b in data {
                 h ^= b as u64;
@@ -139,16 +139,16 @@ impl WriteSet {
         h
     }
 
-    pub fn get_latest(&self, state_id: StateId) -> Option<&Vec<u8>> {
+    pub fn get_latest(&self, addr: Address) -> Option<&Vec<u8>> {
         self.changes
             .iter()
             .rev()
-            .find(|(id, _)| *id == state_id)
+            .find(|(a, _)| *a == addr)
             .map(|(_, val)| val)
     }
 
-    pub fn contains_key(&self, state_id: StateId) -> bool {
-        self.changes.iter().any(|(id, _)| *id == state_id)
+    pub fn contains_key(&self, addr: Address) -> bool {
+        self.changes.iter().any(|(a, _)| *a == addr)
     }
 
     pub fn len(&self) -> usize {
@@ -163,19 +163,19 @@ impl WriteSet {
         self.changes.truncate(len);
     }
 
-    pub fn keys(&self) -> Vec<StateId> {
+    pub fn keys(&self) -> Vec<Address> {
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();
-        for (id, _) in &self.changes {
-            if !seen.contains(id) {
-                seen.insert(*id);
-                result.push(*id);
+        for (addr, _) in &self.changes {
+            if !seen.contains(addr) {
+                seen.insert(*addr);
+                result.push(*addr);
             }
         }
         result
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, (StateId, Vec<u8>)> {
+    pub fn iter(&self) -> std::slice::Iter<'_, (Address, Vec<u8>)> {
         self.changes.iter()
     }
 }

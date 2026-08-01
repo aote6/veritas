@@ -65,8 +65,8 @@ impl VeritasEngine {
 
         // 验证 write_set 中每个 state_id 都在 capability 的 resource 范围内
         if let Some(info) = cap_graph.info(cap_id) {
-            for (state_id, _) in &ctx.write_set.changes {
-                if *state_id != info.resource {
+            for (addr, _) in &ctx.write_set.changes {
+                if addr.state_id != info.resource {
                     return Err(crate::types::VeritasError::PermissionDenied);
                 }
             }
@@ -81,7 +81,8 @@ impl VeritasEngine {
         self.apply_state_memory(ctx, write_set);
         let after = self.state_root();
         if let Ok(mut hist) = self.history.lock() {
-            hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, ctx.program_hash.unwrap_or(0), write_set.changes.clone(), before, after));
+            let writes_for_record: Vec<(crate::types::StateId, Vec<u8>)> = write_set.changes.iter().map(|(addr, val)| (addr.state_id, val.clone())).collect();
+        hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capability_id, ctx.program_hash.unwrap_or(0), writes_for_record, before, after));
         }
     }
 
@@ -97,8 +98,8 @@ impl VeritasEngine {
 
     pub fn apply_state_memory(&self, ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
         if let Ok(mut mem) = self.state_memory.lock() {
-            for (state_id, payload) in &write_set.changes {
-                mem.write(crate::types::Address::new(ctx.current_object, *state_id), payload.clone());
+            for (addr, payload) in &write_set.changes {
+                mem.write(*addr, payload.clone());
             }
         }
     }
@@ -241,7 +242,8 @@ impl VeritasEngine {
         state_id: StateId,
         value: Vec<u8>,
     ) {
-        ctx.write_set.push(state_id, value);
+        let addr = crate::types::Address::new(ctx.current_object, state_id);
+        ctx.write_set.push(addr, value);
     }
 
     #[cfg(test)]
@@ -259,16 +261,24 @@ impl VeritasEngine {
         self.controller.begin(snapshot_version)
     }
 
+
+    pub fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
+        let mut ctx = self.begin();
+        ctx.enter_object(object_id);
+        ctx
+    }
     pub fn read(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
     ) -> Result<Vec<u8>, VeritasError> {
+        let addr = crate::types::Address::new(ctx.current_object, state_id);
+        let addr = crate::types::Address::new(ctx.current_object, state_id);
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        if let Some(written_value) = ctx.write_set.get_latest(state_id) {
+        if let Some(written_value) = ctx.write_set.get_latest(addr) {
             return Ok(written_value.clone());
         }
 
@@ -284,7 +294,7 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::ReadFutureVersion));
         }
 
-        ctx.read_set.states.insert(state_id, entry.version);
+        ctx.read_set.states.insert(addr, entry.version);
         Ok(entry.value.clone())
     }
 
@@ -294,17 +304,19 @@ impl VeritasEngine {
         state_id: StateId,
         value: Vec<u8>,
     ) -> Result<(), VeritasError> {
+        let addr = crate::types::Address::new(ctx.current_object, state_id);
+        let addr = crate::types::Address::new(ctx.current_object, state_id);
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        if !ctx.read_set.states.contains_key(&state_id) {
+        if !ctx.read_set.states.contains_key(&addr) {
             if let Some(entry) = self.state_store.read(crate::types::Address::new(ctx.current_object, state_id)) {
-                ctx.read_set.states.insert(state_id, entry.version);
+                ctx.read_set.states.insert(addr, entry.version);
             }
         }
 
-        ctx.write_set.push(state_id, value);
+        ctx.write_set.push(addr, value);
         Ok(())
     }
 
@@ -337,8 +349,8 @@ impl VeritasEngine {
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
         let mut writes_map = HashMap::new();
-        for (state_id, value) in ctx.write_set.iter() {
-            writes_map.insert(*state_id, value.clone());
+        for (addr, value) in ctx.write_set.iter() {
+            writes_map.insert(addr.state_id, value.clone());
         }
 
         let wal_scope_changes: Vec<WalScopeChange> = ctx
@@ -382,9 +394,9 @@ impl VeritasEngine {
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectBirth write failed: {}", e)))?;
         }
 
-        for (state_id, value) in ctx.write_set.iter() {
+        for (addr, value) in ctx.write_set.iter() {
             self.state_store.insert(
-                crate::types::Address::new(ctx.current_object, *state_id),
+                *addr,
                 StateEntry {
                     value: value.clone(),
                     version: commit_version,
@@ -621,8 +633,8 @@ impl VeritasEngine {
     }
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
-        for (state_id, read_version) in &ctx.read_set.states {
-            if let Some(entry) = self.state_store.read(crate::types::Address::new(ctx.current_object, *state_id)) {
+        for (addr, read_version) in &ctx.read_set.states {
+            if let Some(entry) = self.state_store.read(*addr) {
                 if entry.version > *read_version {
                     return Err(AbortReason::WriteConflict);
                 }
@@ -3002,5 +3014,86 @@ mod p23_2_tests {
         m.boot(image).unwrap();
         m.execution.capability_ids = vec![cap_id];
         assert!(m.run().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod p24_object_isolation_tests {
+    use super::*;
+    use crate::program::{Program, ProgramImage};
+    use crate::instruction::Instruction;
+    use crate::machine::Machine;
+    use crate::types::{VeritasError, AbortReason};
+
+    fn bytes_to_u64(bytes: &[u8]) -> u64 {
+        u64::from_le_bytes(bytes[..8].try_into().unwrap())
+    }
+
+    #[test]
+    fn test_call_switches_current_object_and_isolates_memory() {
+        let callee_program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 200 })
+            .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Commit)
+            .push(Instruction::Return);
+
+        let mut callee_len = 0usize;
+        for inst in &callee_program.instructions {
+            callee_len += inst.encode().unwrap().len();
+        }
+
+        let caller_program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::WriteRegister { state_id: 1, reg: 0 })
+            .push(Instruction::Commit);
+
+        let mut caller_len = 0usize;
+        for inst in &caller_program.instructions {
+            caller_len += inst.encode().unwrap().len();
+        }
+        // 先算出Call指令本身的编码长度（用占位entry_pc=0，因为Call是定长编码，
+        // entry_pc数值大小不影响编码长度，这个假设需要成立，否则要用最终值重算）
+        let call_len = Instruction::Call { object_id: 2, entry_pc: 0 }.encode().unwrap().len();
+
+        // caller调用后的收尾指令（写999并commit，然后halt）
+        let after_call_instructions = vec![
+            Instruction::LoadConst { reg: 1, val: 999 },
+            Instruction::WriteRegister { state_id: 1, reg: 1 },
+            Instruction::Commit,
+            Instruction::Halt,
+        ];
+        let after_call_len: usize = after_call_instructions.iter()
+            .map(|i| i.encode().unwrap().len())
+            .sum();
+
+        // callee真正的入口 = caller长度 + Call指令长度 + 收尾指令长度
+        let callee_entry_pc = caller_len + call_len + after_call_len;
+
+        let mut full = caller_program.instructions.clone();
+        full.push(Instruction::Call { object_id: 2, entry_pc: callee_entry_pc });
+        for inst in &after_call_instructions {
+            full.push(inst.clone());
+        }
+        for inst in &callee_program.instructions {
+            full.push(inst.clone());
+        }
+
+        let image = ProgramImage::new(full);
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+
+        assert_eq!(m.current_object(), 0, "Start at Object 0");
+
+        let result = m.run();
+        assert!(result.is_ok(), "Program should Halt: {:?}", result);
+
+        let mut ctx_a = engine.begin();
+        let val_a = engine.read(&mut ctx_a, 1).unwrap();
+        assert_eq!(bytes_to_u64(&val_a), 999, "Object 0 state_id=1 should be 999");
+
+        let mut ctx_b = engine.begin_in_object(2);
+        let val_b = engine.read(&mut ctx_b, 1).unwrap();
+        assert_eq!(bytes_to_u64(&val_b), 200, "Object 2 state_id=1 should be 200, isolated from Object 0");
     }
 }

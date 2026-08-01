@@ -28,6 +28,8 @@ pub mod opcodes {
     pub const CAPABILITY_GRANT: u8 = 0x36;
     pub const SAVEPOINT: u8 = 0x37;
     pub const ROLLBACK_TO: u8 = 0x38;
+    pub const CALL: u8 = 0x39;
+    pub const RETURN: u8 = 0x3A;
 }
 
 impl Instruction {
@@ -85,6 +87,12 @@ impl Instruction {
             }
             Instruction::Commit => buf.push(opcodes::COMMIT),
             Instruction::Abort { .. } => buf.push(opcodes::ABORT),
+            Instruction::Call { object_id, entry_pc } => {
+                buf.push(opcodes::CALL);
+                buf.extend_from_slice(&object_id.to_le_bytes());
+                buf.extend_from_slice(&(*entry_pc as u64).to_le_bytes());
+            }
+            Instruction::Return => buf.push(opcodes::RETURN),
             Instruction::Halt => buf.push(opcodes::HALT),
             Instruction::Read { state_id } => {
                 buf.push(opcodes::READ);
@@ -198,6 +206,14 @@ impl Instruction {
                 pos += 8;
                 Instruction::Jnz { target: t }
             }
+            opcodes::CALL => {
+                check!(16);
+                let object_id = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                let entry_pc = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap()) as usize;
+                pos += 16;
+                Instruction::Call { object_id, entry_pc }
+            }
+            opcodes::RETURN => Instruction::Return,
             opcodes::JN => {
                 check!(8);
                 let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;

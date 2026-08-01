@@ -1,3 +1,4 @@
+use crate::ObjectId;
 use crate::engine::VeritasEngine;
 use crate::executor::Executor;
 use crate::program::Program;
@@ -100,6 +101,7 @@ pub struct Machine<'a> {
     ctx: TransactionContext,
     trap_frame: Option<crate::types::TrapFrame>,
     pub execution: crate::execution::ExecutionContext,
+    call_stack: Vec<(usize, ObjectId)>,
 }
 
 impl<'a> Machine<'a> {
@@ -122,6 +124,7 @@ impl<'a> Machine<'a> {
     }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
     pub fn enable_capability_enforcement(&mut self) { self.ctx.enforce_capability(); }
+    pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
     pub fn new(engine: &'a VeritasEngine) -> Self {
@@ -139,6 +142,7 @@ impl<'a> Machine<'a> {
             ctx,
             trap_frame: None,
             execution: crate::execution::ExecutionContext::new(0, 0),
+            call_stack: Vec::new(),
         }
     }
 
@@ -306,6 +310,29 @@ impl<'a> Machine<'a> {
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
+            Instruction::Call { object_id, entry_pc } => {
+                let return_pc = self.pc + consumed;
+                let saved_object = self.ctx.current_object;
+                self.call_stack.push((return_pc, saved_object));
+                self.ctx.current_object = object_id;
+                self.pc = entry_pc;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Return => {
+                match self.call_stack.pop() {
+                    Some((return_pc, saved_object)) => {
+                        self.pc = return_pc;
+                        self.ctx.current_object = saved_object;
+                    }
+                    None => {
+                        self.status = MachineStatus::Halted;
+                        return Ok(());
+                    }
+                }
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
             _ => {}
         }
 
@@ -317,6 +344,12 @@ impl<'a> Machine<'a> {
             self.engine.abort(&mut self.ctx, reason);
             self.status = MachineStatus::Aborted(reason);
             return Err(e);
+        }
+
+        if matches!(instruction, Instruction::Commit) {
+            let current_object = self.ctx.current_object;
+            self.ctx = self.engine.begin();
+            self.ctx.current_object = current_object;
         }
 
         self.pc += consumed;

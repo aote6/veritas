@@ -27,6 +27,8 @@ pub enum Opcode {
     Jn,
     Commit,
     Abort,
+    Call,
+    Return,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +42,12 @@ pub enum Instruction {
     CapabilityGrant { holder: ObjectId, permission: String, resource: StateId },
     Savepoint { name: String },
     RollbackTo { name: String },
+    /// 切换当前执行上下文到目标Object，跳转到entry_pc继续执行。
+    /// 对应module.md第6节"跨Module调用"设计的最小可用实现：
+    /// 暂不涉及独立代码空间，仅切换current_object + 维护调用栈。
+    Call { object_id: ObjectId, entry_pc: usize },
+    /// 从Call返回：恢复调用前的current_object和pc。
+    Return,
     Nop,
     LoadConst { reg: u8, val: u64 },
     Add { dst: u8, src1: u8, src2: u8 },
@@ -84,6 +92,8 @@ impl Instruction {
             Instruction::Jn { .. } => Opcode::Jn,
             Instruction::Commit => Opcode::Commit,
             Instruction::Abort { .. } => Opcode::Abort,
+            Instruction::Call { .. } => Opcode::Call,
+            Instruction::Return => Opcode::Return,
         }
     }
 }

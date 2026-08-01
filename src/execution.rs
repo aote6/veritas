@@ -1,7 +1,7 @@
 use crate::trace::{TraceRecorder, InstructionTrace};
 use crate::event::{EventRecorder, ExecutionEvent};
 use crate::instruction::Instruction;
-use crate::types::{WriteSet, StateId};
+use crate::types::{WriteSet, StateId, Address};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionStatistics {
@@ -79,7 +79,8 @@ impl ExecutionContext {
 
     pub fn record_write(&mut self, state_id: StateId, value: Vec<u8>) {
         self.events.push(ExecutionEvent::StateWrite { state_id, len: value.len() });
-        self.writes.push(state_id, value);
+        let addr = crate::types::Address::new(0, state_id);
+        self.writes.push(addr, value);
         self.stats.writes += 1;
     }
 
