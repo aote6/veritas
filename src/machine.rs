@@ -89,6 +89,12 @@ pub enum ExecutionResult {
     Aborted(String),
 }
 
+#[derive(Debug)]
+struct CallFrame {
+    return_pc: usize,
+    parent_object: ObjectId,
+}
+
 pub struct Machine<'a> {
     engine: &'a VeritasEngine,
     executor: Executor<'a>,
@@ -101,7 +107,7 @@ pub struct Machine<'a> {
     ctx: TransactionContext,
     trap_frame: Option<crate::types::TrapFrame>,
     pub execution: crate::execution::ExecutionContext,
-    call_stack: Vec<(usize, ObjectId)>,
+    call_stack: Vec<CallFrame>,
 }
 
 impl<'a> Machine<'a> {
@@ -311,9 +317,12 @@ impl<'a> Machine<'a> {
                 return Ok(());
             }
             Instruction::Call { object_id, entry_pc } => {
-                let return_pc = self.pc + consumed;
-                let saved_object = self.ctx.current_object;
-                self.call_stack.push((return_pc, saved_object));
+                let frame = CallFrame {
+                    return_pc: self.pc + consumed,
+                    parent_object: self.ctx.current_object,
+                };
+                self.call_stack.push(frame);
+                self.ctx = self.engine.begin();
                 self.ctx.current_object = object_id;
                 self.pc = entry_pc;
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
@@ -321,9 +330,10 @@ impl<'a> Machine<'a> {
             }
             Instruction::Return => {
                 match self.call_stack.pop() {
-                    Some((return_pc, saved_object)) => {
-                        self.pc = return_pc;
-                        self.ctx.current_object = saved_object;
+                    Some(frame) => {
+                        self.ctx = self.engine.begin();
+                        self.ctx.current_object = frame.parent_object;
+                        self.pc = frame.return_pc;
                     }
                     None => {
                         self.status = MachineStatus::Halted;
@@ -344,12 +354,6 @@ impl<'a> Machine<'a> {
             self.engine.abort(&mut self.ctx, reason);
             self.status = MachineStatus::Aborted(reason);
             return Err(e);
-        }
-
-        if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
         }
 
         self.pc += consumed;
