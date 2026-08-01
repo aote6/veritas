@@ -27,6 +27,7 @@ pub mod opcodes {
     pub const OBJECT_LINK: u8 = 0x35;
     pub const OBJECT_UNLINK: u8 = 0x39;
     pub const OBJECT_FREEZE: u8 = 0x3A;
+    pub const HOST_CALL: u8 = 0x40;
     pub const CAPABILITY_GRANT: u8 = 0x36;
     pub const SAVEPOINT: u8 = 0x37;
     pub const ROLLBACK_TO: u8 = 0x38;
@@ -124,6 +125,10 @@ impl Instruction {
                 buf.extend_from_slice(&from.to_le_bytes());
                 buf.extend_from_slice(&to.to_le_bytes());
                 buf.push(*relation as u8);
+            }
+            Instruction::HostCall { call_id } => {
+                buf.push(opcodes::HOST_CALL);
+                buf.push(*call_id);
             }
             Instruction::ObjectFreeze { object_id } => {
                 buf.push(opcodes::OBJECT_FREEZE);
@@ -299,6 +304,12 @@ impl Instruction {
                 let rel = bytes[pos+16];
                 pos += 17;
                 Instruction::ObjectLink { from, to, relation: unsafe { std::mem::transmute(rel) } }
+            }
+            opcodes::HOST_CALL => {
+                check!(1);
+                let call_id = bytes[pos];
+                pos += 1;
+                Instruction::HostCall { call_id }
             }
             opcodes::OBJECT_FREEZE => {
                 check!(8);
