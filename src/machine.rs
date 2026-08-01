@@ -388,6 +388,21 @@ impl<'a> Machine<'a> {
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
+            Instruction::HostCall { call_id } => {
+                // P27: HostCall统一收口
+                match call_id {
+                    0..=3 => { /* valid, handled by host */ }
+                    _ => {
+                        self.status = MachineStatus::Trapped(
+                            crate::types::TrapReason::InvalidEncoding { pc: self.pc }
+                        );
+                        return Ok(());
+                    }
+                }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
             _ => {}
         }
 

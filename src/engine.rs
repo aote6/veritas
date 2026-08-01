@@ -2734,7 +2734,7 @@ mod p19_1_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
 
     #[test]
     fn test_deterministic_trace_hash() {
@@ -2768,7 +2768,7 @@ mod p19_2_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::receipt::ExecutionReceipt;
 
 
@@ -2781,7 +2781,7 @@ mod p19_3_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::receipt::ExecutionReceipt;
     use crate::replay_verify::ReplayVerifier;
 
@@ -2821,7 +2821,7 @@ mod p20_2_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::replay_verify::ReplayVerifier;
 
     #[test]
@@ -2874,7 +2874,7 @@ mod p21_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
 
     #[test]
     fn test_receipt_includes_write_set_hash() {
@@ -2901,7 +2901,7 @@ mod invariants {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::replay_verify::ReplayVerifier;
 
     fn exec(program: &Program) -> crate::receipt::ExecutionReceipt {
@@ -2967,7 +2967,7 @@ mod p23_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
 
     fn exec_with_cap(program: &Program, caps: Vec<u64>) -> crate::receipt::ExecutionReceipt {
         let image = ProgramImage::new(program.instructions.clone());
@@ -3015,7 +3015,7 @@ mod p23_2_tests {
     use super::*;
     use crate::instruction::Instruction;
     use crate::program::{Program, ProgramImage};
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
 
     #[test]
     fn test_write_without_capability_rejected() {
@@ -3058,7 +3058,7 @@ mod p24_object_isolation_tests {
     use super::*;
     use crate::program::{Program, ProgramImage};
     use crate::instruction::Instruction;
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::types::{VeritasError, AbortReason};
 
     fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -3140,7 +3140,7 @@ mod p25_register_isolation_tests {
     use super::*;
     use crate::program::{Program, ProgramImage};
     use crate::instruction::Instruction;
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
 
     #[test]
     fn test_return_restores_caller_registers() {
@@ -3234,7 +3234,7 @@ mod p26_object_freeze_tests {
     use super::*;
     use crate::program::{Program, ProgramImage};
     use crate::instruction::Instruction;
-    use crate::machine::Machine;
+    use crate::machine::{Machine, MachineStatus};
     use crate::types::{ObjectState, LinkType};
 
     #[test]
@@ -3314,5 +3314,57 @@ mod p26_object_freeze_tests {
         let result = engine.object_link(&mut ctx3, 30, 31, LinkType::DependsOn);
         // 当前预期：成功（冻结检查未实现）
         assert!(result.is_ok(), "Link after freeze not yet rejected at Engine level");
+    }
+}
+
+#[cfg(test)]
+mod p27_hostcall_tests {
+    use super::*;
+    use crate::program::{Program, ProgramImage};
+    use crate::instruction::Instruction;
+    use crate::machine::{Machine, MachineStatus};
+
+    #[test]
+    fn test_hostcall_valid_call_id_advances_pc() {
+        // 合法HostCall推进PC，程序正常Halt
+        let program = Program::new()
+            .push(Instruction::HostCall { call_id: 0 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        assert!(result.is_ok(), "Valid HostCall should succeed: {:?}", result);
+    }
+
+    #[test]
+    fn test_hostcall_invalid_call_id_traps() {
+        // 非法HostCall触发Trap
+        let program = Program::new()
+            .push(Instruction::HostCall { call_id: 255 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        // 非法call_id应该陷入Trapped状态
+        assert!(matches!(m.status(), MachineStatus::Trapped(_)),
+            "Invalid HostCall should trap, got status: {:?}", m.status());
+    }
+
+    #[test]
+    fn test_hostcall_codec_roundtrip() {
+        // 验证HostCall编解码正确
+        let inst = Instruction::HostCall { call_id: 2 };
+        let bytes = inst.encode().unwrap();
+        let decoded = Instruction::decode(&bytes).unwrap();
+        match decoded.0 {
+            Instruction::HostCall { call_id } => assert_eq!(call_id, 2),
+            _ => panic!("Decoded wrong instruction"),
+        }
     }
 }
