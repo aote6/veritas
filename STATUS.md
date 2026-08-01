@@ -55,16 +55,6 @@
   （instruction.rs注释明确：暂不涉及独立代码空间）
 - 测试：153 tests passing（新增test_call_switches_current_object_and_isolates_memory）
 
-### 已知未覆盖场景 / 待设计决策（P24 follow-up，未修复）
-- **caller未提交写入被callee commit静默冲掉的风险**：Commit触发的重置
-  逻辑是`self.ctx = self.engine.begin()`——整个替换ctx。若caller在Call
-  前有未提交写入，callee内部commit时会导致caller那笔写入所在的旧ctx
-  被整体丢弃，不报错、不提交，静默丢失数据。
-- 需要在以下方案中决策（未实现任何一个）：
-  方案A：Call前强制要求ctx已commit（简单，限制灵活性）
-  方案B：write_set按object分区，callee commit只提交该object相关写入
-  方案C：Call新开子事务而非共享ctx（改变现有设计初衷）
-- 测试草案 test_caller_uncommitted_write_lost_when_callee_commits
   已写出但未加入正式测试套件（预期FAIL，验证问题存在），见
 
 ### P24.1 修复：CallFrame不再保存完整TransactionContext（2026-08-01）
