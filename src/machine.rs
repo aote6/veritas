@@ -41,6 +41,7 @@ impl FlagsRegister {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RegisterFile {
     regs: [RegisterValue; 8],
 }
@@ -93,6 +94,7 @@ pub enum ExecutionResult {
 struct CallFrame {
     return_pc: usize,
     parent_object: ObjectId,
+    registers: RegisterFile,
 }
 
 pub struct Machine<'a> {
@@ -364,6 +366,7 @@ impl<'a> Machine<'a> {
                 self.call_stack.push(CallFrame {
                     return_pc,
                     parent_object: saved_object,
+                    registers: self.registers.clone(),
                 });
                 self.ctx.current_object = object_id;
                 self.pc = entry_pc;
@@ -374,6 +377,7 @@ impl<'a> Machine<'a> {
                 match self.call_stack.pop() {
                     Some(frame) => {
                         self.ctx.current_object = frame.parent_object;
+                        self.registers = frame.registers;
                         self.pc = frame.return_pc;
                     }
                     None => {

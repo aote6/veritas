@@ -3097,3 +3097,97 @@ mod p24_object_isolation_tests {
         assert_eq!(bytes_to_u64(&val_b), 200, "Object 2 state_id=1 should be 200, isolated from Object 0");
     }
 }
+
+#[cfg(test)]
+mod p25_register_isolation_tests {
+    use super::*;
+    use crate::program::{Program, ProgramImage};
+    use crate::instruction::Instruction;
+    use crate::machine::Machine;
+
+    #[test]
+    fn test_return_restores_caller_registers() {
+        // callee: 修改 r1=200，然后 Return
+        let callee = Program::new()
+            .push(Instruction::LoadConst { reg: 1, val: 200 })
+            .push(Instruction::Return);
+
+        let mut callee_len = 0usize;
+        for inst in &callee.instructions {
+            callee_len += inst.encode().unwrap().len();
+        }
+
+        // caller: r1=100, Call, 然后验证 r1 仍是 100（被Return恢复）
+        let caller = Program::new()
+            .push(Instruction::LoadConst { reg: 1, val: 100 })
+            .push(Instruction::Commit);
+
+        let mut caller_len = 0usize;
+        for inst in &caller.instructions {
+            caller_len += inst.encode().unwrap().len();
+        }
+        let call_len = Instruction::Call { object_id: 2, entry_pc: 0 }.encode().unwrap().len();
+        let callee_entry = caller_len + call_len;
+
+        let mut full = caller.instructions.clone();
+        full.push(Instruction::Call { object_id: 2, entry_pc: callee_entry });
+        full.push(Instruction::Halt);
+        for inst in &callee.instructions {
+            full.push(inst.clone());
+        }
+
+        let image = ProgramImage::new(full);
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        assert!(m.run().is_ok());
+
+        // Return 后 r1 应该是 Call 前的值 100，不是 callee 写的 200
+        assert_eq!(m.registers().get_u64(1), 100,
+            "Return must restore caller registers, r1 should be 100");
+    }
+
+    #[test]
+    fn test_callee_cannot_pass_value_via_register() {
+        // 验证 callee 无法通过寄存器向 caller 传值。
+        // 通信必须走显式的 state 读写，受 capability 约束。
+        // 这个测试的语义是：寄存器隔离不是 bug，是设计约束。
+
+        let callee = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 999 })
+            .push(Instruction::Return);
+
+        let mut callee_len = 0usize;
+        for inst in &callee.instructions {
+            callee_len += inst.encode().unwrap().len();
+        }
+
+        let caller = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 0 })
+            .push(Instruction::Commit);
+
+        let mut caller_len = 0usize;
+        for inst in &caller.instructions {
+            caller_len += inst.encode().unwrap().len();
+        }
+        let call_len = Instruction::Call { object_id: 2, entry_pc: 0 }.encode().unwrap().len();
+        let callee_entry = caller_len + call_len;
+
+        let mut full = caller.instructions.clone();
+        full.push(Instruction::Call { object_id: 2, entry_pc: callee_entry });
+        full.push(Instruction::Halt);
+        for inst in &callee.instructions {
+            full.push(inst.clone());
+        }
+
+        let image = ProgramImage::new(full);
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        assert!(m.run().is_ok());
+
+        // callee 写了 r0=999，但 Return 恢复后 r0 仍是 caller 的 0
+        assert_eq!(m.registers().get_u64(0), 0,
+            "Registers must not be a backchannel: callee r0=999 must not leak to caller");
+    }
+}
