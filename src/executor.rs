@@ -56,6 +56,9 @@ impl<'a> Executor<'a> {
             Instruction::ObjectDeath { object_id } => {
                 self.engine.object_death(ctx, *object_id)?;
             }
+            Instruction::ObjectFreeze { object_id } => {
+                self.engine.object_freeze(ctx, *object_id)?;
+            }
             Instruction::ObjectLink { from, to, relation } => {
                 self.engine.object_link(ctx, *from, *to, *relation)?;
             }

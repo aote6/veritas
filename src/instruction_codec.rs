@@ -26,6 +26,7 @@ pub mod opcodes {
     pub const OBJECT_DEATH: u8 = 0x34;
     pub const OBJECT_LINK: u8 = 0x35;
     pub const OBJECT_UNLINK: u8 = 0x39;
+    pub const OBJECT_FREEZE: u8 = 0x3A;
     pub const CAPABILITY_GRANT: u8 = 0x36;
     pub const SAVEPOINT: u8 = 0x37;
     pub const ROLLBACK_TO: u8 = 0x38;
@@ -123,6 +124,10 @@ impl Instruction {
                 buf.extend_from_slice(&from.to_le_bytes());
                 buf.extend_from_slice(&to.to_le_bytes());
                 buf.push(*relation as u8);
+            }
+            Instruction::ObjectFreeze { object_id } => {
+                buf.push(opcodes::OBJECT_FREEZE);
+                buf.extend_from_slice(&object_id.to_le_bytes());
             }
             Instruction::ObjectUnlink { from, to } => {
                 buf.push(opcodes::OBJECT_UNLINK);
@@ -294,6 +299,12 @@ impl Instruction {
                 let rel = bytes[pos+16];
                 pos += 17;
                 Instruction::ObjectLink { from, to, relation: unsafe { std::mem::transmute(rel) } }
+            }
+            opcodes::OBJECT_FREEZE => {
+                check!(8);
+                let object_id = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
+                pos += 8;
+                Instruction::ObjectFreeze { object_id }
             }
             opcodes::OBJECT_UNLINK => {
                 check!(16);
