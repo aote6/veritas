@@ -77,7 +77,7 @@ impl<'a> Executor<'a> {
             Instruction::Commit => {
                 self.engine.commit(ctx)?;
             }
-            Instruction::HostCall { .. } | Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } | Instruction::Jmp { .. } | Instruction::Jz { .. } | Instruction::Jnz { .. } | Instruction::Nop | Instruction::Halt | Instruction::Jn { .. } | Instruction::Call { .. } | Instruction::Return => { /* handled by Machine locally */ }
+            Instruction::Trap { .. } | Instruction::HostCall { .. } | Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } | Instruction::Jmp { .. } | Instruction::Jz { .. } | Instruction::Jnz { .. } | Instruction::Nop | Instruction::Halt | Instruction::Jn { .. } | Instruction::Call { .. } | Instruction::Return => { /* handled by Machine locally */ }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
                 return Err(VeritasError::Abort(*reason));

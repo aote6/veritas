@@ -3368,3 +3368,99 @@ mod p27_hostcall_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod p28_trap_tests {
+    use super::*;
+    use crate::program::{Program, ProgramImage};
+    use crate::instruction::Instruction;
+    use crate::machine::{Machine, MachineStatus};
+    use crate::types::LinkType;
+
+    fn bytes_to_u64(bytes: &[u8]) -> u64 {
+        u64::from_le_bytes(bytes[..8].try_into().unwrap())
+    }
+
+    #[test]
+    fn test_trap_object_birth() {
+        // TRAP 0 = OBJECT_BIRTH，r0 = object_id
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 100 })
+            .push(Instruction::Trap { service_id: 0 })
+            .push(Instruction::Commit)
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        assert!(result.is_ok(), "TRAP OBJECT_BIRTH should succeed: {:?}", result);
+
+        // 验证对象已创建
+        let mut ctx = engine.begin();
+        engine.write(&mut ctx, 1, 42u64.to_le_bytes().to_vec()).unwrap();
+        engine.commit(&mut ctx).unwrap();
+    }
+
+    #[test]
+    fn test_trap_object_link_with_registers() {
+        // TRAP 2 = OBJECT_LINK，r0=from, r1=to, r2=link_type
+        let program = Program::new()
+            // 创建对象A (id=200)
+            .push(Instruction::LoadConst { reg: 0, val: 200 })
+            .push(Instruction::Trap { service_id: 0 })
+            // 创建对象B (id=201)
+            .push(Instruction::LoadConst { reg: 0, val: 201 })
+            .push(Instruction::Trap { service_id: 0 })
+            .push(Instruction::Commit)
+            // 建Link: from=200, to=201, link_type=0(DependsOn)
+            .push(Instruction::LoadConst { reg: 0, val: 200 })
+            .push(Instruction::LoadConst { reg: 1, val: 201 })
+            .push(Instruction::LoadConst { reg: 2, val: 0 })
+            .push(Instruction::Trap { service_id: 2 })
+            .push(Instruction::Commit)
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        assert!(result.is_ok(), "TRAP OBJECT_LINK should succeed: {:?}", result);
+    }
+
+    #[test]
+    fn test_trap_invalid_link_type_traps() {
+        // TRAP 2，r2=99（非法LinkType）
+        let program = Program::new()
+            .push(Instruction::LoadConst { reg: 0, val: 1 })
+            .push(Instruction::LoadConst { reg: 1, val: 1 })
+            .push(Instruction::LoadConst { reg: 2, val: 99 })
+            .push(Instruction::Trap { service_id: 2 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        assert!(matches!(m.status(), MachineStatus::Trapped(_)),
+            "Invalid LinkType should trap, got status: {:?}", m.status());
+    }
+
+    #[test]
+    fn test_trap_invalid_service_id_traps() {
+        let program = Program::new()
+            .push(Instruction::Trap { service_id: 255 })
+            .push(Instruction::Halt);
+
+        let image = ProgramImage::new(program.instructions.clone());
+        let engine = VeritasEngine::new();
+        let mut m = Machine::new(&engine);
+        m.boot(image).unwrap();
+        let result = m.run();
+        assert!(matches!(m.status(), MachineStatus::Trapped(_)),
+            "Invalid service_id should trap, got status: {:?}", m.status());
+    }
+}
