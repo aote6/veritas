@@ -35,6 +35,9 @@ impl<'a> Executor<'a> {
         Ok(())
     }
 
+    /// 执行内核级指令（Kernel Service）。
+    /// Machine::step() 将 TRAP 和需要内核服务的指令路由到这里。
+    /// 本地指令（算术/跳转/Halt等）由 Machine 自行处理，不经过此方法。
     pub fn execute_instruction(
         &self,
         ctx: &mut TransactionContext,
@@ -78,10 +81,33 @@ impl<'a> Executor<'a> {
             Instruction::Commit => {
                 self.engine.commit(ctx)?;
             }
-            Instruction::Trap { .. } | Instruction::HostCall { .. } | Instruction::LoadConst { .. } | Instruction::Add { .. } | Instruction::Sub { .. } | Instruction::Cmp { .. } | Instruction::LoadStateU64 { .. } | Instruction::LoadStateBytes { .. } | Instruction::WriteRegister { .. } | Instruction::Jmp { .. } | Instruction::Jz { .. } | Instruction::Jnz { .. } | Instruction::Nop | Instruction::Halt | Instruction::Jn { .. } | Instruction::Call { .. } | Instruction::Return => { /* handled by Machine locally */ }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
                 return Err(VeritasError::Abort(*reason));
+            }
+            // 本地指令不经过 Executor，Machine 直接处理
+            Instruction::Trap { .. }
+            | Instruction::HostCall { .. }
+            | Instruction::LoadConst { .. }
+            | Instruction::Add { .. }
+            | Instruction::Sub { .. }
+            | Instruction::Cmp { .. }
+            | Instruction::LoadStateU64 { .. }
+            | Instruction::LoadStateBytes { .. }
+            | Instruction::WriteRegister { .. }
+            | Instruction::Jmp { .. }
+            | Instruction::Jz { .. }
+            | Instruction::Jnz { .. }
+            | Instruction::Nop
+            | Instruction::Halt
+            | Instruction::Jn { .. }
+            | Instruction::Call { .. }
+            | Instruction::Return => {
+                // 这些指令由 Machine::step() 本地处理，
+                // 不应到达 Executor。如果到达，说明路由错误。
+                return Err(VeritasError::EngineError(
+                    format!("Local instruction reached Executor: {:?}", inst)
+                ));
             }
         }
         Ok(())
