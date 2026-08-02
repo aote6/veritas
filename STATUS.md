@@ -122,3 +122,52 @@
 - 教训：注释假设（"AdminCap grant should remain"）和代码实现
   （purge_subtree_strictly 无差别清空）从一开始矛盾，写测试前
   应先确认不变量有对应的实现保证
+
+### P30 / P30.1：ObjectRecord 一等实体与行为 API（2026-08-02）
+- ObjectRecord { id, object_type, state, body } 取代裸 ObjectState 注册表
+- ObjectType: StateObject | ModuleObject
+- ObjectBody: State | Module { code/import/export/verification_rule }
+- 行为 API：is_alive() / is_frozen() / is_dead()（委托 ObjectState）
+- engine/view 读路径改用行为 API；写路径与 graph 投影保持 ObjectState
+- 不变量：Object 从状态标签提升为运行时一等实体，事务/WAL/Capability/Recovery 无语义漂移
+- commit: b4a8a64
+
+### P8.1：OWNS 死亡级联（2026-08-02）
+- 实现：expand_owns_death_closure()，在 commit 边界展开
+- 传播源：topology（已提交）+ pending_links（本事务）
+- 切断条件：pending_unlinks 中的边不参与传播
+- 语义：A --OWNS--> B 且 death(A) ⇒ B 进入 pending_deaths（传递闭包）
+- REFERENCES 不级联（对照测试锁定）
+- 不变量：Owner death implies owned object death
+- Object Death 不再是单对象状态翻转，而是生命周期事件：
+  terminal state + OWNS closure + capability revoke(holder) + topology retain + WAL
+- 测试：p8_1_owns_cascade_single / chain / references_no_cascade
+- commit: 6da24eba
+- 全量：100/100 passed
+
+## Object Death 宪法兑现进度
+
+| 能力 | 状态 | 阶段 |
+|------|------|------|
+| terminal state transition (Alive/Frozen→Dead) | ✅ | O4 |
+| dead handle invalidation | ✅ | O4 |
+| death irreversibility | ✅ | O4 |
+| OWNS cascade (transitive) | ✅ | P8.1 |
+| capability revoke by holder | ✅ | P8-final |
+| topology physical cleanup (retain) | ✅ | P8.2 物理层 |
+| LinkType semantic cleanup (DEPENDS_ON 通知等) | ⏳ | P8.2 |
+| capability revoke by resource | ⏳ | P8.3 |
+| Death Event 分发器抽取 | ⏳ | P8.4 |
+
+## P8.2 前置观察："通知"机制现状
+
+宪法 link.md：DEPENDS_ON 的 to 死亡时，from 应收到 TRAP（通知信号）。
+
+当前代码中已有的相关机制（尚未接到 Link 死亡路径）：
+- TrapReason / TrapFrame：执行层硬件级中断（InvalidOpcode、AccessDenied 等）
+- ExecutionEvent：执行轨迹记录（InstructionStart/End、Trapped、Commit/Abort）
+- PendingEffect / EffectQueue：事务副作用队列（幂等、崩溃重试）
+- 无独立的 Object 级 Notification / DependencyInvalidation 通道
+
+P8.2 设计前必须先选定：DEPENDS_ON 的"通知"落在 Trap、Effect、还是新原语。
+不要在未选定载体前实现假通知。
