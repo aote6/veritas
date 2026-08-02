@@ -308,7 +308,15 @@ impl Instruction {
                 let to = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap());
                 let rel = bytes[pos+16];
                 pos += 17;
-                Instruction::ObjectLink { from, to, relation: unsafe { std::mem::transmute(rel) } }
+                {
+                    let link_type = match rel {
+                        0 => crate::types::LinkType::DependsOn,
+                        1 => crate::types::LinkType::Owns,
+                        2 => crate::types::LinkType::References,
+                        _ => return Err(VeritasError::EngineError(format!("Invalid LinkType: {}", rel))),
+                    };
+                    Instruction::ObjectLink { from, to, relation: link_type }
+                }
             }
             opcodes::TRAP => {
                 check!(1);
@@ -341,7 +349,7 @@ impl Instruction {
                 let plen = u32::from_le_bytes(bytes[pos+8..pos+12].try_into().unwrap()) as usize;
                 pos += 12;
                 check!(plen + 8);
-                let perm = String::from_utf8(bytes[pos..pos+plen].to_vec()).unwrap_or_default();
+                let perm = String::from_utf8(bytes[pos..pos+plen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in CapabilityGrant".into()))?;
                 pos += plen;
                 let res = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
                 pos += 8;
@@ -352,7 +360,7 @@ impl Instruction {
                 let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
                 pos += 4;
                 check!(nlen);
-                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).unwrap_or_default();
+                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in Savepoint".into()))?;
                 pos += nlen;
                 Instruction::Savepoint { name }
             }
@@ -361,7 +369,7 @@ impl Instruction {
                 let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
                 pos += 4;
                 check!(nlen);
-                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).unwrap_or_default();
+                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in RollbackTo".into()))?;
                 pos += nlen;
                 Instruction::RollbackTo { name }
             }

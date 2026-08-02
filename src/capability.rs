@@ -143,11 +143,13 @@ impl CapabilityGraph {
     /// P8.4: 检查能力是否仍然有效（未被撤销）
     /// P8.4: 获取某个 Object 持有的所有能力 ID
     pub fn caps_for_holder(&self, holder: ObjectId) -> Vec<CapabilityId> {
-        self.holders
+        let mut caps: Vec<CapabilityId> = self.holders
             .keys()
             .filter(|(_, h)| *h == holder)
             .map(|(cap_id, _)| *cap_id)
-            .collect()
+            .collect();
+        caps.sort();
+        caps
     }
 
     /// P8-final: 原子撤销 holder 的所有能力（含子树），维护四表一致性

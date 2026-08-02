@@ -22,7 +22,10 @@ use crate::store::StateStore;
 
 #[allow(dead_code)]
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
-    u64::from_le_bytes(bytes[..8].try_into().unwrap())
+    let mut arr = [0u8; 8];
+    let len = bytes.len().min(8);
+    arr[..len].copy_from_slice(&bytes[..len]);
+    u64::from_le_bytes(arr)
 }
 
 
