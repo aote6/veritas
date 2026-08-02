@@ -302,3 +302,68 @@ fn p8_2_references_emits_no_effect() {
         inv
     );
 }
+
+/// P8.3: resource 死亡后，指向它的 Capability 不能再授权写入（lazy invalidation）
+#[test]
+fn p8_3_dead_resource_capability_rejected() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let target = root ^ 0x7001;
+    let state_id = 1u64;
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, target).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.engine.begin_in_object(target);
+    tx.enforce_capability();
+    kernel.engine.write(&mut tx, state_id, vec![1, 2, 3]).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_death(&mut tx, target).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    assert_eq!(
+        kernel.engine.get_object_state(target),
+        Some(veritas_kernel::types::ObjectState::Dead)
+    );
+
+    let mut tx = kernel.engine.begin_in_object(target);
+    tx.enforce_capability();
+    let write_res = kernel.engine.write(&mut tx, state_id, vec![9, 9, 9]);
+    let final_res = match write_res {
+        Ok(()) => kernel.engine.commit(&mut tx),
+        Err(e) => Err(e),
+    };
+
+    assert!(
+        final_res.is_err(),
+        "P8.3: write via capability targeting Dead resource must be rejected, got {:?}",
+        final_res
+    );
+}
+
+/// P8.3 对照：resource 仍 Alive 时，强制 capability 校验下写入仍成功
+#[test]
+fn p8_3_alive_resource_capability_still_works() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let target = root ^ 0x7002;
+    let state_id = 1u64;
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, target).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.engine.begin_in_object(target);
+    tx.enforce_capability();
+    kernel.engine.write(&mut tx, state_id, vec![4, 5, 6]).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.engine.begin_in_object(target);
+    tx.enforce_capability();
+    kernel.engine.write(&mut tx, state_id, vec![7, 8, 9]).unwrap();
+    let res = kernel.engine.commit(&mut tx);
+    assert!(res.is_ok(), "Alive resource must still accept authorized writes: {:?}", res);
+}
