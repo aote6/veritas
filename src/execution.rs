@@ -1,7 +1,7 @@
 use crate::trace::{TraceRecorder, InstructionTrace};
 use crate::event::{EventRecorder, ExecutionEvent};
 use crate::instruction::Instruction;
-use crate::types::{WriteSet, StateId, Address};
+use crate::types::{WriteSet, StateId};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionStatistics {

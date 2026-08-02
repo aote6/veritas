@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_wound_cascades_lock_release() {
-        let (tm, lm, tx1, tx2) = setup();
+        let (_tm, lm, tx1, tx2) = setup();
         let young_id = tx1; // 老
         let old_id = tx2;   // 新
 

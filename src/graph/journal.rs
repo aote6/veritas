@@ -17,24 +17,29 @@ pub struct GraphJournal {
 
 impl GraphJournal {
     pub fn new() -> Self {
-        Self { records: Vec::new() }
+        Self::default()
     }
 
-    /// 追加一条日志记录
-    pub fn append(&mut self, record: GraphJournalRecord) {
+    /// 底层追加接口：将一条 WAL Record 追加到日志流末尾
+    pub fn record(&mut self, record: GraphJournalRecord) {
         self.records.push(record);
     }
 
-    /// 获取只读日志切片
+    /// 兼容别名接口，方便上层 Transaction/Recovery 模块无缝调用
+    #[inline]
+    pub fn append(&mut self, record: GraphJournalRecord) {
+        self.record(record);
+    }
+
     pub fn records(&self) -> &[GraphJournalRecord] {
         &self.records
     }
 
-    pub fn len(&self) -> usize {
-        self.records.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.records.len()
     }
 }

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Mutex, Arc};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::types::TxId;
 
@@ -95,6 +95,7 @@ impl TransactionManager {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use std::thread;
 

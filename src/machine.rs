@@ -113,7 +113,7 @@ pub struct Machine<'a> {
 }
 
 impl<'a> Machine<'a> {
-    fn record_trace(&mut self, pc_before: usize, regs_before: [u64; 8], instruction: &crate::instruction::Instruction, consumed: usize) {
+    fn record_trace(&mut self, pc_before: usize, regs_before: [u64; 8], instruction: &crate::instruction::Instruction, _consumed: usize) {
         let regs_after = [
             self.registers.get_u64(0), self.registers.get_u64(1),
             self.registers.get_u64(2), self.registers.get_u64(3),

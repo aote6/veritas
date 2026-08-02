@@ -1,5 +1,4 @@
 use crate::execution::ExecutionContext;
-use crate::event::EventRecorder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionReceipt {

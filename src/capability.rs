@@ -26,7 +26,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::types::{deterministic_hash, CapabilityId, ObjectId, StateId};
+use crate::types::{deterministic_hash, CapabilityId, ObjectId};
 
 /// 受保护资源目前统一用 StateId 表示——能力总是围绕某个具体 State 的访问权。
 /// 如果以后需要对 Scope 本身发放能力，再扩展这个类型，现在没有真实场景不做。
@@ -74,6 +74,7 @@ pub struct DelegationEdge {
 struct HolderRecord {
     active: bool,
     /// None 表示这是根节点（GRANT 直接产生的持有者）
+    #[allow(dead_code)]
     parent: Option<ObjectId>,
 }
 

@@ -20,6 +20,7 @@ use crate::types::*;
 use crate::wal::{RecoveryManager, WalEffect, WalEntry, WalScopeChange, WalWriter};
 use crate::store::StateStore;
 
+#[allow(dead_code)]
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(bytes[..8].try_into().unwrap())
 }
@@ -34,7 +35,9 @@ pub struct VeritasEngine {
     object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
+    #[allow(dead_code)]
     tx_mgr: Arc<TransactionManager>,
+    #[allow(dead_code)]
     lock_mgr: Arc<LockManager>,
     controller: TransactionController,
     pub state_memory: std::sync::Mutex<StateMemory>,
@@ -310,7 +313,7 @@ impl VeritasEngine {
         ctx: &mut TransactionContext,
         state_id: StateId,
     ) -> Result<Vec<u8>, VeritasError> {
-        let addr = crate::types::Address::new(ctx.current_object, state_id);
+        let _addr = crate::types::Address::new(ctx.current_object, state_id);
         let addr = crate::types::Address::new(ctx.current_object, state_id);
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));

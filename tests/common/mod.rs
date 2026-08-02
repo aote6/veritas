@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::types::{ObjectId, StateId, TransactionContext};
