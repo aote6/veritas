@@ -90,6 +90,7 @@ pub type ObjectId = u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectState {
     Alive,
+    Frozen,
     Dead,
 }
 
@@ -220,7 +221,7 @@ pub struct Savepoint {
 
 #[derive(Debug, Clone)]
 pub struct TransactionContext {
-    pub capability_id: Option<u64>,
+    pub capabilities: Vec<u64>,
     pub program_hash: Option<u64>,
     pub tx_id: TxId,
     pub snapshot_version: Version,
@@ -246,7 +247,7 @@ pub struct TransactionContext {
 impl TransactionContext {
     pub fn new(tx_id: TxId, snapshot_version: Version) -> Self {
         TransactionContext {
-            capability_id: None,
+            capabilities: Vec::new(),
             program_hash: None,
             tx_id,
             snapshot_version,
@@ -261,7 +262,7 @@ impl TransactionContext {
             pending_freezes: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
-            capability_enforced: false,
+            capability_enforced: true,
             current_object: 0,
         }
     }
@@ -374,4 +375,22 @@ pub struct TrapFrame {
     pub pc: usize,
     pub reason: TrapReason,
     pub cycles: u64,
+}
+
+
+impl ObjectState {
+    #[inline]
+    pub fn is_alive(self) -> bool {
+        matches!(self, ObjectState::Alive)
+    }
+
+    #[inline]
+    pub fn is_frozen(self) -> bool {
+        matches!(self, ObjectState::Frozen)
+    }
+
+    #[inline]
+    pub fn is_dead(self) -> bool {
+        matches!(self, ObjectState::Dead)
+    }
 }

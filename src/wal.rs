@@ -7,7 +7,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TxId, Version};
+use crate::types::{Address, ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TxId, Version};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {
@@ -27,7 +27,7 @@ pub enum WalEntry {
     Commit {
         tx_id: TxId,
         version: Version,
-        writes: Vec<(StateId, Vec<u8>)>,
+        writes: Vec<(Address, Vec<u8>)>,
         scope_changes: Vec<WalScopeChange>,
         effects: Vec<WalEffect>,
     },
@@ -66,7 +66,12 @@ impl WalEntry {
             } => {
                 let mut line = format!("COMMIT TX={} VERSION={}", tx_id, version);
                 for (state_id, val) in writes {
-                    line.push_str(&format!(" WRITE {} {}", state_id, hex::encode(val)));
+                    line.push_str(&format!(
+                        " WRITE {} {} {}",
+                        state_id.object_id,
+                        state_id.state_id,
+                        hex::encode(val)
+                    ));
                 }
                 for change in scope_changes {
                     let tag = match change.change_type {
@@ -154,11 +159,17 @@ impl WalEntry {
         let mut i = 0;
         while i < parts.len() {
             match parts[i] {
-                "WRITE" if i + 2 < parts.len() => {
-                    let state_id = parts[i + 1].parse::<StateId>().ok()?;
-                    let val = hex::decode(parts[i + 2]).ok()?;
-                    writes.push((state_id, val));
-                    i += 3;
+                "WRITE" if i + 3 < parts.len() => {
+                    let object_id = parts[i + 1].parse::<ObjectId>().ok()?;
+                    let state_id = parts[i + 2].parse::<StateId>().ok()?;
+                    let val = hex::decode(parts[i + 3]).ok()?;
+
+                    writes.push((
+                        Address::new(object_id, state_id),
+                        val
+                    ));
+
+                    i += 4;
                 }
                 "SCOPEBIND" if i + 2 < parts.len() => {
                     let scope_id = parts[i + 1].parse::<ScopeId>().ok()?;
@@ -361,12 +372,12 @@ impl RecoveryManager {
     pub fn apply_records(
         records: &[WalEntry],
     ) -> (
-        HashMap<StateId, StateEntry>,
+        HashMap<Address, StateEntry>,
         HashMap<ScopeId, ScopeEntry>,
         Vec<PendingRecoveryEffect>,
         TxId,
     ) {
-        let mut state_map: HashMap<StateId, StateEntry> = HashMap::new();
+        let mut state_map: HashMap<Address, StateEntry> = HashMap::new();
         let mut scope_map: HashMap<ScopeId, ScopeEntry> = HashMap::new();
         let mut committed_effects: Vec<PendingRecoveryEffect> = Vec::new();
         let mut acked_keys: HashSet<String> = HashSet::new();
@@ -384,9 +395,9 @@ impl RecoveryManager {
                     if *tx_id > max_tx_id {
                         max_tx_id = *tx_id;
                     }
-                    for (state_id, value) in writes {
+                    for (addr, value) in writes {
                         state_map.insert(
-                            *state_id,
+                            *addr,
                             StateEntry {
                                 value: value.clone(),
                                 version: *version,
@@ -446,7 +457,7 @@ mod tests {
         let entry = WalEntry::Commit {
             tx_id: 8,
             version: 15,
-            writes: vec![(100, vec![10, 11, 12]), (200, vec![255, 238])],
+            writes: vec![(Address::new(0,100), vec![10,11,12]), (Address::new(0,200), vec![255,238])],
             scope_changes: vec![
                 WalScopeChange {
                     scope_id: 55,
@@ -498,7 +509,7 @@ mod tests {
         let entry = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(42, vec![1, 2, 3])],
+            writes: vec![(Address::new(0,42), vec![1,2,3])],
             scope_changes: vec![],
             effects: vec![],
         };
@@ -519,7 +530,7 @@ mod tests {
             let entry = WalEntry::Commit {
                 tx_id: i,
                 version: i,
-                writes: vec![(i, vec![i as u8])],
+                writes: vec![(Address::new(0, i), vec![i as u8])],
                 scope_changes: vec![],
                 effects: vec![],
             };
@@ -547,7 +558,7 @@ mod tests {
                 .write(true)
                 .open(path)
                 .unwrap();
-            writeln!(file, "COMMIT TX=1 VERSION=1 WRITE 100 0A0B END").unwrap();
+            writeln!(file, "COMMIT TX=1 VERSION=1 WRITE 0 100 0A0B END").unwrap();
             write!(file, "COMMIT TX=2 VERSION=2 WRITE 200").unwrap();
         }
         let (records, max_version) = RecoveryManager::recover(path).unwrap();
@@ -567,7 +578,7 @@ mod tests {
         let commit = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(1, vec![9])],
+            writes: vec![(Address::new(0,1), vec![9])],
             scope_changes: vec![],
             effects: vec![WalEffect {
                 idempotency_key: "1-0".to_string(),
@@ -591,7 +602,7 @@ mod tests {
         let commit = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(1, vec![9])],
+            writes: vec![(Address::new(0,1), vec![9])],
             scope_changes: vec![],
             effects: vec![WalEffect {
                 idempotency_key: "1-0".to_string(),

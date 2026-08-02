@@ -208,12 +208,7 @@ impl<'a> Machine<'a> {
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(reg, RegisterValue::U64(val));
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() {
@@ -229,12 +224,7 @@ impl<'a> Machine<'a> {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = false;
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -249,12 +239,7 @@ impl<'a> Machine<'a> {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = v1 < v2;
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -267,12 +252,7 @@ impl<'a> Machine<'a> {
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -298,16 +278,11 @@ impl<'a> Machine<'a> {
                     RegisterValue::Empty => vec![],
                 };
                 if let Some(&cap_id) = self.execution.capability_ids.first() {
-                    self.ctx.capability_id = Some(cap_id);
+                    self.ctx.capabilities.push(cap_id);
                 }
                 self.executor.write_state(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload.clone());
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -315,24 +290,14 @@ impl<'a> Machine<'a> {
                 return Ok(());
             }
             Instruction::Nop => {
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
             Instruction::Halt => {
-                if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
-        }
-
+        
         self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 self.status = MachineStatus::Halted;
@@ -484,12 +449,12 @@ impl<'a> Machine<'a> {
             }
         }
 
+
+
         if matches!(instruction, Instruction::Commit) {
             let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin();
-            self.ctx.current_object = current_object;
+            self.ctx = self.engine.begin_in_object(current_object);
         }
-
         self.pc += consumed;
 
         // P19.1: 记录指令执行 trace

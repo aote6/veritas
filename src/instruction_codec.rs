@@ -25,8 +25,8 @@ pub mod opcodes {
     pub const OBJECT_BIRTH: u8 = 0x33;
     pub const OBJECT_DEATH: u8 = 0x34;
     pub const OBJECT_LINK: u8 = 0x35;
-    pub const OBJECT_UNLINK: u8 = 0x39;
-    pub const OBJECT_FREEZE: u8 = 0x3A;
+    pub const OBJECT_UNLINK: u8 = 0x3B;
+    pub const OBJECT_FREEZE: u8 = 0x3C;
     pub const HOST_CALL: u8 = 0x40;
     pub const TRAP: u8 = 0x41;
     pub const CAPABILITY_GRANT: u8 = 0x36;

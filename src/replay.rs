@@ -23,8 +23,8 @@ impl ReplayEngine {
             }
             // 临时占位：ReplayRecord目前不记录object_id，统一归属内核Object(0)。
             // 待ReplayRecord/WAL扩展支持Object寻址后应移除此转换。
-            for (id, val) in &rec.writes {
-                state.write(crate::types::Address::new(0, *id), val.clone());
+            for (addr, val) in &rec.writes {
+                state.write(*addr, val.clone());
             }
             if rec.after_root != state.root_hash() {
                 return Err(VeritasError::EngineError(format!(
@@ -53,7 +53,7 @@ mod tests {
         let before = state.root_hash();
         state.write(crate::types::Address::new(0, 2), vec![20]);
         let after = state.root_hash();
-        history.push(ReplayRecord::new(1, None, 0, vec![(2, vec![20])], before, after));
+        history.push(ReplayRecord::new(1, vec![], 0, vec![(crate::types::Address::new(0,2), vec![20])], before, after));
 
         let result = ReplayEngine::replay(&cp1, &history).unwrap();
         assert_eq!(result.state_root, after);
@@ -68,7 +68,7 @@ mod tests {
 
         let mut history = ExecutionHistory::new();
         // before_root 故意设为错误值
-        history.push(ReplayRecord::new(1, None, 0, vec![(2, vec![2])], 0xDEADBEEF, 0));
+        history.push(ReplayRecord::new(1, vec![], 0, vec![(crate::types::Address::new(0,2), vec![2])], 0xDEADBEEF, 0));
 
         assert!(ReplayEngine::replay(&cp, &history).is_err());
     }

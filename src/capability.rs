@@ -30,7 +30,7 @@ use crate::types::{deterministic_hash, CapabilityId, ObjectId, StateId};
 
 /// 受保护资源目前统一用 StateId 表示——能力总是围绕某个具体 State 的访问权。
 /// 如果以后需要对 Scope 本身发放能力，再扩展这个类型，现在没有真实场景不做。
-pub type ResourceId = StateId;
+pub type ResourceId = ObjectId;
 
 pub fn capability_id_of(
     grantor: ObjectId,

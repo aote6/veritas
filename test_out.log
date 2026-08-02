@@ -1,0 +1,545 @@
+warning: unused import: `Arc`
+ --> src/tx_manager.rs:2:24
+  |
+2 | use std::sync::{Mutex, Arc};
+  |                        ^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `StateId`
+  --> src/capability.rs:29:64
+   |
+29 | ...apabilityId, ObjectId, StateId};
+   |                           ^^^^^^^
+
+warning: unused import: `engine::VeritasEngine`
+  --> src/lib.rs:30:5
+   |
+30 | use engine::VeritasEngine;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Address`
+ --> src/execution.rs:4:39
+  |
+4 | use crate::types::{WriteSet, StateId, Address};
+  |                                       ^^^^^^^
+
+warning: unused import: `crate::event::EventRecorder`
+ --> src/receipt.rs:2:5
+  |
+2 | use crate::event::EventRecorder;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `consumed`
+   --> src/machine.rs:116:120
+    |
+116 | ...on::Instruction, consumed: usize) {
+    |                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_consumed`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> src/instruction_codec.rs:325:13
+    |
+237 |             opcodes::RETURN => Instruction::Return,
+    |             --------------- matches all the relevant values
+...
+325 |             opcodes::OBJECT_FREEZE => {
+    |             ^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> src/instruction_codec.rs:331:13
+    |
+230 |             opcodes::CALL => {
+    |             ------------- matches all the relevant values
+...
+331 |             opcodes::OBJECT_UNLINK => {
+    |             ^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: unused variable: `ctx`
+  --> src/engine.rs:99:38
+   |
+99 | ...tate_memory(&self, ctx: &crate::types::TransactionCon...
+   |                       ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `addr`
+   --> src/engine.rs:290:13
+    |
+290 |         let addr = crate::types::Address::new(ctx.curre...
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_addr`
+
+warning: unused variable: `addr`
+   --> src/engine.rs:322:13
+    |
+322 |         let addr = crate::types::Address::new(ctx.curre...
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_addr`
+
+warning: function `bytes_to_u64` is never used
+  --> src/engine.rs:23:4
+   |
+23 | fn bytes_to_u64(bytes: &[u8]) -> u64 {
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `tx_mgr` and `lock_mgr` are never read
+  --> src/engine.rs:37:5
+   |
+28 | pub struct VeritasEngine {
+   |            ------------- fields in this struct
+...
+37 |     tx_mgr: Arc<TransactionManager>,
+   |     ^^^^^^
+38 |     lock_mgr: Arc<LockManager>,
+   |     ^^^^^^^^
+
+warning: field `parent` is never read
+  --> src/capability.rs:77:5
+   |
+74 | struct HolderRecord {
+   |        ------------ field in this struct
+...
+77 |     parent: Option<ObjectId>,
+   |     ^^^^^^
+   |
+   = note: `HolderRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2476:39
+     |
+2476 | ...   use crate::machine::{Machine, MachineStatus, Reg...
+     |                                     ^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2752:35
+     |
+2752 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+    --> src/engine.rs:2783:9
+     |
+2783 |     use super::*;
+     |         ^^^^^^^^
+
+warning: unused import: `crate::instruction::Instruction`
+    --> src/engine.rs:2784:9
+     |
+2784 |     use crate::instruction::Instruction;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ProgramImage` and `Program`
+    --> src/engine.rs:2785:26
+     |
+2785 |     use crate::program::{Program, ProgramImage};
+     |                          ^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `MachineStatus` and `Machine`
+    --> src/engine.rs:2786:26
+     |
+2786 |     use crate::machine::{Machine, MachineStatus};
+     |                          ^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused import: `crate::receipt::ExecutionReceipt`
+    --> src/engine.rs:2787:9
+     |
+2787 |     use crate::receipt::ExecutionReceipt;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2799:35
+     |
+2799 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2839:35
+     |
+2839 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2892:35
+     |
+2892 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2919:35
+     |
+2919 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:2985:35
+     |
+2985 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:3033:35
+     |
+3033 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:3076:35
+     |
+3076 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused imports: `AbortReason` and `VeritasError`
+    --> src/engine.rs:3077:24
+     |
+3077 |     use crate::types::{VeritasError, AbortReason};
+     |                        ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:3158:35
+     |
+3158 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `MachineStatus`
+    --> src/engine.rs:3252:35
+     |
+3252 |     use crate::machine::{Machine, MachineStatus};
+     |                                   ^^^^^^^^^^^^^
+
+warning: unused import: `ObjectState`
+    --> src/engine.rs:3253:24
+     |
+3253 |     use crate::types::{ObjectState, LinkType};
+     |                        ^^^^^^^^^^^
+
+warning: unused import: `crate::types::LinkType`
+    --> src/engine.rs:3393:9
+     |
+3393 |     use crate::types::LinkType;
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+    --> src/engine.rs:2290:13
+     |
+2290 |         let mut old = engine.begin();
+     |             ----^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src/engine.rs:2291:13
+     |
+2291 |         let mut young = engine.begin();
+     |             ----^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src/engine.rs:2292:13
+     |
+2292 |         let mut third = engine.begin();
+     |             ----^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable `callee_len` is assigned to, but never used
+    --> src/engine.rs:3092:13
+     |
+3092 |         let mut callee_len = 0usize;
+     |             ^^^^^^^^^^^^^^
+     |
+     = note: consider using `_callee_len` instead
+
+warning: value assigned to `callee_len` is never read
+    --> src/engine.rs:3094:13
+     |
+3094 |             callee_len += inst.encode().unwrap().len();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `callee_len` is assigned to, but never used
+    --> src/engine.rs:3167:13
+     |
+3167 |         let mut callee_len = 0usize;
+     |             ^^^^^^^^^^^^^^
+     |
+     = note: consider using `_callee_len` instead
+
+warning: value assigned to `callee_len` is never read
+    --> src/engine.rs:3169:13
+     |
+3169 |             callee_len += inst.encode().unwrap().len();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: variable `callee_len` is assigned to, but never used
+    --> src/engine.rs:3212:13
+     |
+3212 |         let mut callee_len = 0usize;
+     |             ^^^^^^^^^^^^^^
+     |
+     = note: consider using `_callee_len` instead
+
+warning: value assigned to `callee_len` is never read
+    --> src/engine.rs:3214:13
+     |
+3214 |             callee_len += inst.encode().unwrap().len();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `result`
+    --> src/engine.rs:3368:13
+     |
+3368 |         let result = m.run();
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+    --> src/engine.rs:3462:13
+     |
+3462 |         let result = m.run();
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+    --> src/engine.rs:3477:13
+     |
+3477 |         let result = m.run();
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `tm`
+   --> src/lock.rs:210:14
+    |
+210 |         let (tm, lm, tx1, tx2) = setup();
+    |              ^^ help: if this is intentional, prefix it with an underscore: `_tm`
+
+warning: function `bytes_to_u64` is never used
+    --> src/engine.rs:3395:8
+     |
+3395 |     fn bytes_to_u64(bytes: &[u8]) -> u64 {
+     |        ^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `veritas_kernel` (lib) generated 14 warnings (run `cargo fix --lib -p veritas_kernel` to apply 9 suggestions)
+warning: `veritas_kernel` (lib test) generated 44 warnings (11 duplicates) (run `cargo fix --lib -p veritas_kernel --tests` to apply 26 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/veritas_kernel-2bb59549256d30e8)
+
+running 166 tests
+test assembler::module_asm_tests::test_assemble_module ... ok
+test assembler::tests::test_assemble_simple ... ok
+test assembler::tests::test_assemble_with_labels ... ok
+test capability::tests::test_cascade_revoke_deactivates_whole_subtree ... ok
+test capability::tests::test_delegate_rejects_cycle_via_already_in_tree ... ok
+test capability::tests::test_delegate_rejects_second_parent ... ok
+test capability::tests::test_delegate_requires_holder ... ok
+test capability::tests::test_grant_produces_deterministic_id_for_same_sequence ... ok
+test capability::tests::test_grant_then_revoke_then_regrant_same_tuple_gives_different_ids ... ok
+test capability::tests::test_holds_true_after_grant ... ok
+test capability::tests::test_non_cascade_revoke_preserves_downstream ... ok
+test capability::tests::test_revoke_override_forces_cascade_regardless_of_edge_setting ... ok
+test capability::tests::test_revoke_root_defaults_to_cascade ... ok
+test capability::tests::test_self_delegation_rejected ... ok
+test capability::tests::test_with_starting_sequence_avoids_collision_after_restart ... ok
+test controller::tests::test_controller_abort_marks_inactive ... ok
+test controller::tests::test_controller_begin_creates_active_tx ... ok
+test controller::tests::test_controller_post_commit_cleans_up ... ok
+test controller::tests::test_controller_pre_commit_rejects_aborted ... ok
+test engine::invariants::different_programs_different_event_hash ... ok
+test engine::invariants::receipt_fields_match_execution ... ok
+test engine::invariants::same_program_same_receipt ... ok
+test engine::invariants::tampered_receipt_rejected ... ok
+test engine::p17_2_tests::test_deterministic_state_root ... ok
+test engine::p17_2_tests::test_uncommitted_does_not_change_root ... ok
+test engine::p17_3_tests::test_checkpoint_verify ... ok
+test engine::p17_3_tests::test_cross_engine_restore ... ok
+test engine::p17_3_tests::test_history_replay ... ok
+test engine::p18_6_tests::test_different_programs_different_hashes ... ok
+test engine::p18_6_tests::test_program_hash_in_replay_record ... ok
+test engine::p18_tests::test_capability_recorded_in_history ... FAILED
+test engine::p18_tests::test_no_capability_still_commits ... ok
+test engine::p19_1_tests::test_deterministic_trace_hash ... ok
+test engine::p19_3_tests::test_replay_detects_tampered_receipt ... ok
+test engine::p19_3_tests::test_replay_same_execution_verified ... ok
+test engine::p20_2_tests::test_machine_generates_receipt ... ok
+test engine::p20_2_tests::test_same_execution_same_receipt ... ok
+test engine::p21_tests::test_receipt_includes_write_set_hash ... ok
+test engine::p23_2_tests::test_write_with_capability_succeeds ... ok
+test engine::p23_2_tests::test_write_without_capability_rejected ... FAILED
+test engine::p23_tests::test_capability_hash_in_receipt ... ok
+test engine::p23_tests::test_different_caps_different_hash ... ok
+test engine::p23_tests::test_same_caps_same_hash ... ok
+test engine::p24_object_isolation_tests::test_call_switches_current_object_and_isolates_memory ... FAILED
+test engine::p25_register_isolation_tests::test_callee_cannot_pass_value_via_register ... ok
+test engine::p25_register_isolation_tests::test_return_restores_caller_registers ... ok
+test engine::p26_object_freeze_tests::test_freeze_nonexistent_object_rejected ... ok
+test engine::p26_object_freeze_tests::test_freeze_then_cannot_write ... ok
+test engine::p26_object_freeze_tests::test_freeze_then_death ... ok
+test engine::p26_object_freeze_tests::test_freeze_then_link_rejected ... ok
+test engine::p27_hostcall_tests::test_hostcall_codec_roundtrip ... ok
+test engine::p27_hostcall_tests::test_hostcall_invalid_call_id_traps ... ok
+test engine::p27_hostcall_tests::test_hostcall_valid_call_id_advances_pc ... ok
+test engine::p28_trap_tests::test_trap_invalid_link_type_traps ... ok
+test engine::p28_trap_tests::test_trap_invalid_service_id_traps ... ok
+test engine::p28_trap_tests::test_trap_object_birth ... ok
+test engine::p28_trap_tests::test_trap_object_link_with_registers ... ok
+test engine::tests::crash_recovery_tests::test_crash_recovery_retries_unacked_effect ... ok
+test engine::tests::crash_recovery_tests::test_tx_id_counter_survives_restart ... ok
+test engine::tests::effect_tests::test_effect_executed_after_commit ... ok
+test engine::tests::effect_tests::test_effect_not_executed_on_abort ... ok
+test engine::tests::savepoint_tests::test_savepoint_basic ... ok
+test engine::tests::savepoint_tests::test_savepoint_effect_rollback ... ok
+test engine::tests::savepoint_tests::test_savepoint_multiple_states ... ok
+test engine::tests::savepoint_tests::test_savepoint_nested ... ok
+test engine::tests::savepoint_tests::test_savepoint_not_found ... ok
+test engine::tests::scope_regression_tests::test_scope_bind_rolls_back_with_savepoint ... ok
+test engine::tests::scope_regression_tests::test_scope_read_only_does_not_cause_false_conflict ... ok
+test engine::tests::scope_regression_tests::test_scope_struct_version_survives_restart ... ok
+test engine::tests::scope_tests::test_family_shared_limit_phantom_read_protection ... ok
+test engine::tests::test_basic_transaction ... ok
+test engine::tests::test_blind_write_conflict ... ok
+test engine::tests::test_capability_grant_to_alive_object ... ok
+test engine::tests::test_capability_grant_to_dead_object_rejected ... ok
+test engine::tests::test_capability_grant_to_nonexistent_rejected ... ok
+test engine::tests::test_concurrent_transactions ... ok
+test engine::tests::test_death_cascades_capability_revocation ... ok
+test engine::tests::test_death_cleans_incoming_link ... ok
+test engine::tests::test_death_cleans_outgoing_link ... ok
+test engine::tests::test_death_leaves_no_ghost_data ... FAILED
+test engine::tests::test_death_replay_restores_capability_graph ... ok
+test engine::tests::test_death_spares_unrelated_capabilities ... ok
+test engine::tests::test_death_topology_replay_cleanup ... ok
+test engine::tests::test_duplicate_link ... ok
+test engine::tests::test_empty_wal_recovery ... ok
+test engine::tests::test_isolation ... ok
+test engine::tests::test_link_to_dead_rejected ... ok
+test engine::tests::test_multiple_commits_recovery ... ok
+test engine::tests::test_object_birth_commit_and_abort ... ok
+test engine::tests::test_object_death_normal ... ok
+test engine::tests::test_object_death_reject_double_death ... ok
+test engine::tests::test_object_death_reject_unknown ... ok
+test engine::tests::test_object_death_replay ... ok
+test engine::tests::test_object_death_savepoint_rollback ... ok
+test engine::tests::test_object_link_commit_and_abort ... ok
+test engine::tests::test_p11_program_execution_pipeline ... ok
+test engine::tests::test_p13_3_transactional_isolation ... ok
+test engine::tests::test_p15_3_machine_boot ... ok
+test engine::tests::test_p15_4_cycle_limit ... ok
+test engine::tests::test_p15_4_normal_halt ... ok
+test engine::tests::test_p15_5_binary_boot_normal ... ok
+test engine::tests::test_p15_5_binary_boot_rejects_corrupted ... ok
+test engine::tests::test_p15_7_invalid_opcode_trap ... ok
+test engine::tests::test_p15_7_memory_fault_trap ... ok
+test engine::tests::test_p1_to_p6_full_lifecycle ... ok
+test engine::tests::test_p9_5_abort_removes_pcb ... ok
+test engine::tests::test_p9_5_aborted_no_ghost_on_replay ... ok
+test engine::tests::test_p9_5_commit_removes_pcb ... ok
+test engine::tests::test_p9_5_lock_released_after_wound ... ok
+test engine::tests::test_p9_5_wound_marks_pcb_aborted ... ok
+test engine::tests::test_read_future_version_aborts ... ok
+test engine::tests::test_read_your_writes ... ok
+test engine::tests::test_recovery_after_commit ... ok
+test engine::tests::test_recovery_then_new_transaction_conflict_detection ... ok
+test engine::tests::test_same_tx_birth_and_link ... ok
+test engine::tests::test_savepoint_rollback_link ... ok
+test engine::tests::test_self_link_rejection ... ok
+test engine::tests::test_tx_id_counter_survives_restart ... ok
+test engine::tests::test_wal_file_created ... ok
+test engine::tests::test_wal_replay_topology_and_registry ... ok
+test engine::tests::test_write_conflict ... ok
+test event::tests::test_event_hash_deterministic ... ok
+test execution::tests::test_context_finalize_produces_receipt ... ok
+test execution::tests::test_stats_count_instructions_and_writes ... ok
+test instruction_codec::tests::test_p15_1_codec_roundtrip ... ok
+test integration_tests::test_e2e_asm_to_machine ... ok
+test integration_tests::test_e2e_corrupted_image_rejected ... ok
+test integration_tests::test_e2e_loop_sum ... ok
+test integration_tests::test_e2e_trap_invalid_opcode ... ok
+test lock::tests::test_die_newer_yields_to_older ... ok
+test lock::tests::test_exclusive_conflict ... ok
+test lock::tests::test_release_all_frees ... ok
+test lock::tests::test_same_tx_reacquire ... ok
+test lock::tests::test_shared_compatible ... ok
+test lock::tests::test_wound_cascades_lock_release ... ok
+test lock::tests::test_wound_older_kills_newer ... ok
+test module::loader_tests::test_loader_lifecycle ... ok
+test module::loader_tests::test_verify_empty_program_rejected ... ok
+test module::tests::test_vmod_roundtrip ... ok
+test program::image_tests::test_p15_2_checksum_tamper_detection ... ok
+test program::image_tests::test_p15_2_program_image_roundtrip ... ok
+test receipt::tests::test_receipt_matches_detects_difference ... ok
+test receipt::tests::test_receipt_verify_rejects_zero ... ok
+test replay::tests::test_replay_chain_break_detected ... ok
+test replay::tests::test_replay_deterministic ... ok
+test replay_verify::tests::test_verify_detects_difference ... ok
+test replay_verify::tests::test_verify_passes_on_match ... ok
+test state_memory::tests::test_deterministic_hash ... ok
+test state_memory::tests::test_sparse_write_read ... ok
+test trace::tests::test_trace_hash_deterministic ... ok
+test tx_manager::tests::test_begin_returns_increasing_ids ... ok
+test tx_manager::tests::test_concurrent_begin_unique_ids ... ok
+test tx_manager::tests::test_is_older ... ok
+test tx_manager::tests::test_mark_aborted ... ok
+test tx_manager::tests::test_mark_committed ... ok
+test wal::tests::test_checkpoint_roundtrip ... ok
+test wal::tests::test_commit_serialize_roundtrip ... ok
+test wal::tests::test_corrupted_wal_recovery ... ok
+test wal::tests::test_effect_ack_roundtrip ... ok
+test wal::tests::test_effect_not_retried_if_acked ... ok
+test wal::tests::test_effect_retry_after_crash_without_ack ... ok
+test wal::tests::test_empty_wal_recovery ... ok
+test wal::tests::test_incomplete_line ... ok
+test wal::tests::test_multiple_records_recovery ... ok
+test wal::tests::test_scope_changes_replayed_into_scope_map ... ok
+test wal::tests::test_wal_write_and_read ... ok
+
+failures:
+
+---- engine::p18_tests::test_capability_recorded_in_history stdout ----
+
+thread 'engine::p18_tests::test_capability_recorded_in_history' (17026) panicked at src/engine.rs:2699:9:
+assertion `left == right` failed
+  left: Some(2123488444641314333)
+ right: Some(6711221971272713181)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- engine::p23_2_tests::test_write_without_capability_rejected stdout ----
+
+thread 'engine::p23_2_tests::test_write_without_capability_rejected' (17035) panicked at src/engine.rs:3049:9:
+assertion failed: matches!(m.status(),
+    crate::machine::MachineStatus::Trapped(crate::types::TrapReason::AccessDenied
+    { .. }))
+
+---- engine::p24_object_isolation_tests::test_call_switches_current_object_and_isolates_memory stdout ----
+
+thread 'engine::p24_object_isolation_tests::test_call_switches_current_object_and_isolates_memory' (17039) panicked at src/engine.rs:3145:9:
+assertion `left == right` failed: Object 0 state_id=1 should be 999
+  left: 100
+ right: 999
+
+---- engine::tests::test_death_leaves_no_ghost_data stdout ----
+
+thread 'engine::tests::test_death_leaves_no_ghost_data' (17087) panicked at src/engine.rs:2187:9:
+assertion `left == right` failed: grants 应为空
+  left: 3
+ right: 0
+
+
+failures:
+    engine::p18_tests::test_capability_recorded_in_history
+    engine::p23_2_tests::test_write_without_capability_rejected
+    engine::p24_object_isolation_tests::test_call_switches_current_object_and_isolates_memory
+    engine::tests::test_death_leaves_no_ghost_data
+
+test result: FAILED. 162 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+error: test failed, to rerun pass `--lib`
