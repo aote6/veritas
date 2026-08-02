@@ -207,3 +207,98 @@ fn p8_1_references_no_cascade() {
         "REFERENCES must not cascade death"
     );
 }
+
+/// P8.2.0-1: DEPENDS_ON → to 死亡后，dependent 收到 DependencyInvalidated
+#[test]
+fn p8_2_depends_on_emits_effect() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let a = root ^ 0x4001;
+    let b = root ^ 0x4002;
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, a).unwrap();
+    kernel.engine.object_birth(&mut tx, b).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::DependsOn).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_death(&mut tx, b).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    assert_eq!(kernel.engine.get_object_state(b), Some(veritas_kernel::types::ObjectState::Dead));
+    assert_eq!(
+        kernel.engine.get_object_state(a),
+        Some(veritas_kernel::types::ObjectState::Alive),
+        "DEPENDS_ON must NOT cascade death"
+    );
+
+    let inv = kernel.engine.last_dependency_invalidations();
+    assert!(
+        inv.iter().any(|(dep, dependency)| *dep == a && *dependency == b),
+        "expected DependencyInvalidated(dependent=A, dependency=B), got {:?}",
+        inv
+    );
+}
+
+/// P8.2.0-2: abort 不产生 DependencyInvalidated
+#[test]
+fn p8_2_abort_emits_no_effect() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let a = root ^ 0x5001;
+    let b = root ^ 0x5002;
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, a).unwrap();
+    kernel.engine.object_birth(&mut tx, b).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::DependsOn).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_death(&mut tx, b).unwrap();
+    kernel.engine.abort(&mut tx, veritas_kernel::types::AbortReason::AlreadyAborted);
+
+    assert_eq!(kernel.engine.get_object_state(b), Some(veritas_kernel::types::ObjectState::Alive));
+
+    let inv = kernel.engine.last_dependency_invalidations();
+    assert!(inv.is_empty(), "abort must not emit DependencyInvalidated, got {:?}", inv);
+}
+
+/// P8.2.0-3: REFERENCES 不产生 DependencyInvalidated（对照）
+#[test]
+fn p8_2_references_emits_no_effect() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let a = root ^ 0x6001;
+    let b = root ^ 0x6002;
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, a).unwrap();
+    kernel.engine.object_birth(&mut tx, b).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::References).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel.engine.object_death(&mut tx, b).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    assert_eq!(kernel.engine.get_object_state(a), Some(veritas_kernel::types::ObjectState::Alive));
+    assert_eq!(kernel.engine.get_object_state(b), Some(veritas_kernel::types::ObjectState::Dead));
+
+    let inv = kernel.engine.last_dependency_invalidations();
+    assert!(
+        !inv.iter().any(|(dep, dependency)| *dep == a && *dependency == b),
+        "REFERENCES must not emit DependencyInvalidated, got {:?}",
+        inv
+    );
+}

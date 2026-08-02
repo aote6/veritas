@@ -42,6 +42,9 @@ pub struct VeritasEngine {
     controller: TransactionController,
     pub state_memory: std::sync::Mutex<StateMemory>,
     pub history: std::sync::Mutex<ExecutionHistory>,
+
+    /// 测试观察口：最近一次 commit 产生的 DependencyInvalidated 列表
+    last_dep_inv: std::sync::Mutex<Vec<(crate::types::ObjectId, crate::types::ObjectId)>>,
 }
 
 
@@ -65,6 +68,11 @@ impl crate::types::ObjectState {
 }
 
 impl VeritasEngine {
+    /// 测试观察口：最近一次 commit 产生的 DependencyInvalidated 列表
+    pub fn last_dependency_invalidations(&self) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
+        self.last_dep_inv.lock().unwrap().clone()
+    }
+
     /// 宪法级 API：查询指定 Object 的当前生命周期状态
     pub fn get_object_state(&self, object_id: crate::types::ObjectId) -> Option<crate::types::ObjectState> {
         let registry = self.object_registry.lock().unwrap();
@@ -215,6 +223,7 @@ impl VeritasEngine {
             controller,
             state_memory: std::sync::Mutex::new(StateMemory::new()),
             history: std::sync::Mutex::new(ExecutionHistory::new()),
+            last_dep_inv: std::sync::Mutex::new(Vec::new()),
         };
 
         if !records.is_empty() {
@@ -546,6 +555,40 @@ impl VeritasEngine {
             for object_id in ctx.pending_freezes.drain(..) {
                 if let Some(r) = registry.get_mut(&object_id) { r.state = crate::types::ObjectState::Frozen; } else { let mut r = crate::types::ObjectRecord::new_state(object_id); r.state = crate::types::ObjectState::Frozen; registry.insert(object_id, r); }
             }
+        }
+
+        // P8.2: DEPENDS_ON → DependencyInvalidated（观察口）
+        {
+            let dead_set: HashSet<ObjectId> = ctx.pending_deaths.iter().copied().collect();
+            let unlinked: HashSet<(ObjectId, ObjectId)> =
+                ctx.pending_unlinks.iter().copied().collect();
+
+            let mut inv: Vec<(ObjectId, ObjectId)> = Vec::new();
+
+            {
+                let topo = self.topology.lock().unwrap();
+                for edge in topo.iter() {
+                    if edge.link_type == LinkType::DependsOn
+                        && dead_set.contains(&edge.to)
+                        && !unlinked.contains(&(edge.from, edge.to))
+                        && !dead_set.contains(&edge.from)
+                    {
+                        inv.push((edge.from, edge.to));
+                    }
+                }
+            }
+            for edge in &ctx.pending_links {
+                if edge.link_type == LinkType::DependsOn
+                    && dead_set.contains(&edge.to)
+                    && !unlinked.contains(&(edge.from, edge.to))
+                    && !dead_set.contains(&edge.from)
+                {
+                    inv.push((edge.from, edge.to));
+                }
+            }
+            inv.sort_unstable();
+            inv.dedup();
+            *self.last_dep_inv.lock().unwrap() = inv;
         }
 
         // P8.2: 确定性拓扑清理——剔除所有涉及已死亡 Object 的边
