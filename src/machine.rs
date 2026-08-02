@@ -95,6 +95,7 @@ struct CallFrame {
     return_pc: usize,
     parent_object: ObjectId,
     registers: RegisterFile,
+    caller_capability_context: ObjectId,
 }
 
 pub struct Machine<'a> {
@@ -332,7 +333,9 @@ impl<'a> Machine<'a> {
                     return_pc,
                     parent_object: saved_object,
                     registers: self.registers.clone(),
+                    caller_capability_context: self.ctx.capability_context,
                 });
+                self.ctx.capability_context = object_id;
                 self.ctx.current_object = object_id;
                 self.pc = entry_pc;
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
@@ -341,6 +344,7 @@ impl<'a> Machine<'a> {
             Instruction::Return => {
                 match self.call_stack.pop() {
                     Some(frame) => {
+                        self.ctx.capability_context = frame.caller_capability_context;
                         self.ctx.current_object = frame.parent_object;
                         self.registers = frame.registers;
                         self.pc = frame.return_pc;

@@ -452,25 +452,26 @@ impl RecoveryManager {
         let reader = BufReader::new(file);
         let mut records = Vec::new();
         let mut max_version = 0;
-
         for line_result in reader.lines() {
             let line = line_result?;
-            if let Some(entry) = WalEntry::deserialize(&line) {
-                match &entry {
-                    WalEntry::Commit { version, .. } | WalEntry::Checkpoint { version } => {
-                        if *version > max_version {
-                            max_version = *version;
+            match WalEntry::deserialize(&line) {
+                Some(entry) => {
+                    match &entry {
+                        WalEntry::Commit { version, .. } | WalEntry::Checkpoint { version } => {
+                            if *version > max_version {
+                                max_version = *version;
+                            }
                         }
+                        WalEntry::ObjectBirth { .. } => {}
+                        WalEntry::ObjectLink { .. } => {}
+                        WalEntry::ObjectDeath { .. } => {}
+                        _ => {}
                     }
-                    WalEntry::ObjectBirth { .. } => {}
-                    WalEntry::ObjectLink { .. } => {}
-                    WalEntry::ObjectDeath { .. } => {}
-                    _ => {}
+                    records.push(entry);
                 }
-                records.push(entry);
+                None => break,
             }
         }
-
         Ok((records, max_version))
     }
 

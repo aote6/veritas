@@ -249,6 +249,9 @@ pub struct TransactionContext {
     /// 隐式作用于这个Object的Memory Space——这是Memory宪法(memory.md)第4节
     /// "地址 = (ObjectId, StateId)"在执行层的落地方式：地址的ObjectId分量
     /// 来自当前上下文，不需要每条指令自己携带。
+    /// 当前 Transaction 内进行 Capability 检查时所使用的执行身份。
+    /// CALL 时切换为目标 Object，RETURN 时从 CallFrame 恢复。
+    pub capability_context: ObjectId,
     pub current_object: ObjectId,
 }
 
@@ -272,6 +275,7 @@ impl TransactionContext {
             pending_deaths: Vec::new(),
             aborted: false,
             capability_enforced: true,
+            capability_context: 0,
             current_object: 0,
         }
     }
