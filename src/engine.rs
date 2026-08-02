@@ -101,6 +101,12 @@ impl VeritasEngine {
         cap_graph.current_sequence()
     }
 
+    /// 只读查询：topology 中是否存在 from->to 这条边(任意 link_type)。测试用。
+    pub fn has_link(&self, from: ObjectId, to: ObjectId) -> bool {
+        let topo = self.topology.lock().unwrap();
+        topo.iter().any(|edge| edge.from == from && edge.to == to)
+    }
+
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
         if !ctx.capability_enforced {
             return Ok(());

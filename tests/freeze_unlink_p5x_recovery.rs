@@ -61,10 +61,44 @@ fn unlink_survives_recovery() {
     }
 
     let recovered_engine = VeritasEngine::with_wal_path(wal_path.clone());
-    // Recovery retain 已验证边从1变为0,此处确认 object_unlink 不崩溃即可
-    let mut tx = recovered_engine.begin();
-    recovered_engine.object_unlink(&mut tx, a, b).unwrap();
-    recovered_engine.commit(&mut tx).unwrap();
+    assert!(
+        !recovered_engine.has_link(a, b),
+        "Unlinked edge must not reappear after WAL recovery"
+    );
+
+    let _ = std::fs::remove_file(&wal_path);
+}
+
+/// 对照组:确认 has_link 本身可靠——一条从未 unlink 的边,
+/// recovery 后必须依然存在(避免 unlink_survives_recovery 因
+/// has_link 恒为 false 而产生假阳性)。
+#[test]
+fn link_without_unlink_survives_recovery() {
+    let wal_path = format!("target/test_link_control_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal_path);
+
+    let a: u64 = 0x20001;
+    let b: u64 = 0x20002;
+
+    {
+        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let mut tx = engine.begin();
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.commit(&mut tx).unwrap();
+
+        let mut tx2 = engine.begin();
+        engine.object_link(&mut tx2, a, b, LinkType::References).unwrap();
+        engine.commit(&mut tx2).unwrap();
+
+        assert!(engine.has_link(a, b), "sanity check before restart failed");
+    }
+
+    let recovered_engine = VeritasEngine::with_wal_path(wal_path.clone());
+    assert!(
+        recovered_engine.has_link(a, b),
+        "Link that was never unlinked must still exist after recovery"
+    );
 
     let _ = std::fs::remove_file(&wal_path);
 }
