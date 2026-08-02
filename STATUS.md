@@ -180,7 +180,7 @@ P8.2 设计前必须先选定：DEPENDS_ON 的"通知"落在 Trap、Effect、还
 - Test Probe：last_dependency_invalidations()，仅供测试；生产路径走 Effect
 - 对照测试：REFERENCES 不产生 invalidation，abort 不产生 invalidation
 - 测试：p8_2_depends_on_emits_effect / abort_emits_no_effect / references_emits_no_effect
-- 全量：103/103 passed
+- 全量：105/105 passed
 
 | LinkType | Death 语义 | 状态 |
 |----------|------------|------|
@@ -195,3 +195,37 @@ P8.2 设计前必须先选定：DEPENDS_ON 的"通知"落在 Trap、Effect、还
 - 双屏障：write() Object Protection + verify_capability resource 检查
 - 测试：p8_3_dead_resource_capability_rejected / p8_3_alive_resource_capability_still_works
 - 全量：105/105 passed
+
+
+## P8 Object Death : Semantic Complete (2026-08-02)
+
+Link / Mechanism                    | Semantics                                | Status
+------------------------------------|------------------------------------------|--------
+OWNS                                | Owner dead = Owned cascade dead          | P8.1 done
+DEPENDS_ON                          | Dependency dead = DependencyInvalidated  | P8.2 done
+REFERENCES                          | Only remove edge, no cascade or notify   | done
+Capability (resource liveness)      | Resource not Alive = rejected at use     | P8.3 done
+Topology                            | retain removes edges involving Dead      | done
+WAL                                 | ObjectDeath persist + recovery           | done
+
+Object Death is a lifecycle event, not a single-object state flip:
+
+ObjectDeath
+  - terminal state (Alive/Frozen to Dead)
+  - OWNS closure
+  - DependencyInvalidated (DEPENDS_ON)
+  - Capability lazy invalidation (use-time)
+  - topology retain
+  - WAL
+
+P8.4 Death Event Dispatcher = structural refactor, no new semantics, deferred.
+
+## Next Phase
+
+Do not continue mining commit(). Return to the six constitutions for gap analysis:
+- Module lifecycle fully realized?
+- Kernel / Capability semantic gaps?
+- Recovery covers all constitution requirements?
+- Link semantics beyond death (create, modify, query)?
+
+Let the constitution determine P9+. No organic numbering.
