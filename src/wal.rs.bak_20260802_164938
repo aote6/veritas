@@ -59,15 +59,6 @@ pub enum WalEntry {
         grantee: ObjectId,
         resource: ObjectId,
     },
-    ObjectFreeze {
-        tx_id: TxId,
-        object_id: ObjectId,
-    },
-    ObjectUnlink {
-        tx_id: TxId,
-        from: ObjectId,
-        to: ObjectId,
-    },
 }
 
 impl WalEntry {
@@ -138,14 +129,6 @@ impl WalEntry {
                     tx_id, cap_type, grantor, grantee, resource
                 )
             }
-            WalEntry::ObjectFreeze { tx_id, object_id } => {
-                format!("OBJECTFREEZE TX={} OBJECT={} END
-", tx_id, object_id)
-            }
-            WalEntry::ObjectUnlink { tx_id, from, to } => {
-                format!("OBJECTUNLINK TX={} FROM={} TO={} END
-", tx_id, from, to)
-            }
         }
     }
 
@@ -167,8 +150,6 @@ impl WalEntry {
             "OBJECTLINK" => Self::deserialize_object_link(&parts),
             "OBJECTDEATH" => Self::deserialize_object_death(&parts),
             "CAPABILITYGRANT" => Self::deserialize_capability_grant(&parts),
-            "OBJECTFREEZE" => Self::deserialize_object_freeze(&parts),
-            "OBJECTUNLINK" => Self::deserialize_object_unlink(&parts),
             _ => None,
         }
     }
@@ -322,44 +303,6 @@ impl WalEntry {
             .parse::<ObjectId>()
             .ok()?;
         Some(WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource })
-    }
-
-    fn deserialize_object_freeze(parts: &[&str]) -> Option<Self> {
-        let tx_id = parts
-            .iter()
-            .find(|p| p.starts_with("TX="))?
-            .strip_prefix("TX=")?
-            .parse::<TxId>()
-            .ok()?;
-        let object_id = parts
-            .iter()
-            .find(|p| p.starts_with("OBJECT="))?
-            .strip_prefix("OBJECT=")?
-            .parse::<ObjectId>()
-            .ok()?;
-        Some(WalEntry::ObjectFreeze { tx_id, object_id })
-    }
-
-    fn deserialize_object_unlink(parts: &[&str]) -> Option<Self> {
-        let tx_id = parts
-            .iter()
-            .find(|p| p.starts_with("TX="))?
-            .strip_prefix("TX=")?
-            .parse::<TxId>()
-            .ok()?;
-        let from = parts
-            .iter()
-            .find(|p| p.starts_with("FROM="))?
-            .strip_prefix("FROM=")?
-            .parse::<ObjectId>()
-            .ok()?;
-        let to = parts
-            .iter()
-            .find(|p| p.starts_with("TO="))?
-            .strip_prefix("TO=")?
-            .parse::<ObjectId>()
-            .ok()?;
-        Some(WalEntry::ObjectUnlink { tx_id, from, to })
     }
 
     fn deserialize_object_link(parts: &[&str]) -> Option<Self> {
@@ -540,8 +483,6 @@ impl RecoveryManager {
                 WalEntry::ObjectLink { .. } => {}
                 WalEntry::ObjectDeath { .. } => {}
                 WalEntry::CapabilityGrant { .. } => {}
-                WalEntry::ObjectFreeze { .. } => {}
-                WalEntry::ObjectUnlink { .. } => {}
             }
         }
 

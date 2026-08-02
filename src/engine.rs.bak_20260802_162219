@@ -89,18 +89,6 @@ impl VeritasEngine {
         ctx.capabilities.push(cap_id);
     }
 
-    /// 只读查询：某个 holder 是否持有某个 cap_id 且该 cap 有效。测试与外部诊断用。
-    pub fn holds_capability(&self, cap_id: crate::types::CapabilityId, holder: crate::types::ObjectId) -> bool {
-        let cap_graph = self.capability_graph.lock().unwrap();
-        cap_graph.is_capability_valid(cap_id) && cap_graph.holds(cap_id, holder)
-    }
-
-    /// 只读查询：capability_graph 当前的 grant_sequence 计数器值。测试用于推算 cap_id。
-    pub fn capability_sequence(&self) -> u64 {
-        let cap_graph = self.capability_graph.lock().unwrap();
-        cap_graph.current_sequence()
-    }
-
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
         if !ctx.capability_enforced {
             return Ok(());
@@ -181,7 +169,6 @@ impl VeritasEngine {
         let mut recovered_objects: HashMap<ObjectId, crate::types::ObjectRecord> = HashMap::new();
         let mut recovered_links: Vec<LinkEdge> = Vec::new();
         let mut recovered_deaths: Vec<ObjectId> = Vec::new();
-        let mut recovered_cap_grants: Vec<(String, ObjectId, ObjectId, ObjectId)> = Vec::new();
         for record in &records {
             match record {
                 WalEntry::ObjectBirth { object_id, .. } => {
@@ -201,37 +188,17 @@ impl VeritasEngine {
                     };
                     recovered_links.push(LinkEdge { from: *from, to: *to, link_type: relation });
                 }
-                WalEntry::CapabilityGrant { cap_type, grantor, grantee, resource, .. } => {
-                    recovered_cap_grants.push((cap_type.clone(), *grantor, *grantee, *resource));
-                }
-                WalEntry::ObjectFreeze { object_id, .. } => {
-                    if let Some(r) = recovered_objects.get_mut(object_id) {
-                        r.state = crate::types::ObjectState::Frozen;
-                    } else {
-                        let mut r = crate::types::ObjectRecord::new_state(*object_id);
-                        r.state = crate::types::ObjectState::Frozen;
-                        recovered_objects.insert(*object_id, r);
-                    }
-                }
-                WalEntry::ObjectUnlink { from, to, .. } => {
-                    recovered_links.retain(|edge| edge.from != *from || edge.to != *to);
-                }
                 _ => {}
             }
         }
 
-        // P8-final: 重放 Capability Grant + 级联撤销
-        // (原实现只重放了 revoke、从未重放 grant,导致重启后所有 Capability 丢失,这里一并修正)
-        let recovered_cap_graph = {
+        // P8-final: 重放能力级联撤销
+        {
             let mut cap_graph = CapabilityGraph::new();
-            for (cap_type, grantor, grantee, resource) in &recovered_cap_grants {
-                cap_graph.grant(cap_type.clone(), *grantor, *grantee, *resource);
-            }
             for dead_obj in &recovered_deaths {
                 cap_graph.revoke_holder(*dead_obj);
             }
-            cap_graph
-        };
+        }
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
         let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
@@ -251,7 +218,7 @@ impl VeritasEngine {
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
             object_registry: Mutex::new(recovered_objects),
             topology: Mutex::new(recovered_links),
-            capability_graph: Mutex::new(recovered_cap_graph),
+            capability_graph: Mutex::new(CapabilityGraph::new()),
             tx_mgr,
             lock_mgr,
             controller,
@@ -513,6 +480,17 @@ impl VeritasEngine {
             })
             .collect();
 
+        let wal_entry = WalEntry::Commit {
+            tx_id: ctx.tx_id(),
+            version: commit_version,
+            writes: writes_map.into_iter().collect(),
+            scope_changes: wal_scope_changes,
+            effects: wal_effects,
+        };
+
+        self.wal
+            .append_and_sync(&wal_entry)
+            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
         // P4: 写入 ObjectBirth WAL 条目
         for object_id in &ctx.pending_objects {
             let birth_entry = WalEntry::ObjectBirth {
@@ -557,25 +535,6 @@ impl VeritasEngine {
             }
         }
 
-        // P4.x: 写入 CapabilityGrant WAL 条目并落地到 capability_graph
-        // (Object 与其 Capability 视为同一语义闭合域,Commit 时一并生效)
-        let tx_id = ctx.tx_id();
-        for grant in ctx.pending_capabilities.drain(..) {
-            let grant_entry = WalEntry::CapabilityGrant {
-                tx_id,
-                cap_type: grant.cap_type.clone(),
-                grantor: grant.grantor,
-                grantee: grant.grantee,
-                resource: grant.resource,
-            };
-            self.wal
-                .append_and_sync(&grant_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL CapabilityGrant write failed: {}", e)))?;
-
-            let mut cap_graph = self.capability_graph.lock().unwrap();
-            cap_graph.grant(grant.cap_type, grant.grantor, grant.grantee, grant.resource);
-        }
-
         // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
         self.expand_owns_death_closure(ctx);
 
@@ -589,24 +548,12 @@ impl VeritasEngine {
                 .append_and_sync(&death_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectDeath write failed: {}", e)))?;
         }
-        // P5.x: 写入 ObjectFreeze WAL 条目(修复:此前 Freeze 只改内存 registry,
-        // 从未写 WAL,重启后 Frozen 状态会静默丢失,写保护失效)
-        let freezes_to_apply: Vec<ObjectId> = ctx.pending_freezes.drain(..).collect();
-        for object_id in &freezes_to_apply {
-            let freeze_entry = WalEntry::ObjectFreeze {
-                tx_id: ctx.tx_id(),
-                object_id: *object_id,
-            };
-            self.wal
-                .append_and_sync(&freeze_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectFreeze write failed: {}", e)))?;
-        }
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &ctx.pending_deaths {
                 if let Some(r) = registry.get_mut(object_id) { r.state = crate::types::ObjectState::Dead; } else { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; registry.insert(*object_id, r); }
             }
-            for object_id in freezes_to_apply {
+            for object_id in ctx.pending_freezes.drain(..) {
                 if let Some(r) = registry.get_mut(&object_id) { r.state = crate::types::ObjectState::Frozen; } else { let mut r = crate::types::ObjectRecord::new_state(object_id); r.state = crate::types::ObjectState::Frozen; registry.insert(object_id, r); }
             }
         }
@@ -678,31 +625,6 @@ impl VeritasEngine {
                 .append_and_sync(&link_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectLink write failed: {}", e)))?;
         }
-        // P5.x: 写入 ObjectUnlink WAL 条目(修复:此前 Unlink 只改内存 topology,
-        // 从未写 WAL,重启后被解除的边会静默复活,可能引发错误的死亡级联)
-        for (from, to) in &ctx.pending_unlinks {
-            let unlink_entry = WalEntry::ObjectUnlink {
-                tx_id: ctx.tx_id(),
-                from: *from,
-                to: *to,
-            };
-            self.wal
-                .append_and_sync(&unlink_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectUnlink write failed: {}", e)))?;
-        }
-
-        // P4: 写入 COMMIT WAL 条目(在所有 Effect 之后,保证 Recovery 看到 Effect→Commit 顺序)
-        let wal_entry = WalEntry::Commit {
-            tx_id: ctx.tx_id(),
-            version: commit_version,
-            writes: writes_map.into_iter().collect(),
-            scope_changes: wal_scope_changes,
-            effects: wal_effects,
-        };
-        self.wal
-            .append_and_sync(&wal_entry)
-            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
-
         {
             let mut topo = self.topology.lock().unwrap();
             for edge in &ctx.pending_links {
@@ -890,14 +812,16 @@ impl VeritasEngine {
         ctx.pending_objects.push(object_id);
 
         // birth 时创建者自动获得该 Object 的 AdminCap
-        // P4.x: 不再立即写入 capability_graph(会在 abort 后残留、且 Recovery 时丢失)。
-        // 改为暂存,Commit 时统一落地 + 写 WAL;Recovery 时统一重放。
-        ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
-            cap_type: "AdminCap".into(),
-            grantor: object_id,
-            grantee: object_id,
-            resource: object_id,
-        });
+        let cap_id = {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.grant(
+                "AdminCap".into(),
+                object_id,
+                object_id,
+                object_id,
+            )
+        };
+        ctx.capabilities.push(cap_id);
 
         Ok(())
     }

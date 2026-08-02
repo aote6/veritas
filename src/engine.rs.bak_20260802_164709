@@ -513,6 +513,17 @@ impl VeritasEngine {
             })
             .collect();
 
+        let wal_entry = WalEntry::Commit {
+            tx_id: ctx.tx_id(),
+            version: commit_version,
+            writes: writes_map.into_iter().collect(),
+            scope_changes: wal_scope_changes,
+            effects: wal_effects,
+        };
+
+        self.wal
+            .append_and_sync(&wal_entry)
+            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
         // P4: 写入 ObjectBirth WAL 条目
         for object_id in &ctx.pending_objects {
             let birth_entry = WalEntry::ObjectBirth {
@@ -690,19 +701,6 @@ impl VeritasEngine {
                 .append_and_sync(&unlink_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectUnlink write failed: {}", e)))?;
         }
-
-        // P4: 写入 COMMIT WAL 条目(在所有 Effect 之后,保证 Recovery 看到 Effect→Commit 顺序)
-        let wal_entry = WalEntry::Commit {
-            tx_id: ctx.tx_id(),
-            version: commit_version,
-            writes: writes_map.into_iter().collect(),
-            scope_changes: wal_scope_changes,
-            effects: wal_effects,
-        };
-        self.wal
-            .append_and_sync(&wal_entry)
-            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
-
         {
             let mut topo = self.topology.lock().unwrap();
             for edge in &ctx.pending_links {

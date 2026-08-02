@@ -89,18 +89,6 @@ impl VeritasEngine {
         ctx.capabilities.push(cap_id);
     }
 
-    /// 只读查询：某个 holder 是否持有某个 cap_id 且该 cap 有效。测试与外部诊断用。
-    pub fn holds_capability(&self, cap_id: crate::types::CapabilityId, holder: crate::types::ObjectId) -> bool {
-        let cap_graph = self.capability_graph.lock().unwrap();
-        cap_graph.is_capability_valid(cap_id) && cap_graph.holds(cap_id, holder)
-    }
-
-    /// 只读查询：capability_graph 当前的 grant_sequence 计数器值。测试用于推算 cap_id。
-    pub fn capability_sequence(&self) -> u64 {
-        let cap_graph = self.capability_graph.lock().unwrap();
-        cap_graph.current_sequence()
-    }
-
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
         if !ctx.capability_enforced {
             return Ok(());
@@ -203,18 +191,6 @@ impl VeritasEngine {
                 }
                 WalEntry::CapabilityGrant { cap_type, grantor, grantee, resource, .. } => {
                     recovered_cap_grants.push((cap_type.clone(), *grantor, *grantee, *resource));
-                }
-                WalEntry::ObjectFreeze { object_id, .. } => {
-                    if let Some(r) = recovered_objects.get_mut(object_id) {
-                        r.state = crate::types::ObjectState::Frozen;
-                    } else {
-                        let mut r = crate::types::ObjectRecord::new_state(*object_id);
-                        r.state = crate::types::ObjectState::Frozen;
-                        recovered_objects.insert(*object_id, r);
-                    }
-                }
-                WalEntry::ObjectUnlink { from, to, .. } => {
-                    recovered_links.retain(|edge| edge.from != *from || edge.to != *to);
                 }
                 _ => {}
             }
@@ -513,6 +489,17 @@ impl VeritasEngine {
             })
             .collect();
 
+        let wal_entry = WalEntry::Commit {
+            tx_id: ctx.tx_id(),
+            version: commit_version,
+            writes: writes_map.into_iter().collect(),
+            scope_changes: wal_scope_changes,
+            effects: wal_effects,
+        };
+
+        self.wal
+            .append_and_sync(&wal_entry)
+            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
         // P4: 写入 ObjectBirth WAL 条目
         for object_id in &ctx.pending_objects {
             let birth_entry = WalEntry::ObjectBirth {
@@ -589,24 +576,12 @@ impl VeritasEngine {
                 .append_and_sync(&death_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectDeath write failed: {}", e)))?;
         }
-        // P5.x: 写入 ObjectFreeze WAL 条目(修复:此前 Freeze 只改内存 registry,
-        // 从未写 WAL,重启后 Frozen 状态会静默丢失,写保护失效)
-        let freezes_to_apply: Vec<ObjectId> = ctx.pending_freezes.drain(..).collect();
-        for object_id in &freezes_to_apply {
-            let freeze_entry = WalEntry::ObjectFreeze {
-                tx_id: ctx.tx_id(),
-                object_id: *object_id,
-            };
-            self.wal
-                .append_and_sync(&freeze_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectFreeze write failed: {}", e)))?;
-        }
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &ctx.pending_deaths {
                 if let Some(r) = registry.get_mut(object_id) { r.state = crate::types::ObjectState::Dead; } else { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; registry.insert(*object_id, r); }
             }
-            for object_id in freezes_to_apply {
+            for object_id in ctx.pending_freezes.drain(..) {
                 if let Some(r) = registry.get_mut(&object_id) { r.state = crate::types::ObjectState::Frozen; } else { let mut r = crate::types::ObjectRecord::new_state(object_id); r.state = crate::types::ObjectState::Frozen; registry.insert(object_id, r); }
             }
         }
@@ -678,31 +653,6 @@ impl VeritasEngine {
                 .append_and_sync(&link_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectLink write failed: {}", e)))?;
         }
-        // P5.x: 写入 ObjectUnlink WAL 条目(修复:此前 Unlink 只改内存 topology,
-        // 从未写 WAL,重启后被解除的边会静默复活,可能引发错误的死亡级联)
-        for (from, to) in &ctx.pending_unlinks {
-            let unlink_entry = WalEntry::ObjectUnlink {
-                tx_id: ctx.tx_id(),
-                from: *from,
-                to: *to,
-            };
-            self.wal
-                .append_and_sync(&unlink_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectUnlink write failed: {}", e)))?;
-        }
-
-        // P4: 写入 COMMIT WAL 条目(在所有 Effect 之后,保证 Recovery 看到 Effect→Commit 顺序)
-        let wal_entry = WalEntry::Commit {
-            tx_id: ctx.tx_id(),
-            version: commit_version,
-            writes: writes_map.into_iter().collect(),
-            scope_changes: wal_scope_changes,
-            effects: wal_effects,
-        };
-        self.wal
-            .append_and_sync(&wal_entry)
-            .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
-
         {
             let mut topo = self.topology.lock().unwrap();
             for edge in &ctx.pending_links {

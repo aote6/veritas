@@ -220,13 +220,6 @@ pub struct Savepoint {
 }
 
 #[derive(Debug, Clone)]
-pub struct PendingCapabilityGrant {
-    pub cap_type: String,
-    pub grantor: ObjectId,
-    pub grantee: ObjectId,
-    pub resource: ObjectId,
-}
-
 pub struct TransactionContext {
     pub capabilities: Vec<u64>,
     pub program_hash: Option<u64>,
@@ -242,7 +235,6 @@ pub struct TransactionContext {
     pub pending_freezes: Vec<ObjectId>,
     pub pending_deaths: Vec<ObjectId>,
     pub pending_objects: Vec<ObjectId>,
-    pub pending_capabilities: Vec<PendingCapabilityGrant>,
     pub aborted: bool,
     pub capability_enforced: bool,
     /// 当前执行上下文所属的Object。一切Read/Write在没有显式CALL切换的情况下，
@@ -265,7 +257,6 @@ impl TransactionContext {
             effect_queue: EffectQueue::default(),
             savepoints: Vec::new(),
             pending_objects: Vec::new(),
-            pending_capabilities: Vec::new(),
             pending_links: Vec::new(),
             pending_unlinks: Vec::new(),
             pending_freezes: Vec::new(),
