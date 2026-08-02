@@ -35,7 +35,7 @@ impl<'a> ObjectView for TransactionObjectView<'a> {
         if self.pending_births.contains(&id) {
             return true;
         }
-        self.registry.get(&id).map(|r| r.state == crate::types::ObjectState::Alive).unwrap_or(false)
+        self.registry.get(&id).map(|r| r.is_alive()).unwrap_or(false)
     }
 
     fn is_dead(&self, id: ObjectId) -> bool {
@@ -45,7 +45,7 @@ impl<'a> ObjectView for TransactionObjectView<'a> {
         if self.pending_births.contains(&id) {
             return false;
         }
-        self.registry.get(&id).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false)
+        self.registry.get(&id).map(|r| r.is_dead()).unwrap_or(false)
     }
 
     fn exists(&self, id: ObjectId) -> bool {

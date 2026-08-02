@@ -356,7 +356,7 @@ impl VeritasEngine {
                 None => {
                     return Err(VeritasError::PermissionDenied);
                 }
-                Some(r) if r.state == crate::types::ObjectState::Frozen || r.state == crate::types::ObjectState::Dead => {
+                Some(r) if r.is_frozen() || r.is_dead() => {
                     return Err(VeritasError::PermissionDenied);
                 }
                 Some(_) => {}
@@ -629,7 +629,7 @@ impl VeritasEngine {
 
         match record {
             None => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
-            Some(r) if r.state == crate::types::ObjectState::Dead => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
+            Some(r) if r.is_dead() => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
             Some(_) => {}
         }
 
@@ -671,8 +671,8 @@ impl VeritasEngine {
 
         // P8.2: 死亡检查——源或目标已死则拒绝
         let reg = self.object_registry.lock().unwrap();
-        let from_dead = reg.get(&from).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false) || ctx.pending_deaths.contains(&from);
-        let to_dead = reg.get(&to).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false) || ctx.pending_deaths.contains(&to);
+        let from_dead = reg.get(&from).map(|r| r.is_dead()).unwrap_or(false) || ctx.pending_deaths.contains(&from);
+        let to_dead = reg.get(&to).map(|r| r.is_dead()).unwrap_or(false) || ctx.pending_deaths.contains(&to);
         drop(reg);
         if from_dead || to_dead {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));

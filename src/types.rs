@@ -459,4 +459,19 @@ impl ObjectRecord {
             },
         }
     }
+
+    #[inline]
+    pub fn is_alive(&self) -> bool {
+        self.state.is_alive()
+    }
+
+    #[inline]
+    pub fn is_frozen(&self) -> bool {
+        self.state.is_frozen()
+    }
+
+    #[inline]
+    pub fn is_dead(&self) -> bool {
+        self.state.is_dead()
+    }
 }
