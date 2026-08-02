@@ -171,3 +171,19 @@
 
 P8.2 设计前必须先选定：DEPENDS_ON 的"通知"落在 Trap、Effect、还是新原语。
 不要在未选定载体前实现假通知。
+
+### P8.2.0：DEPENDS_ON → DependencyInvalidated（2026-08-02）
+- 语义裁定：DEPENDS_ON 走消息通知，不走标记、不走级联死亡
+- 载体：PendingEffect 通道（复用现有 WAL/retry），payload = (dependent, dependency)
+- idempotency_key：dep-inv:{tx_id}:{dependent}:{dependency}
+- 产生时机：commit 成功路径、OWNS closure 与 state 应用之后、topology retain 之前
+- Test Probe：last_dependency_invalidations()，仅供测试；生产路径走 Effect
+- 对照测试：REFERENCES 不产生 invalidation，abort 不产生 invalidation
+- 测试：p8_2_depends_on_emits_effect / abort_emits_no_effect / references_emits_no_effect
+- 全量：103/103 passed
+
+| LinkType | Death 语义 | 状态 |
+|----------|------------|------|
+| OWNS | Owner 死 → Owned 级联死（传递闭包） | ✅ P8.1 |
+| DEPENDS_ON | Dependency 死 → DependencyInvalidated | ✅ P8.2.0 |
+| REFERENCES | 只删边，不级联、不通知 | ✅ 对照测试 |

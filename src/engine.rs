@@ -43,7 +43,7 @@ pub struct VeritasEngine {
     pub state_memory: std::sync::Mutex<StateMemory>,
     pub history: std::sync::Mutex<ExecutionHistory>,
 
-    /// 测试观察口：最近一次 commit 产生的 DependencyInvalidated 列表
+    /// Test probe: DependencyInvalidated pairs from last commit. Not for production use.
     last_dep_inv: std::sync::Mutex<Vec<(crate::types::ObjectId, crate::types::ObjectId)>>,
 }
 
@@ -68,7 +68,8 @@ impl crate::types::ObjectState {
 }
 
 impl VeritasEngine {
-    /// 测试观察口：最近一次 commit 产生的 DependencyInvalidated 列表
+    /// Test probe: last commit's DependencyInvalidated pairs.
+    /// Production consumers must use Effect/WAL path, not this API.
     pub fn last_dependency_invalidations(&self) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
         self.last_dep_inv.lock().unwrap().clone()
     }
