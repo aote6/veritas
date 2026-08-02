@@ -30,13 +30,12 @@ ObjectType 只有两种:
 
 ## 4. Object 的生命周期
 
-状态机: BIRTH -> ACTIVE -> FROZEN -> DEAD
+状态机: （不存在）→ Birth/Commit → Alive → Frozen → Dead
 
-- BIRTH: Object 被创建，获得初始 Capability，进入 ObjectRegistry
-- ACTIVE: 正常状态，可读写、可建立 Link
-- FROZEN: 只读状态，不可修改、不可建立新 Link
-- DEAD: 不可访问（终态，不可逆）。
-  - 所有指向该 Object 的 Capability **自动失效**（validity depends on
+- Alive: 正常状态，可读写、可建立 Link（代码/数据模型统一使用 Alive）
+- Frozen: 只读状态，不可修改、不可建立新 Link
+- Dead: 不可访问（终态，不可逆）。
+  - 所有指向该 Object 的 Capability 自动失效（validity depends on
     target object liveness；使用时校验 resource 必须 Alive，不在
     Death 路径主动遍历清扫 Capability 图）
   - 所有 Link 按 LinkType 语义处理（见 link.md）：
@@ -49,29 +48,25 @@ ObjectType 只有两种:
 
 | 从 | 到 | 触发指令 |
 |---|---|---|
-| 不存在 | BIRTH | OBJECT_BIRTH |
-| BIRTH | ACTIVE | 创建 Transaction 提交 |
-| ACTIVE | FROZEN | OBJECT_FREEZE |
-| FROZEN | DEAD | OBJECT_DEATH |
-| ACTIVE | DEAD | OBJECT_DEATH |
+| 不存在 | Birth/Commit | OBJECT_BIRTH |
+| Alive | Frozen | OBJECT_FREEZE |
+| Frozen | Dead | OBJECT_DEATH |
+| Alive | Dead | OBJECT_DEATH |
 
 ## 5. Object 的组成
 
-每个 Object 包含:
+以下为 Object 的逻辑组成（机器可见概念），不是 ObjectRecord 的物理字段。
+物理字段定义见运行时数据模型标准（id, object_type, state, body）。
 
 - id: ObjectId
-- type: ObjectType
-- memory_space: 该 Object 拥有的 MemorySpace (StateObject 有，
-  ModuleObject 无)
-- code_section: 指令序列 (仅 ModuleObject 有)
-- import_section: 依赖的其他 Module (仅 ModuleObject 有)
-- export_section: 对外暴露的入口点 (仅 ModuleObject 有)
-- verification_rule: 执行前必须满足的验证规则 (仅 ModuleObject 有)
-- capability_space: 该 Object 持有的 Capability 列表 (Kernel Resource，
-  不是 Object)
-- incoming_links: 指向该 Object 的 Link 列表
-- outgoing_links: 该 Object 指向其他 Object 的 Link 列表
-- history: 创建与修改的 Transaction 记录
+- type: ObjectType (StateObject | ModuleObject)
+- state: Alive | Frozen | Dead
+- body: State | Module { code_section, import_section, export_section, verification_rule? }
+- memory_space: 该 Object 拥有的 MemorySpace (StateObject 有，ModuleObject 无)
+- capability_space: 该 Object 作为 holder 持有的 Capability
+  （由 Capability 图按 holder 索引，非 Object 内嵌列表）
+- incoming_links / outgoing_links: 由 topology 按端点投影，非 ObjectRecord 字段
+- history: 创建与修改的 Transaction 记录（ExecutionHistory）
 
 ## 6. ModuleObject 与 ModuleInstance
 
@@ -87,7 +82,8 @@ ModuleInstance:
 - pc: 程序计数器
 
 多个 ModuleInstance 可以共享同一个 ModuleObject。
-ModuleObject 死亡时，所有基于它的 ModuleInstance 收到 TRAP。
+
+ModuleObject 死亡时，所有基于它的 ModuleInstance 收到 TRAP。（注：未实现，缺口）
 
 ## 7. Object 之间的 Link
 
@@ -104,7 +100,7 @@ Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
 ## 8. Object 与 Transaction 的关系
 
 - OBJECT_BIRTH 必须在 Transaction 内
-- Transaction 提交后 Object 进入 ACTIVE 状态
+- Transaction 提交后 Object 进入 Alive 状态
 - Transaction 中止时 Object 创建回滚，不留痕迹
 - 修改 MemorySpace 必须在 Transaction 内
 - OBJECT_DEATH 必须在 Transaction 内
@@ -116,7 +112,7 @@ Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
 - Object 创建时，创建者自动获得该 Object 的 AdminCap
 - 通过 CAPABILITY_GRANT 将 Capability 授予其他 Object
 - 通过 CAPABILITY_REVOKE 撤销已授予的 Capability
-- Object 死亡后，所有以该 Object 为 resource 的 Capability **自动失效**
+- Object 死亡后，所有以该 Object 为 resource 的 Capability 自动失效
   （lazy validation：授权入口检查 resource.is_alive()）
 - Object 作为 holder 死亡时，其持有的 Capability 不再可用
   （revoke_holder 与/或使用时 holder 存活检查）
@@ -124,16 +120,18 @@ Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
 
 ## 10. 当前实现映射
 
-| 规范定义 | 当前代码位置 | 未来方向 |
-|---|---|---|
-| ObjectId | types.rs | 保持 |
-| ObjectType | 散落各处 | 统一定义，删除 CapabilityObject |
-| ObjectRegistry | engine.rs HashMap | 独立为 Machine 组件 |
-| BIRTH/DEATH | engine.rs 方法 | 转为 ISA 指令 |
-| MemorySpace | state_memory.rs | 与 Object 绑定 |
-| ModuleObject/Instance | module.rs | 分离代码模板和执行实例 |
-| Link/LinkType | engine.rs topology | 增加语义类型 |
-| Capability | capability.rs | 改为 Kernel Resource，不属于 Object |
+| 规范定义 | 当前代码 | 状态 |
+|------|----------|------|
+| ObjectId | types.rs | done |
+| ObjectType / ObjectRecord | types.rs | done (P30) |
+| ObjectRegistry | engine.rs object_registry | done |
+| Birth / Freeze / Death | engine.rs | done |
+| OWNS cascade | expand_owns_death_closure | done (P8.1) |
+| DEPENDS_ON invalidated | DependencyInvalidated | done (P8.2) |
+| Capability lazy resource liveness | verify_capability | done (P8.3) |
+| LinkType | engine.rs topology | done |
+| MemorySpace | state_memory.rs | done |
+| ModuleObject / Instance | module.rs | partial |
 
 ## 11. 实现要求
 
