@@ -431,7 +431,7 @@ impl<'a> Machine<'a> {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
-        if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction) {
+        if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction, self.call_stack.len()) {
             match e {
                 VeritasError::PermissionDenied => {
                     self.status = MachineStatus::Trapped(
@@ -455,10 +455,6 @@ impl<'a> Machine<'a> {
 
 
 
-        if matches!(instruction, Instruction::Commit) {
-            let current_object = self.ctx.current_object;
-            self.ctx = self.engine.begin_in_object(current_object);
-        }
         self.pc += consumed;
 
         // P19.1: 记录指令执行 trace

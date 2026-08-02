@@ -26,7 +26,7 @@ impl<'a> Executor<'a> {
         let mut ctx = self.engine.begin();
 
         for inst in &program.instructions {
-            if let Err(e) = self.execute_instruction(&mut ctx, inst) {
+            if let Err(e) = self.execute_instruction(&mut ctx, inst, 0) {
                 self.engine.abort(&mut ctx, AbortReason::WriteConflict);
                 return Err(e);
             }
@@ -38,10 +38,14 @@ impl<'a> Executor<'a> {
     /// 执行内核级指令（Kernel Service）。
     /// Machine::step() 将 TRAP 和需要内核服务的指令路由到这里。
     /// 本地指令（算术/跳转/Halt等）由 Machine 自行处理，不经过此方法。
+    /// 执行内核级指令。
+    /// call_stack_depth: 当前 Machine 的 call_stack 深度，
+    /// 用于 Commit 时检测嵌套事务（宪法 transaction.md 第3节）。
     pub fn execute_instruction(
         &self,
         ctx: &mut TransactionContext,
         inst: &Instruction,
+        call_stack_depth: usize,
     ) -> Result<(), VeritasError> {
         match inst {
             Instruction::Read { state_id } => {
@@ -79,7 +83,16 @@ impl<'a> Executor<'a> {
                 self.engine.rollback_to(ctx, name)?;
             }
             Instruction::Commit => {
+                // 宪法 transaction.md 第3节：Transaction 不可嵌套。
+                // CALL/RETURN 不改变 Transaction 边界，Commit 只能在最外层执行。
+                if call_stack_depth > 0 {
+                    return Err(VeritasError::Abort(AbortReason::WriteConflict));
+                }
+                let current_object = ctx.current_object;
                 self.engine.commit(ctx)?;
+                // Commit 成功后自动开始新 Transaction，
+                // 保持 current_object 不变
+                *ctx = self.engine.begin_in_object(current_object);
             }
             Instruction::Abort { reason } => {
                 self.engine.abort(ctx, *reason);
