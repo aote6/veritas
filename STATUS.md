@@ -187,3 +187,11 @@ P8.2 设计前必须先选定：DEPENDS_ON 的"通知"落在 Trap、Effect、还
 | OWNS | Owner 死 → Owned 级联死（传递闭包） | ✅ P8.1 |
 | DEPENDS_ON | Dependency 死 → DependencyInvalidated | ✅ P8.2.0 |
 | REFERENCES | 只删边，不级联、不通知 | ✅ 对照测试 |
+
+### P8.3：Resource-liveness validation for Capability（2026-08-02）
+- 语义：Capability 不因 Resource 死亡而被物理删除；使用路径上 resource 非 Alive 一律拒绝
+- 实现：verify_capability() 增加 registry.get(resource).is_alive() 检查（lazy invalidation）
+- 不在 Death 路径遍历/清扫 Capability 图（零 fan-out）
+- 双屏障：write() Object Protection + verify_capability resource 检查
+- 测试：p8_3_dead_resource_capability_rejected / p8_3_alive_resource_capability_still_works
+- 全量：105/105 passed
