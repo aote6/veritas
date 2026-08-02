@@ -1,4 +1,4 @@
-use crate::types::{ObjectId, ObjectState};
+use crate::types::ObjectId;
 use std::collections::HashMap;
 
 /// 当前事务视角下的 Object 世界视图。
@@ -12,14 +12,14 @@ pub trait ObjectView {
 /// 融合 registry + pending_births + pending_deaths 的事务视图。
 /// pending_births 中的对象视为 Alive，pending_deaths 中的对象视为 Dead。
 pub struct TransactionObjectView<'a> {
-    registry: &'a HashMap<ObjectId, ObjectState>,
+    registry: &'a HashMap<ObjectId, crate::types::ObjectRecord>,
     pending_births: &'a [ObjectId],
     pending_deaths: &'a [ObjectId],
 }
 
 impl<'a> TransactionObjectView<'a> {
     pub fn new(
-        registry: &'a HashMap<ObjectId, ObjectState>,
+        registry: &'a HashMap<ObjectId, crate::types::ObjectRecord>,
         pending_births: &'a [ObjectId],
         pending_deaths: &'a [ObjectId],
     ) -> Self {
@@ -35,7 +35,7 @@ impl<'a> ObjectView for TransactionObjectView<'a> {
         if self.pending_births.contains(&id) {
             return true;
         }
-        matches!(self.registry.get(&id), Some(ObjectState::Alive))
+        self.registry.get(&id).map(|r| r.state == crate::types::ObjectState::Alive).unwrap_or(false)
     }
 
     fn is_dead(&self, id: ObjectId) -> bool {
@@ -45,7 +45,7 @@ impl<'a> ObjectView for TransactionObjectView<'a> {
         if self.pending_births.contains(&id) {
             return false;
         }
-        matches!(self.registry.get(&id), Some(ObjectState::Dead))
+        self.registry.get(&id).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false)
     }
 
     fn exists(&self, id: ObjectId) -> bool {

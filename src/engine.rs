@@ -32,7 +32,7 @@ pub struct VeritasEngine {
     scope_registry: ScopeRegistry,
     commit_lock: Mutex<()>,
     wal: WalWriter,
-    object_registry: Mutex<HashMap<ObjectId, ObjectState>>,
+    object_registry: Mutex<HashMap<ObjectId, crate::types::ObjectRecord>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
     #[allow(dead_code)]
@@ -68,7 +68,7 @@ impl VeritasEngine {
     /// 宪法级 API：查询指定 Object 的当前生命周期状态
     pub fn get_object_state(&self, object_id: crate::types::ObjectId) -> Option<crate::types::ObjectState> {
         let registry = self.object_registry.lock().unwrap();
-        registry.get(&object_id).copied()
+        registry.get(&object_id).map(|r| r.state)
     }
 
     /// 宪法级 API：判断 Object 是否已进入 Dead 状态
@@ -125,7 +125,7 @@ impl VeritasEngine {
         true
     }
 
-    pub fn apply_state_memory(&self, ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
+    pub fn apply_state_memory(&self, _ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
         if let Ok(mut mem) = self.state_memory.lock() {
             for (addr, payload) in &write_set.changes {
                 mem.write(*addr, payload.clone());
@@ -157,16 +157,16 @@ impl VeritasEngine {
             RecoveryManager::apply_records(&records);
 
         // P7.5: 从 WAL records 重建 object_registry 和 topology
-        let mut recovered_objects: HashMap<ObjectId, ObjectState> = HashMap::new();
+        let mut recovered_objects: HashMap<ObjectId, crate::types::ObjectRecord> = HashMap::new();
         let mut recovered_links: Vec<LinkEdge> = Vec::new();
         let mut recovered_deaths: Vec<ObjectId> = Vec::new();
         for record in &records {
             match record {
                 WalEntry::ObjectBirth { object_id, .. } => {
-                    recovered_objects.insert(*object_id, ObjectState::Alive);
+                    recovered_objects.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
                 }
                 WalEntry::ObjectDeath { object_id, .. } => {
-                    recovered_objects.insert(*object_id, ObjectState::Dead);
+                    { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; recovered_objects.insert(*object_id, r); }
                     recovered_links.retain(|edge| edge.from != *object_id && edge.to != *object_id);
                     recovered_deaths.push(*object_id);
                 }
@@ -353,10 +353,13 @@ impl VeritasEngine {
         {
             let reg = self.object_registry.lock().unwrap();
             match reg.get(&ctx.current_object) {
-                None | Some(ObjectState::Frozen) | Some(ObjectState::Dead) => {
+                None => {
                     return Err(VeritasError::PermissionDenied);
                 }
-                Some(ObjectState::Alive) => {}
+                Some(r) if r.state == crate::types::ObjectState::Frozen || r.state == crate::types::ObjectState::Dead => {
+                    return Err(VeritasError::PermissionDenied);
+                }
+                Some(_) => {}
             }
         }
 
@@ -475,7 +478,7 @@ impl VeritasEngine {
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &ctx.pending_objects {
-                registry.insert(*object_id, ObjectState::Alive);
+                registry.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
             }
         }
 
@@ -492,10 +495,10 @@ impl VeritasEngine {
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &ctx.pending_deaths {
-                registry.insert(*object_id, ObjectState::Dead);
+                if let Some(r) = registry.get_mut(object_id) { r.state = crate::types::ObjectState::Dead; } else { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; registry.insert(*object_id, r); }
             }
             for object_id in ctx.pending_freezes.drain(..) {
-                registry.insert(object_id, ObjectState::Frozen);
+                if let Some(r) = registry.get_mut(&object_id) { r.state = crate::types::ObjectState::Frozen; } else { let mut r = crate::types::ObjectRecord::new_state(object_id); r.state = crate::types::ObjectState::Frozen; registry.insert(object_id, r); }
             }
         }
 
@@ -601,8 +604,8 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
         let registry = self.object_registry.lock().unwrap();
-        let state = registry.get(&object_id).copied().unwrap_or(crate::types::ObjectState::Dead);
-        if !registry.contains_key(&object_id) || !state.allows(ObjectOperation::Freeze) {
+        let record = registry.get(&object_id);
+        if record.is_none() || !record.unwrap().state.allows(ObjectOperation::Freeze) {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
         ctx.pending_freezes.push(object_id);
@@ -621,13 +624,13 @@ impl VeritasEngine {
 
         // 检查 Object 存在且状态为 Alive
         let registry = self.object_registry.lock().unwrap();
-        let state = registry.get(&object_id).copied();
+        let record = registry.get(&object_id).cloned();
         drop(registry);
 
-        match state {
+        match record {
             None => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
-            Some(ObjectState::Dead) => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
-            Some(ObjectState::Alive) | Some(ObjectState::Frozen) => {}
+            Some(r) if r.state == crate::types::ObjectState::Dead => return Err(VeritasError::Abort(AbortReason::WriteConflict)),
+            Some(_) => {}
         }
 
         // 防重复死亡
@@ -668,8 +671,8 @@ impl VeritasEngine {
 
         // P8.2: 死亡检查——源或目标已死则拒绝
         let reg = self.object_registry.lock().unwrap();
-        let from_dead = reg.get(&from) == Some(&ObjectState::Dead) || ctx.pending_deaths.contains(&from);
-        let to_dead = reg.get(&to) == Some(&ObjectState::Dead) || ctx.pending_deaths.contains(&to);
+        let from_dead = reg.get(&from).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false) || ctx.pending_deaths.contains(&from);
+        let to_dead = reg.get(&to).map(|r| r.state == crate::types::ObjectState::Dead).unwrap_or(false) || ctx.pending_deaths.contains(&to);
         drop(reg);
         if from_dead || to_dead {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));

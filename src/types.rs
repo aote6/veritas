@@ -394,3 +394,69 @@ impl ObjectState {
         matches!(self, ObjectState::Dead)
     }
 }
+
+// =================================================================
+// Veritas Constitution Alignment: Object Specification v0.2 (P30)
+// =================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObjectType {
+    StateObject,
+    ModuleObject,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerificationRule {
+    pub max_instances: Option<u32>,
+    pub allow_instructions: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObjectBody {
+    State,
+    Module {
+        code_section: Vec<u8>,
+        import_section: Vec<ObjectId>,
+        export_section: std::collections::HashMap<String, usize>,
+        verification_rule: Option<VerificationRule>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectRecord {
+    pub id: ObjectId,
+    pub object_type: ObjectType,
+    pub state: ObjectState,
+    pub body: ObjectBody,
+}
+
+impl ObjectRecord {
+    pub fn new_state(id: ObjectId) -> Self {
+        Self {
+            id,
+            object_type: ObjectType::StateObject,
+            state: ObjectState::Alive,
+            body: ObjectBody::State,
+        }
+    }
+
+    pub fn new_module(
+        id: ObjectId,
+        code_section: Vec<u8>,
+        import_section: Vec<ObjectId>,
+        export_section: std::collections::HashMap<String, usize>,
+        verification_rule: Option<VerificationRule>,
+    ) -> Self {
+        Self {
+            id,
+            object_type: ObjectType::ModuleObject,
+            state: ObjectState::Frozen,
+            body: ObjectBody::Module {
+                code_section,
+                import_section,
+                export_section,
+                verification_rule,
+            },
+        }
+    }
+}
