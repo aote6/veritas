@@ -866,6 +866,17 @@ impl VeritasEngine {
         if ctx.is_aborted() {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
+
+        // P5.x.1: 检查边是否存在（全局 topology 或当前事务 pending_links）
+        let topo = self.topology.lock().unwrap();
+        let exists_in_topo = topo.iter().any(|e| e.from == from && e.to == to);
+        let exists_in_pending = ctx.pending_links.iter().any(|e| e.from == from && e.to == to);
+        drop(topo);
+
+        if !exists_in_topo && !exists_in_pending {
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
         // 标记Link待删除，Commit时生效
         ctx.pending_unlinks.push((from, to));
         Ok(())

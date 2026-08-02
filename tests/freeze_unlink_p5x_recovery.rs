@@ -102,3 +102,50 @@ fn link_without_unlink_survives_recovery() {
 
     let _ = std::fs::remove_file(&wal_path);
 }
+
+/// P5.x.1: unlink 不存在的边必须失败
+#[test]
+fn unlink_nonexistent_edge_should_fail() {
+    let wal_path = format!("target/test_unlink_nonexistent_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal_path);
+
+    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+    let a: u64 = 0x20001;
+    let b: u64 = 0x20002;
+
+    let mut tx = engine.begin();
+    engine.object_birth(&mut tx, a).unwrap();
+    engine.object_birth(&mut tx, b).unwrap();
+    engine.commit(&mut tx).unwrap();
+
+    // 没有 link 直接 unlink 必须失败
+    let mut tx = engine.begin();
+    let result = engine.object_unlink(&mut tx, a, b);
+    assert!(result.is_err(), "unlink nonexistent edge must fail");
+
+    let _ = std::fs::remove_file(&wal_path);
+}
+
+/// P5.x.1: 同事务内 link 后 unlink 可以成功
+#[test]
+fn unlink_same_tx_link_unlink_should_succeed() {
+    let wal_path = format!("target/test_unlink_sametx_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal_path);
+
+    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+    let a: u64 = 0x30001;
+    let b: u64 = 0x30002;
+
+    let mut tx = engine.begin();
+    engine.object_birth(&mut tx, a).unwrap();
+    engine.object_birth(&mut tx, b).unwrap();
+    engine.commit(&mut tx).unwrap();
+
+    // 同事务: link 后 unlink
+    let mut tx = engine.begin();
+    engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::References).unwrap();
+    engine.object_unlink(&mut tx, a, b).unwrap();
+    engine.commit(&mut tx).unwrap();
+
+    let _ = std::fs::remove_file(&wal_path);
+}
