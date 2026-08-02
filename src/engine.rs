@@ -392,6 +392,49 @@ impl VeritasEngine {
         Ok(idempotency_key)
     }
 
+    /// P8.1: OWNS 死亡闭包——沿 OWNS 边传播死亡
+    fn expand_owns_death_closure(&self, ctx: &mut TransactionContext) {
+        if ctx.pending_deaths.is_empty() {
+            return;
+        }
+
+        let topo = self.topology.lock().unwrap();
+        let unlinked: std::collections::HashSet<(crate::types::ObjectId, crate::types::ObjectId)> =
+            ctx.pending_unlinks.iter().copied().collect();
+
+        let mut queue = ctx.pending_deaths.clone();
+        let mut seen: std::collections::HashSet<crate::types::ObjectId> = queue.iter().copied().collect();
+        let mut i = 0;
+
+        while i < queue.len() {
+            let id = queue[i];
+
+            for edge in topo.iter() {
+                if edge.from == id
+                    && edge.link_type == crate::types::LinkType::Owns
+                    && !unlinked.contains(&(edge.from, edge.to))
+                    && seen.insert(edge.to)
+                {
+                    queue.push(edge.to);
+                }
+            }
+
+            for edge in &ctx.pending_links {
+                if edge.from == id
+                    && edge.link_type == crate::types::LinkType::Owns
+                    && !unlinked.contains(&(edge.from, edge.to))
+                    && seen.insert(edge.to)
+                {
+                    queue.push(edge.to);
+                }
+            }
+
+            i += 1;
+        }
+
+        ctx.pending_deaths = queue;
+    }
+
     pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
         self.controller.pre_commit_check(ctx)?;
 
@@ -481,6 +524,9 @@ impl VeritasEngine {
                 registry.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
             }
         }
+
+        // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
+        self.expand_owns_death_closure(ctx);
 
         // P8.1: 写入 ObjectDeath WAL 条目并更新状态
         for object_id in &ctx.pending_deaths {
