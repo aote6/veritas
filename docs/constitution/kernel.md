@@ -42,8 +42,15 @@ RETURN 指令返回用户态。
 - 功能: 销毁一个 Object
 - 参数: ObjectId
 - 返回: 无
-- 副作用: Object 进入 DEAD 状态，级联撤销所有 Capability，
-  按 LinkType 语义清理所有 Link
+- 副作用（commit 边界原子生效）：
+  1. 展开 OWNS 死亡闭包，得到完整 death set
+  2. death set 内每个 Object → Dead（不可逆）
+  3. 对 death set 中每个 D：
+     - incoming DEPENDS_ON → emit DependencyInvalidated
+     - 涉及 D 的 Link → 按类型清理后物理删除
+  4. Capability：不在此路径 eager 清扫；
+     之后任何以 D 为 resource 的授权在使用时失败（resource liveness）
+  5. WAL 记录 ObjectDeath；崩溃可恢复
 - 事务性: 是
 
 ### 3.3 OBJECT_LINK
@@ -127,7 +134,7 @@ Capability 树:
 - AdminCap 可以委托子 Capability 给其他 Object
 - 子 Capability 可以进一步委托，形成树
 - 撤销上游边时，下游级联撤销
-- Object 死亡时，所有指向它的 Capability 全部撤销
+- Object 死亡时，所有以它为 resource 的 Capability 自动失效（lazy validation）
 
 ## 7. 当前实现映射
 

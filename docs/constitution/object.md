@@ -35,8 +35,15 @@ ObjectType 只有两种:
 - BIRTH: Object 被创建，获得初始 Capability，进入 ObjectRegistry
 - ACTIVE: 正常状态，可读写、可建立 Link
 - FROZEN: 只读状态，不可修改、不可建立新 Link
-- DEAD: 不可访问，从 ObjectRegistry 移除，所有指向它的 Capability
-  级联撤销，所有 Link 按 LinkType 语义清理
+- DEAD: 不可访问（终态，不可逆）。
+  - 所有指向该 Object 的 Capability **自动失效**（validity depends on
+    target object liveness；使用时校验 resource 必须 Alive，不在
+    Death 路径主动遍历清扫 Capability 图）
+  - 所有 Link 按 LinkType 语义处理（见 link.md）：
+    - OWNS：owned 对象级联进入 DEAD
+    - DEPENDS_ON：向 dependent 发出 DependencyInvalidated
+    - REFERENCES：删除边，无通知、无级联
+  - ObjectId 永久保留，不可重用
 
 状态转换:
 
@@ -88,8 +95,8 @@ Link 不是裸边。Link 有明确的语义类型:
 
 | LinkType | 含义 | to 死亡 | from 死亡 | to 冻结 |
 |---|---|---|---|---|
-| DEPENDS_ON | from 依赖 to | from 收到 TRAP | Link 清理 | from 不可修改 to |
-| OWNS | from 拥有 to | from 收到 TRAP，to 不可单独存活 | to 级联死亡 | from 不可修改 to |
+| DEPENDS_ON | from 依赖 to | to 死亡 → from 收到 DependencyInvalidated | Link 清理 | from 不可修改 to |
+| OWNS | from 拥有 to | to 级联死亡 | from 死亡 → to 级联死亡 | from 不可修改 to |
 | REFERENCES | from 引用 to | Link 断开 | Link 清理 | 无影响 |
 
 Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
@@ -109,7 +116,11 @@ Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
 - Object 创建时，创建者自动获得该 Object 的 AdminCap
 - 通过 CAPABILITY_GRANT 将 Capability 授予其他 Object
 - 通过 CAPABILITY_REVOKE 撤销已授予的 Capability
-- Object 死亡时，所有指向它的 Capability 级联撤销
+- Object 死亡后，所有以该 Object 为 resource 的 Capability **自动失效**
+  （lazy validation：授权入口检查 resource.is_alive()）
+- Object 作为 holder 死亡时，其持有的 Capability 不再可用
+  （revoke_holder 与/或使用时 holder 存活检查）
+- 不要求在 Death 提交路径上物理扫描并删除全部 Capability 记录
 
 ## 10. 当前实现映射
 

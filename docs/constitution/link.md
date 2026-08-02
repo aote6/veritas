@@ -23,10 +23,12 @@ Link 是单向的。双向关系需要两条 Link。
 含义: from 依赖 to。from 的功能需要 to 的存在才能正常运行。
 
 级联行为:
-- to 死亡: from 收到 TRAP (通知信号)，from 可以选择处理或自行销毁
+- to 死亡: 系统发出 DependencyInvalidated（dependent=from, dependency=to）
+  - 载体可以是 Effect、Trap 或其它可恢复通道；宪法只规定事件语义，不规定载体
+  - from 保持 Alive，不级联死亡
+  - Link 删除
 - from 死亡: Link 清理，to 不受影响
 - to 冻结: from 不可修改 to，但可以读取
-- to 进入 DEAD 后: Link 自动清理
 
 使用场景:
 - ModuleInstance 依赖 ModuleObject
@@ -38,9 +40,8 @@ Link 是单向的。双向关系需要两条 Link。
 
 级联行为:
 - to 死亡: from 收到 TRAP
-- from 死亡: to 级联死亡 (OBJECT_DEATH)
+- from 死亡: to 级联死亡（OBJECT_DEATH，传递闭包）
 - to 冻结: from 不可修改 to
-- to 不可独立存活: 没有 from 存在时，to 没有存在的意义
 
 使用场景:
 - ModuleInstance 拥有其创建的临时 StateObject
@@ -118,14 +119,15 @@ Machine 提供内核服务用于查询 Link:
 
 ## 8. 当前实现映射
 
-| 规范定义 | 当前代码 | 未来方向 |
-|---|---|---|
-| Link 结构 | engine.rs topology | 独立为 Machine 组件 |
-| OBJECT_LINK | engine.rs object_link | 转为 ISA 指令 |
-| OBJECT_UNLINK | 不存在 | 新增指令 |
-| LinkType | 不存在 | 新增，三种类型 |
-| 级联行为 | 部分在 object_death | 按 LinkType 分发 |
-| 查询服务 | 不存在 | 新增 Kernel Service |
+| 规范 | 当前代码 | 状态 |
+|------|----------|------|
+| OWNS cascade | expand_owns_death_closure | done P8.1 |
+| DEPENDS_ON notification | DependencyInvalidated (commit boundary) | done P8.2 |
+| REFERENCES | topology retain | done |
+| Link structure | engine.rs topology | done |
+| OBJECT_LINK | engine.rs object_link | done |
+| OBJECT_UNLINK | pending_unlinks | done |
+| Carrier (Effect/Trap) | observation port + Effect convention; carrier evolvable | partial |
 
 ## 9. 实现要求
 
