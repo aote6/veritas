@@ -39,9 +39,10 @@ Link 是单向的。双向关系需要两条 Link。
 含义: from 拥有 to。to 的生命周期由 from 控制。
 
 级联行为:
-- to 死亡: from 收到 TRAP
-- from 死亡: to 级联死亡（OBJECT_DEATH，传递闭包）
+- from 死亡: to 级联死亡（OBJECT_DEATH，传递闭包；见 expand_owns_death_closure）
+- to 死亡: Link 删除；from 不因此死亡（所有权方向是 from→to，不反向级联）
 - to 冻结: from 不可修改 to
+- from 冻结: 不可再建立以该 from 为端点的新 OWNS（若实现层有额外约束，以代码为准）
 
 使用场景:
 - ModuleInstance 拥有其创建的临时 StateObject
@@ -96,16 +97,42 @@ Link 是单向的。双向关系需要两条 Link。
 
 ## 6. Link 与 Object 生命周期
 
-Object 死亡时的 Link 清理顺序:
+Object 死亡在 **commit 边界**生效。设显式死亡请求经 OWNS 闭包展开后得到
+完整集合 D（death set）。
 
-1. 遍历该 Object 的 incoming_links (别人指向它的 Link)
-2. 对每条 incoming_link，根据 link_type 决定行为:
-   - DEPENDS_ON: 通知 from，然后删除 Link
-   - OWNS: 通知 from，from 已死则 to 级联死亡
-   - REFERENCES: 直接删除 Link
-3. 遍历该 Object 的 outgoing_links (它指向别人的 Link)
-4. 对每条 outgoing_link，直接删除 Link
-5. Object 从 ObjectRegistry 移除
+对 D 的处理顺序（语义顺序，实现可合并步骤但不得改变结果）:
+
+1. **OWNS 闭包（先于单点状态固化）**
+   - 从待死亡集合出发，沿已提交拓扑与本事务 pending_links 中
+     link_type = OWNS 且方向为 from → to 的边向外扩展；
+   - pending_unlinks 中的边不参与传播；
+   - 得到完整 death set D（传递闭包）。
+
+2. **DEPENDS_ON（incoming：to ∈ D）**
+   - 对每条 from --DEPENDS_ON--> to 且 to ∈ D：
+     - 发出 DependencyInvalidated(dependent=from, dependency=to)
+       （若 from ∉ D；from 已在 D 中则不必通知）
+     - 删除该 Link
+   - from 保持 Alive，除非 from 自身也在 D 中
+
+3. **REFERENCES 与其余边**
+   - 任一端点属于 D 的边：删除
+   - 无通知、无级联死亡
+
+4. **状态固化**
+   - D 中每个 ObjectId：状态 → Dead（终态，不可逆）
+   - ObjectId **不从 registry 回收、不可复用**（记录可保留为 Dead，
+     而非"移除后 Id 消失"）
+
+5. **Capability**
+   - 不在此路径要求 eager 清扫 Capability 图
+   - 以 D 中对象为 resource 的授权在**使用时**因 resource 非 Alive 而失败
+
+说明:
+- "通知"在 DEPENDS_ON 上的规范名是 DependencyInvalidated；载体
+  （Effect / Trap / 其它）由实现选择，宪法不绑定单一载体。
+- OWNS 的生命周期传播只沿 **owner → owned**，与 DEPENDS_ON 的
+  "依赖方保持存活 + 收事件"严格区分。
 
 ## 7. Link 的查询
 
