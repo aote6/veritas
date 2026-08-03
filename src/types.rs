@@ -219,7 +219,7 @@ pub struct Savepoint {
     pub pending_deaths_len: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PendingCapabilityGrant {
     pub capability_id: u64,
     pub grant_sequence: u64,
@@ -499,7 +499,7 @@ impl ObjectRecord {
 /// 所有字段都是"原始请求"，不含派生结果：
 /// - deaths 仅为用户显式请求死亡的对象，不含 OWNS 级联展开
 ///   （apply() 内部需自行调用 expand_owns_death_closure）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TransactionDelta {
     pub tx_id: TxId,
     pub commit_version: Version,
@@ -524,5 +524,188 @@ pub struct TransactionDelta {
 
     // Effects (待执行)
     pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
+}
+
+impl TransactionDelta {
+    /// Serialize to a deterministic text format for WAL storage.
+    /// Format:
+    ///   TXCOMMIT TX=<id> VERSION=<v>
+    ///     WRITE <obj> <state> <hex_value>
+    ///     SCOPE <scope_id> <BIND|UNBIND> <state_id>
+    ///     BIRTH <obj>
+    ///     DEATH <obj>
+    ///     FREEZE <obj>
+    ///     LINK <from> <to> <0|1|2>
+    ///     UNLINK <from> <to>
+    ///     CAPGRANT <cap_id> <seq> <grantor> <grantee> <resource> <type>
+    ///     EFFECT <key> <hex_payload>
+    ///     END
+    pub fn serialize(&self) -> String {
+        let mut s = format!("TXCOMMIT TX={} VERSION={}", self.tx_id, self.commit_version);
+        for (addr, val) in &self.writes {
+            s.push_str(&format!(
+                " WRITE {} {} {}",
+                addr.object_id, addr.state_id, hex::encode(val)
+            ));
+        }
+        for (scope_id, change_type, state_id) in &self.scope_changes {
+            let tag = match change_type {
+                ScopeChangeType::Bind => "SCOPEBIND",
+                ScopeChangeType::Unbind => "SCOPEUNBIND",
+            };
+            s.push_str(&format!(" {} {} {}", tag, scope_id, state_id));
+        }
+        for id in &self.births {
+            s.push_str(&format!(" BIRTH {}", id));
+        }
+        for id in &self.deaths {
+            s.push_str(&format!(" DEATH {}", id));
+        }
+        for id in &self.freezes {
+            s.push_str(&format!(" FREEZE {}", id));
+        }
+        for (from, to, link_type) in &self.links {
+            s.push_str(&format!(" LINK {} {} {}", from, to, *link_type as u8));
+        }
+        for (from, to) in &self.unlinks {
+            s.push_str(&format!(" UNLINK {} {}", from, to));
+        }
+        for grant in &self.capability_grants {
+            s.push_str(&format!(
+                " CAPGRANT {} {} {} {} {} {}",
+                grant.capability_id, grant.grant_sequence,
+                grant.grantor, grant.grantee, grant.resource, grant.cap_type
+            ));
+        }
+        for (key, payload) in &self.effects {
+            s.push_str(&format!(" EFFECT {} {}", key, hex::encode(payload)));
+        }
+        s.push_str(" END");
+        s
+    }
+
+    /// Deserialize from the text format produced by serialize().
+    /// Returns None on any parse error.
+    pub fn deserialize(payload: &str) -> Option<Self> {
+        let parts: Vec<&str> = payload.split_whitespace().collect();
+        if parts.len() < 2 || parts[0] != "TXCOMMIT" || parts.last() != Some(&"END") {
+            return None;
+        }
+        let tx_id = parts.iter()
+            .find(|p| p.starts_with("TX="))?
+            .strip_prefix("TX=")?
+            .parse::<TxId>().ok()?;
+        let commit_version = parts.iter()
+            .find(|p| p.starts_with("VERSION="))?
+            .strip_prefix("VERSION=")?
+            .parse::<Version>().ok()?;
+
+        let mut writes = Vec::new();
+        let mut scope_changes = Vec::new();
+        let mut births = Vec::new();
+        let mut deaths = Vec::new();
+        let mut freezes = Vec::new();
+        let mut links = Vec::new();
+        let mut unlinks = Vec::new();
+        let mut capability_grants = Vec::new();
+        let mut effects = Vec::new();
+
+        let mut i = 0;
+        while i < parts.len() {
+            match parts[i] {
+                "WRITE" if i + 3 < parts.len() => {
+                    let obj = parts[i+1].parse::<ObjectId>().ok()?;
+                    let state = parts[i+2].parse::<StateId>().ok()?;
+                    let val = hex::decode(parts[i+3]).ok()?;
+                    writes.push((Address::new(obj, state), val));
+                    i += 4;
+                }
+                "SCOPEBIND" if i + 2 < parts.len() => {
+                    let sid = parts[i+1].parse::<ScopeId>().ok()?;
+                    let st = parts[i+2].parse::<StateId>().ok()?;
+                    scope_changes.push((sid, ScopeChangeType::Bind, st));
+                    i += 3;
+                }
+                "SCOPEUNBIND" if i + 2 < parts.len() => {
+                    let sid = parts[i+1].parse::<ScopeId>().ok()?;
+                    let st = parts[i+2].parse::<StateId>().ok()?;
+                    scope_changes.push((sid, ScopeChangeType::Unbind, st));
+                    i += 3;
+                }
+                "BIRTH" if i + 1 < parts.len() => {
+                    births.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    i += 2;
+                }
+                "DEATH" if i + 1 < parts.len() => {
+                    deaths.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    i += 2;
+                }
+                "FREEZE" if i + 1 < parts.len() => {
+                    freezes.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    i += 2;
+                }
+                "LINK" if i + 3 < parts.len() => {
+                    let from = parts[i+1].parse::<ObjectId>().ok()?;
+                    let to = parts[i+2].parse::<ObjectId>().ok()?;
+                    let lt = parts[i+3].parse::<u8>().ok()?;
+                    let link_type = match lt {
+                        0 => LinkType::DependsOn,
+                        1 => LinkType::Owns,
+                        2 => LinkType::References,
+                        _ => return None,
+                    };
+                    links.push((from, to, link_type));
+                    i += 4;
+                }
+                "UNLINK" if i + 2 < parts.len() => {
+                    let from = parts[i+1].parse::<ObjectId>().ok()?;
+                    let to = parts[i+2].parse::<ObjectId>().ok()?;
+                    unlinks.push((from, to));
+                    i += 3;
+                }
+                "CAPGRANT" if i + 6 < parts.len() => {
+                    let cap_id = parts[i+1].parse::<u64>().ok()?;
+                    let seq = parts[i+2].parse::<u64>().ok()?;
+                    let grantor = parts[i+3].parse::<ObjectId>().ok()?;
+                    let grantee = parts[i+4].parse::<ObjectId>().ok()?;
+                    let resource = parts[i+5].parse::<ObjectId>().ok()?;
+                    let cap_type = parts[i+6].to_string();
+                    capability_grants.push(PendingCapabilityGrant {
+                        capability_id: cap_id,
+                        grant_sequence: seq,
+                        cap_type,
+                        grantor,
+                        grantee,
+                        resource,
+                    });
+                    i += 7;
+                }
+                "EFFECT" if i + 2 < parts.len() => {
+                    let key = parts[i+1].to_string();
+                    let payload = hex::decode(parts[i+2]).ok()?;
+                    effects.push((key, payload));
+                    i += 3;
+                }
+                "TXCOMMIT" | "END" | _ if parts[i].starts_with("TX=") | parts[i].starts_with("VERSION=") => {
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+
+        Some(TransactionDelta {
+            tx_id,
+            commit_version,
+            writes,
+            scope_changes,
+            births,
+            deaths,
+            freezes,
+            links,
+            unlinks,
+            capability_grants,
+            effects,
+        })
+    }
 }
 

@@ -8,7 +8,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{Address, ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TxId, Version};
+use crate::types::{Address, ObjectId, PendingCapabilityGrant, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TransactionDelta, TxId, Version};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {
@@ -71,6 +71,7 @@ pub enum WalEntry {
         from: ObjectId,
         to: ObjectId,
     },
+    TransactionCommitted(TransactionDelta),
 }
 
 impl WalEntry {
@@ -154,6 +155,11 @@ impl WalEntry {
                 format!("OBJECTUNLINK TX={} FROM={} TO={} END
 ", tx_id, from, to)
             }
+            WalEntry::TransactionCommitted(delta) => {
+                let inner = delta.serialize();
+                format!("{} END
+", inner)  // inner already has END, but we wrap it
+            }
         }
     }
 
@@ -200,6 +206,7 @@ impl WalEntry {
             "CAPABILITYGRANT" => Self::deserialize_capability_grant(&parts),
             "OBJECTFREEZE" => Self::deserialize_object_freeze(&parts),
             "OBJECTUNLINK" => Self::deserialize_object_unlink(&parts),
+            "TXCOMMIT" => Self::deserialize_transaction_committed(payload),
             _ => None,
         }
     }
@@ -434,6 +441,10 @@ impl WalEntry {
         Some(WalEntry::ObjectLink { tx_id, from, to, link_type })
     }
 
+    fn deserialize_transaction_committed(payload: &str) -> Option<Self> {
+        TransactionDelta::deserialize(payload).map(WalEntry::TransactionCommitted)
+    }
+
     fn deserialize_object_death(parts: &[&str]) -> Option<Self> {
         let tx_id = parts
             .iter()
@@ -587,6 +598,36 @@ impl RecoveryManager {
                 WalEntry::CapabilityGrant { .. } => {}
                 WalEntry::ObjectFreeze { .. } => {}
                 WalEntry::ObjectUnlink { .. } => {}
+                WalEntry::TransactionCommitted(delta) => {
+                    if delta.tx_id > max_tx_id {
+                        max_tx_id = delta.tx_id;
+                    }
+                    for (addr, value) in &delta.writes {
+                        state_map.insert(
+                            *addr,
+                            StateEntry {
+                                value: value.clone(),
+                                version: delta.commit_version,
+                            },
+                        );
+                    }
+                    for (scope_id, change_type, state_id) in &delta.scope_changes {
+                        let entry = scope_map
+                            .entry(*scope_id)
+                            .or_insert_with(ScopeEntry::new);
+                        match change_type {
+                            ScopeChangeType::Bind => { entry.bind(*state_id); }
+                            ScopeChangeType::Unbind => { entry.unbind(*state_id); }
+                        }
+                    }
+                    for (key, payload) in &delta.effects {
+                        committed_effects.push(PendingRecoveryEffect {
+                            tx_id: delta.tx_id,
+                            idempotency_key: key.clone(),
+                            payload: payload.clone(),
+                        });
+                    }
+                }
             }
         }
 
@@ -698,6 +739,116 @@ mod tests {
         // 模拟文件末尾写到 CRC= 就断电
         assert!(WalEntry::deserialize("LEN=123 CRC=").is_none());
         assert!(WalEntry::deserialize("LEN=123 CRC=abc").is_none());
+    }
+
+    #[test]
+    fn test_transaction_delta_roundtrip() {
+        use crate::types::{Address, LinkType, PendingCapabilityGrant, ScopeChangeType, TransactionDelta};
+
+        let delta = TransactionDelta {
+            tx_id: 42,
+            commit_version: 3,
+            writes: vec![
+                (Address::new(10, 100), vec![1, 2, 3]),
+                (Address::new(20, 200), vec![255, 0, 128]),
+            ],
+            scope_changes: vec![
+                (55, ScopeChangeType::Bind, 1),
+                (66, ScopeChangeType::Unbind, 2),
+            ],
+            births: vec![100, 200],
+            deaths: vec![300],
+            freezes: vec![400],
+            links: vec![
+                (10, 20, LinkType::Owns),
+                (30, 40, LinkType::DependsOn),
+            ],
+            unlinks: vec![(50, 60)],
+            capability_grants: vec![
+                PendingCapabilityGrant {
+                    capability_id: 999,
+                    grant_sequence: 5,
+                    cap_type: "AdminCap".to_string(),
+                    grantor: 1,
+                    grantee: 2,
+                    resource: 3,
+                },
+            ],
+            effects: vec![
+                ("key-1".to_string(), vec![7, 8, 9]),
+            ],
+        };
+
+        let serialized = delta.serialize();
+        let deserialized = TransactionDelta::deserialize(&serialized);
+        assert!(deserialized.is_some(), "deserialize returned None for: {}", serialized);
+        let d2 = deserialized.unwrap();
+
+        assert_eq!(d2.tx_id, delta.tx_id);
+        assert_eq!(d2.commit_version, delta.commit_version);
+        assert_eq!(d2.writes, delta.writes);
+        assert_eq!(d2.scope_changes, delta.scope_changes);
+        assert_eq!(d2.births, delta.births);
+        assert_eq!(d2.deaths, delta.deaths);
+        assert_eq!(d2.freezes, delta.freezes);
+        assert_eq!(d2.links, delta.links);
+        assert_eq!(d2.unlinks, delta.unlinks);
+        assert_eq!(d2.capability_grants.len(), 1);
+        assert_eq!(d2.capability_grants[0].capability_id, 999);
+        assert_eq!(d2.capability_grants[0].grant_sequence, 5);
+        assert_eq!(d2.capability_grants[0].cap_type, "AdminCap");
+        assert_eq!(d2.effects.len(), 1);
+        assert_eq!(d2.effects[0].0, "key-1");
+        assert_eq!(d2.effects[0].1, vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn test_truncated_transaction_committed_discarded() {
+        use crate::types::{Address, TransactionDelta};
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path();
+
+        // 1. Write a complete TransactionCommitted
+        let writer = WalWriter::open(path).unwrap();
+        let delta = TransactionDelta {
+            tx_id: 1,
+            commit_version: 1,
+            writes: vec![],
+            scope_changes: vec![],
+            births: vec![100],
+            deaths: vec![],
+            freezes: vec![],
+            links: vec![],
+            unlinks: vec![],
+            capability_grants: vec![],
+            effects: vec![],
+        };
+        let entry = WalEntry::TransactionCommitted(delta);
+        writer.append_and_sync(&entry).unwrap();
+
+        // 2. Append a corrupted TransactionCommitted with wrong CRC
+        let serialized = entry.serialize();
+        // Tamper: replace a character in the payload portion
+        let tampered = serialized.replace("BIRTH 100", "BIRTH 999");
+        // Recompute the line with a wrong CRC that won't match
+        // Just append the tampered line directly with a fake CRC header
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap();
+        use std::io::Write;
+        writeln!(file, "LEN=50 CRC=00000000 TXCOMMIT TX=2 VERSION=1 BIRTH 200 END").unwrap();
+
+        // 3. Recover: only the first entry should survive
+        let (records, _) = RecoveryManager::recover(path).unwrap();
+        assert_eq!(records.len(), 1, "only the valid entry should be recovered");
+        match &records[0] {
+            WalEntry::TransactionCommitted(d) => {
+                assert_eq!(d.births, vec![100]);
+            }
+            _ => panic!("expected TransactionCommitted"),
+        }
     }
 
     #[test]

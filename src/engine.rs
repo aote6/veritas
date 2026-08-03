@@ -288,6 +288,12 @@ impl VeritasEngine {
                         entry.remove();
                     }
                 }
+                WalEntry::TransactionCommitted(delta) => {
+                    // Step 3: single atomic WAL entry contains complete Delta
+                    ordered_deltas.push(delta.clone());
+                    // remove any partial delta for this tx_id (should not exist)
+                    partial_deltas.remove(&delta.tx_id);
+                }
                 _ => {}
             }
         }
@@ -553,174 +559,24 @@ impl VeritasEngine {
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
-        // Step 1b: 构建 TransactionDelta（现在 commit_version 已知）
-        let _delta = self.build_delta(ctx, requested_deaths, commit_version);
-
-        let mut writes_map = HashMap::new();
-        for (addr, value) in ctx.write_set.iter() {
-            writes_map.insert(*addr, value.clone());
-        }
-
-        let wal_scope_changes: Vec<WalScopeChange> = ctx
-            .scope_write_set
-            .iter()
-            .map(|c| WalScopeChange {
-                scope_id: c.scope_id,
-                change_type: c.change_type.clone(),
-                state_id: c.state_id,
-            })
-            .collect();
-
         let pending_effects = ctx.effect_queue.drain();
-        let wal_effects: Vec<WalEffect> = pending_effects
-            .iter()
-            .map(|e| WalEffect {
-                idempotency_key: e.idempotency_key.clone(),
-                payload: e.payload.clone(),
-            })
-            .collect();
-
-        // P4: 写入 ObjectBirth WAL 条目
-        for object_id in &ctx.pending_objects {
-            let birth_entry = WalEntry::ObjectBirth {
-                tx_id: ctx.tx_id(),
-                object_id: *object_id,
-            };
-            self.wal
-                .append_and_sync(&birth_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectBirth write failed: {}", e)))?;
-        }
-
-        for (addr, value) in ctx.write_set.iter() {
-            self.state_store.insert(
-                *addr,
-                StateEntry {
-                    value: value.clone(),
-                    version: commit_version,
-                },
-            );
-        }
-
-        for change in &ctx.scope_write_set {
-            match change.change_type {
-                ScopeChangeType::Bind => {
-                    self.scope_registry
-                        .apply_bind(change.scope_id, change.state_id);
-                }
-                ScopeChangeType::Unbind => {
-                    self.scope_registry
-                        .apply_unbind(change.scope_id, change.state_id);
-                }
-            }
-        }
-
-        self.global_version.fetch_add(1, Ordering::SeqCst);
-
-        // P4: 固化 Object 到全局注册表
-        {
-            let mut registry = self.object_registry.lock().unwrap();
-            for object_id in &ctx.pending_objects {
-                registry.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
-            }
-        }
-
-        // P4.x: 写入 CapabilityGrant WAL 条目并落地到 capability_graph
-        // (Object 与其 Capability 视为同一语义闭合域,Commit 时一并生效)
-        let tx_id = ctx.tx_id();
-        for grant in ctx.pending_capabilities.drain(..) {
-            {
-                let mut cap_graph = self.capability_graph.lock().unwrap();
-                cap_graph.restore_grant(
-                    grant.capability_id,
-                    grant.cap_type.clone(),
-                    grant.grantor,
-                    grant.grantee,
-                    grant.resource,
-                    grant.grant_sequence,
-                );
-            }
-            let grant_entry = WalEntry::CapabilityGrant {
-                tx_id,
-                cap_type: grant.cap_type.clone(),
-                grantor: grant.grantor,
-                grantee: grant.grantee,
-                resource: grant.resource,
-                capability_id: grant.capability_id,
-                grant_sequence: grant.grant_sequence,
-            };
-            self.wal
-                .append_and_sync(&grant_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL CapabilityGrant write failed: {}", e)))?;
-        }
 
         // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
         self.expand_owns_death_closure(ctx);
 
-        // P8.1: 写入 ObjectDeath WAL 条目并更新状态
-        for object_id in &ctx.pending_deaths {
-            let death_entry = WalEntry::ObjectDeath {
-                tx_id: ctx.tx_id(),
-                object_id: *object_id,
-            };
-            self.wal
-                .append_and_sync(&death_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectDeath write failed: {}", e)))?;
-        }
-        // P5.x: 写入 ObjectFreeze WAL 条目(修复:此前 Freeze 只改内存 registry,
-        // 从未写 WAL,重启后 Frozen 状态会静默丢失,写保护失效)
-        let freezes_to_apply: Vec<ObjectId> = ctx.pending_freezes.drain(..).collect();
-        for object_id in &freezes_to_apply {
-            let freeze_entry = WalEntry::ObjectFreeze {
-                tx_id: ctx.tx_id(),
-                object_id: *object_id,
-            };
-            self.wal
-                .append_and_sync(&freeze_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectFreeze write failed: {}", e)))?;
-        }
-        // P6: 写入 ObjectLink WAL 条目并固化拓扑
-        for edge in &ctx.pending_links {
-            let link_entry = WalEntry::ObjectLink {
-                tx_id: ctx.tx_id(),
-                from: edge.from,
-                to: edge.to,
-                link_type: match edge.link_type {
-                    LinkType::DependsOn => 0,
-                    LinkType::Owns => 1,
-                    LinkType::References => 2,
-                },
-            };
-            self.wal
-                .append_and_sync(&link_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectLink write failed: {}", e)))?;
-        }
-        // P5.x: 写入 ObjectUnlink WAL 条目(修复:此前 Unlink 只改内存 topology,
-        // 从未写 WAL,重启后被解除的边会静默复活,可能引发错误的死亡级联)
-        for (from, to) in &ctx.pending_unlinks {
-            let unlink_entry = WalEntry::ObjectUnlink {
-                tx_id: ctx.tx_id(),
-                from: *from,
-                to: *to,
-            };
-            self.wal
-                .append_and_sync(&unlink_entry)
-                .map_err(|e| VeritasError::EngineError(format!("WAL ObjectUnlink write failed: {}", e)))?;
-        }
+        // Step 3: build TransactionDelta and write as single atomic WAL entry
+        let delta = self.build_delta(ctx, requested_deaths.clone(), commit_version);
 
-        // P4: 写入 COMMIT WAL 条目(在所有 Effect 之后,保证 Recovery 看到 Effect→Commit 顺序)
-        let wal_entry = WalEntry::Commit {
-            tx_id: ctx.tx_id(),
-            version: commit_version,
-            writes: writes_map.into_iter().collect(),
-            scope_changes: wal_scope_changes,
-            effects: wal_effects,
-        };
+        // drain pending collections (already cloned by build_delta)
+        let _ = ctx.pending_capabilities.drain(..).collect::<Vec<_>>();
+        let _ = ctx.pending_freezes.drain(..).collect::<Vec<_>>();
+        let wal_entry = WalEntry::TransactionCommitted(delta.clone());
         self.wal
             .append_and_sync(&wal_entry)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
 
-        // Step 2b: 所有 WAL 写入完成后，统一 apply 到内存
-        self.apply(&_delta);
+        // Step 2b/Step 3: apply after WAL is durable
+        self.apply(&delta);
 
         drop(_lock);
 

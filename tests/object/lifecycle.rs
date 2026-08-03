@@ -541,34 +541,36 @@ fn step2c_recovery_cross_tx_owns_cascade() {
     );
 }
 
-/// Step 2c: 无 Commit marker 的孤儿条目不应产生效果
+/// Step 3: CRC 损坏的 TransactionCommitted 记录恢复后应被丢弃
 #[test]
 fn step2c_recovery_orphan_tx_discarded() {
     use tempfile::NamedTempFile;
+    use std::io::Write;
 
     let tmp = NamedTempFile::new().unwrap();
     let wal_path = tmp.path().to_str().unwrap().to_string();
     let root = root_object_id();
     let a = root ^ 0xa005;
 
-    // 写一个 WAL：有 ObjectBirth(A) 但没有 Commit marker
+    // 写一条 CRC 错误的 TransactionCommitted 记录
     {
-        let writer = veritas_kernel::wal::WalWriter::open(&wal_path).unwrap();
-        let birth = veritas_kernel::wal::WalEntry::ObjectBirth {
-            tx_id: 42,
-            object_id: a,
-        };
-        writer.append_and_sync(&birth).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&wal_path)
+            .unwrap();
+        // CRC will not match the payload
+        writeln!(file, "LEN=50 CRC=00000000 TXCOMMIT TX=42 VERSION=1 BIRTH {} END", a).unwrap();
     }
 
     // 恢复
     let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
 
-    // A 不应该存在——没有 Commit marker 的事务被丢弃
+    // A 不应该存在——CRC 校验失败导致记录被丢弃
     assert_eq!(
         engine.get_object_state(a),
         None,
-        "Orphan ObjectBirth without Commit must be discarded"
+        "Corrupted TransactionCommitted must be discarded by CRC check"
     );
 }
 
