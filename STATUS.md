@@ -121,9 +121,9 @@ Object lifecycle instructions stay Trap ABI
 - src/graph/ exists as an independent module (GraphStore/Journal/Policy/ReplayEngine) with zero callers outside its own tree
 - engine.topology (Mutex<Vec<LinkEdge>>) is the active implementation; src/graph is dead code, not an active dual store
 
-**Instruction dispatch**:
-- Two active paths: Machine direct match on Instruction::Commit/etc, TRAP → KernelCall
-- Legacy execute_kernel_instruction() is now a no-op stub (all logic marked "Handled inline" or "now handled inline in step()"), but the function still exists
+✅ P1a: Machine routes kernel ops via KernelCall; execute_kernel_instruction deleted; pub API not yet closed (P1b pending)
+
+
 
 **Module lifecycle**:
 - ModuleObject/ModuleInstance separation not fully closed per constitution
@@ -170,13 +170,13 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ### Medium-term (from audit Critical findings)
 7. Capability always-on: remove capability_enforced toggle, unify all access checks
-8. Kernel boundary: close non-TRAP entry points (pub → pub(crate)), single TRAP dispatch
+8. Kernel boundary: P1a ✅ (Machine side); P1b pending — pub → pub(crate)
 9. Remove src/graph/ dead code; engine.topology is the sole topology store
 
 ### Later
 10. P31 — Checkpoint / Snapshot
 11. ModuleObject/ModuleInstance lifecycle closure
-12. Unify instruction dispatch paths (Machine direct + TRAP)
+12. ✅ P1a: Machine dispatch unified via KernelCall
 13. Savepoint full semantics
 
 ## Documentation map
