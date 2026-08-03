@@ -1,6 +1,4 @@
 use crate::ObjectId;
-use crate::engine::VeritasEngine;
-use crate::executor::Executor;
 use crate::program::Program;
 use crate::memory::Memory;
 use crate::verifier::Verifier;
@@ -98,9 +96,9 @@ struct CallFrame {
     caller_capability_context: ObjectId,
 }
 
-pub struct Machine<'a> {
-    engine: &'a VeritasEngine,
-    executor: Executor<'a>,
+pub struct Machine {
+    kernel: crate::kernel::Kernel,
+
     program: Program,
     ram: Memory,
     pc: usize,
@@ -113,7 +111,7 @@ pub struct Machine<'a> {
     call_stack: Vec<CallFrame>,
 }
 
-impl<'a> Machine<'a> {
+impl Machine {
     fn record_trace(&mut self, pc_before: usize, regs_before: [u64; 8], instruction: &crate::instruction::Instruction, _consumed: usize) {
         let regs_after = [
             self.registers.get_u64(0), self.registers.get_u64(1),
@@ -136,12 +134,10 @@ impl<'a> Machine<'a> {
     pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
-    pub fn new(engine: &'a VeritasEngine) -> Self {
-        let executor = Executor::new(engine);
-        let ctx = engine.begin();
+    pub fn new(kernel: crate::kernel::Kernel) -> Self {
+        let ctx = kernel.begin();
         Self {
-            engine,
-            executor,
+            kernel,
             program: Program::new(),
             ram: Memory::new(65536),
             pc: 0,
@@ -261,7 +257,7 @@ impl<'a> Machine<'a> {
                 return Ok(());
             }
             Instruction::LoadStateU64 { reg, state_id } => {
-                let bytes = self.executor.read_state(&mut self.ctx, state_id)?;
+                let bytes = self.kernel.read(&mut self.ctx, state_id)?;
                 let mut arr = [0u8; 8];
                 let len = bytes.len().min(8);
                 arr[..len].copy_from_slice(&bytes[..len]);
@@ -269,7 +265,7 @@ impl<'a> Machine<'a> {
                 self.registers.set(reg, RegisterValue::U64(val));
             }
             Instruction::LoadStateBytes { reg, state_id } => {
-                let bytes = self.executor.read_state(&mut self.ctx, state_id)?;
+                let bytes = self.kernel.read(&mut self.ctx, state_id)?;
                 self.registers.set(reg, RegisterValue::Bytes(bytes));
             }
             Instruction::WriteRegister { state_id, reg } => {
@@ -281,7 +277,7 @@ impl<'a> Machine<'a> {
                 if let Some(&cap_id) = self.execution.capability_ids.first() {
                     self.ctx.capabilities.push(cap_id);
                 }
-                self.executor.write_state(&mut self.ctx, state_id, payload.clone())?;
+                self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload.clone());
         
         self.pc += consumed;
@@ -363,11 +359,11 @@ impl<'a> Machine<'a> {
                 match service_id {
                     0 => { // OBJECT_BIRTH
                         let object_id = self.registers.get_u64(0);
-                        self.engine.object_birth(&mut self.ctx, object_id)?;
+                        self.kernel.object_birth(&mut self.ctx, object_id)?;
                     }
                     1 => { // OBJECT_DEATH
                         let object_id = self.registers.get_u64(0);
-                        self.engine.object_death(&mut self.ctx, object_id)?;
+                        self.kernel.object_death(&mut self.ctx, object_id)?;
                     }
                     2 => { // OBJECT_LINK
                         let from = self.registers.get_u64(0);
@@ -384,16 +380,16 @@ impl<'a> Machine<'a> {
                                 return Ok(());
                             }
                         };
-                        self.engine.object_link(&mut self.ctx, from, to, link_type)?;
+                        self.kernel.object_link(&mut self.ctx, from, to, link_type)?;
                     }
                     3 => { // OBJECT_UNLINK
                         let from = self.registers.get_u64(0);
                         let to = self.registers.get_u64(1);
-                        self.engine.object_unlink(&mut self.ctx, from, to)?;
+                        self.kernel.object_unlink(&mut self.ctx, from, to)?;
                     }
                     4 => { // OBJECT_FREEZE
                         let object_id = self.registers.get_u64(0);
-                        self.engine.object_freeze(&mut self.ctx, object_id)?;
+                        self.kernel.object_freeze(&mut self.ctx, object_id)?;
                     }
                     _ => {
                         self.status = MachineStatus::Trapped(
@@ -431,7 +427,7 @@ impl<'a> Machine<'a> {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
-        if let Err(e) = self.executor.execute_instruction(&mut self.ctx, &instruction, self.call_stack.len()) {
+        if let Err(e) = self.execute_kernel_instruction(&instruction) {
             match e {
                 VeritasError::PermissionDenied => {
                     self.status = MachineStatus::Trapped(
@@ -440,13 +436,13 @@ impl<'a> Machine<'a> {
                     return Ok(());
                 }
                 VeritasError::Abort(r) => {
-                    self.engine.abort(&mut self.ctx, r);
+                    self.kernel.abort(&mut self.ctx, r);
                     self.status = MachineStatus::Aborted(r);
                     return Err(VeritasError::Abort(r));
                 }
                 _ => {
                     let reason = AbortReason::WriteConflict;
-                    self.engine.abort(&mut self.ctx, reason);
+                    self.kernel.abort(&mut self.ctx, reason);
                     self.status = MachineStatus::Aborted(reason);
                     return Err(e);
                 }
@@ -479,6 +475,31 @@ impl<'a> Machine<'a> {
         }
 
         Ok(())
+    }
+
+    /// Dispatch kernel-service instructions to Kernel.
+    /// Local instructions (arithmetic, jumps, etc.) are handled inline in step().
+    fn execute_kernel_instruction(
+        &self,
+        instruction: &crate::instruction::Instruction,
+    ) -> Result<(), crate::types::VeritasError> {
+        // In Phase 1.1, we delegate to kernel methods directly.
+        // In Phase 1.2, this will use KernelCall enum + Kernel::handle().
+        match instruction {
+            crate::instruction::Instruction::Read { state_id } => {
+                // Handled inline via self.kernel.read() in step()
+                Ok(())
+            }
+            crate::instruction::Instruction::Write { state_id, payload } => {
+                // Handled inline via self.kernel.write() in step()
+                Ok(())
+            }
+            crate::instruction::Instruction::Commit => {
+                // Handled inline in step()
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     pub fn run(&mut self) -> Result<(), VeritasError> {
@@ -538,7 +559,7 @@ impl<'a> Machine<'a> {
         self.trap_frame = None;
         self.execution = crate::execution::ExecutionContext::new(
             prog_hash,
-            self.engine.state_root(),
+            self.kernel.state_root(),
         );
         Ok(())
     }
@@ -565,7 +586,7 @@ impl<'a> Machine<'a> {
         crate::receipt::ReceiptBuilder::build(&self.execution, self.state_root())
     }
 
-    pub fn state_root(&self) -> u64 { self.engine.state_root() }
+    pub fn state_root(&self) -> u64 { self.kernel.state_root() }
 
     pub fn is_halted(&self) -> bool {
         matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_))

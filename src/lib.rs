@@ -35,8 +35,7 @@ use types::*;
 mod integration_tests {
     use crate::assembler::assemble;
     use crate::program::ProgramImage;
-    use crate::engine::VeritasEngine;
-    use crate::machine::{Machine, RegisterValue};
+        use crate::machine::{Machine, RegisterValue};
 
     #[test]
     fn test_e2e_asm_to_machine() {
@@ -50,8 +49,8 @@ mod integration_tests {
         let image = ProgramImage::new(insts);
         let bytes = image.encode().unwrap();
 
-        let engine = VeritasEngine::new();
-        let mut machine = Machine::new(&engine);
+        let kernel = crate::kernel::Kernel::new();
+        let mut machine = Machine::new(kernel);
         machine.boot_bytes(&bytes).unwrap();
         machine.run().unwrap();
 
@@ -77,8 +76,8 @@ mod integration_tests {
         let image = ProgramImage::new(insts);
         let bytes = image.encode().unwrap();
 
-        let engine = VeritasEngine::new();
-        let mut machine = Machine::new(&engine);
+        let kernel = crate::kernel::Kernel::new();
+        let mut machine = Machine::new(kernel);
         machine.boot_bytes(&bytes).unwrap();
         machine.run().unwrap();
 
@@ -95,16 +94,16 @@ HALT";
         let mut bytes = image.encode().unwrap();
         bytes[20] ^= 0xFF;
 
-        let engine = VeritasEngine::new();
-        let mut machine = Machine::new(&engine);
+        let kernel = crate::kernel::Kernel::new();
+        let mut machine = Machine::new(kernel);
         assert!(machine.boot_bytes(&bytes).is_err());
     }
 
     #[test]
     fn test_e2e_trap_invalid_opcode() {
         // 只在 RAM 中放入一个非法 opcode
-        let engine = VeritasEngine::new();
-        let mut machine = Machine::new(&engine);
+        let kernel = crate::kernel::Kernel::new();
+        let mut machine = Machine::new(kernel);
         machine.ram_mut().write_bytes(0, &[0xEE]).unwrap();
         machine.set_pc(0);
         machine.step().unwrap();
