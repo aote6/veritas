@@ -167,3 +167,92 @@ fn equivalence_death_cascade() {
         &|e| commit_death(e, 1), // cascade kills 2 and 3
     ]);
 }
+
+/// Cross-tx unlink-then-death: tx1 link, tx2 unlink, tx3 death.
+/// Recovery must NOT cascade to the unlinked target — topology
+/// at death time reflects the unlink, so OWNS closure must not
+/// include the previously-owned object.
+#[test]
+fn cross_tx_unlink_then_death_no_cascade() {
+    let wal_path = format!(
+        "target/test_unlink_death_{}_{}.wal",
+        std::process::id(),
+        TEST_COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let _ = std::fs::remove_file(&wal_path);
+
+    // tx1: create A and B, link A --OWNS--> B
+    // tx2: unlink A --OWNS--> B
+    // tx3: kill A
+    // Expect: B is still alive (unlinked before death)
+    let engine = VeritasEngine::with_wal_path(wal_path.clone());
+    commit_birth(&engine, 1); // A
+    commit_birth(&engine, 2); // B
+    {
+        let mut tx = engine.begin();
+        engine.object_link(&mut tx, 1, 2, LinkType::Owns).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+    {
+        let mut tx = engine.begin();
+        engine.object_unlink(&mut tx, 1, 2).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+    commit_death(&engine, 1); // kill A
+    drop(engine); // crash
+
+    // Recovery
+    let recovered = VeritasEngine::with_wal_path(wal_path.clone());
+    assert!(
+        recovered.is_object_dead(1),
+        "A should be dead after recovery"
+    );
+    assert!(
+        !recovered.is_object_dead(2),
+        "B must survive: unlinked before A's death"
+    );
+    assert!(
+        !recovered.has_link(1, 2),
+        "A->B link must be gone after unlink + death cleanup"
+    );
+    let _ = std::fs::remove_file(&wal_path);
+}
+
+/// Same as above, but OWNS link is never unlinked.
+/// Death of A must cascade to B.
+#[test]
+fn cross_tx_link_then_death_cascade() {
+    let wal_path = format!(
+        "target/test_link_death_{}_{}.wal",
+        std::process::id(),
+        TEST_COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let _ = std::fs::remove_file(&wal_path);
+
+    // tx1: create A and B, link A --OWNS--> B
+    // tx2: kill A
+    // Expect: both A and B dead
+    let engine = VeritasEngine::with_wal_path(wal_path.clone());
+    commit_birth(&engine, 1); // A
+    commit_birth(&engine, 2); // B
+    {
+        let mut tx = engine.begin();
+        engine.object_link(&mut tx, 1, 2, LinkType::Owns).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+    commit_death(&engine, 1); // kill A → cascade to B
+    drop(engine); // crash
+
+    // Recovery
+    let recovered = VeritasEngine::with_wal_path(wal_path.clone());
+    assert!(recovered.is_object_dead(1), "A should be dead");
+    assert!(
+        recovered.is_object_dead(2),
+        "B must be dead: linked when A died, cascade applies"
+    );
+    assert!(
+        !recovered.has_link(1, 2),
+        "A->B link must be gone after cascade cleanup"
+    );
+    let _ = std::fs::remove_file(&wal_path);
+}
