@@ -88,6 +88,16 @@ impl VeritasEngine {
         self.get_object_state(object_id) == Some(crate::types::ObjectState::Dead)
     }
 
+    /// Return all non-Dead ObjectIds known to this engine.
+    /// Used by recovery equivalence tests to compare engine states.
+    pub fn list_object_ids(&self) -> Vec<crate::types::ObjectId> {
+        let registry = self.object_registry.lock().unwrap();
+        registry.iter()
+            .filter(|(_, r)| !r.is_dead())
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     pub fn attach_capability(&self, ctx: &mut crate::types::TransactionContext, cap_id: u64) {
         ctx.capabilities.push(cap_id);
     }

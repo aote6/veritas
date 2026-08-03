@@ -207,6 +207,10 @@ impl Kernel {
         self.engine.is_object_dead(object_id)
     }
 
+    pub fn list_object_ids(&self) -> Vec<ObjectId> {
+        self.engine.list_object_ids()
+    }
+
     pub fn attach_capability(&self, ctx: &mut TransactionContext, cap_id: u64) {
         self.engine.attach_capability(ctx, cap_id)
     }
