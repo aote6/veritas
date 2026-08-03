@@ -9,7 +9,7 @@ P30 Deterministic Replay — World state replay verified; Capability identity ga
 
 P30.1: Same WAL → identical Engine state (4 determinism tests)
 P30.2: WAL contains full world state — object/link/capability replay (2 tests)
-P30.3 (NEXT): Capability Identity Replay — grant_sequence must survive recovery
+P30.3: Capability Identity Replay — grant_sequence survives recovery (capability_id_of + restore_grant)
 
 ## Completed
 
@@ -49,7 +49,7 @@ P30.2         - WAL full world state replay: object/link/capability (2 tests)
 
   P30.1 — Same WAL → same Engine ✅
   P30.2 — WAL → object_registry + topology correct ✅
-  P30.3 — Capability Identity Replay ❌ (NEXT)
+  P30.3 — Capability Identity Replay ✅
 
   Known gap: CapabilityGraph::new() resets grant_sequence to 1.
   Recovered cap_graph replays grants correctly (the edges exist),
@@ -95,7 +95,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Next milestones
 
-1. P30.3 — Capability Identity Replay: grant_sequence WAL persistence
+1. P30.3 — Capability Identity Replay ✅ (grant_sequence + capability_id now persisted)
 2. P30.4 — ReplayRecord upgrade: Object/Link/Capability in replay entries
 3. P30.5 — ReplayEngine full world replay + Receipt verification
 4. P31   — Checkpoint / Snapshot
