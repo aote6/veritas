@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 176 tests pass
+- 178 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -95,7 +95,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 176 tests pass
+- 178 tests pass
 
 
 ## Known gaps
@@ -157,14 +157,16 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ## Next milestones
 
 ### Immediate (unlocked by Step 3)
-1. Step 3.5 — Effect retry: re-execute pending effects on recovery (extraction path already correct)
+1. ✅ Step 3.5 — Effect retry: apply_records dedup + with_wal_path pending loop (2 tests)
 2. ObjectId allocation: Kernel assigns via max(birth_id)+1 from committed TransactionCommitted entries
-3. Cross-tx unlink-then-death recovery boundary test
+3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 178 total)
+4. ✅ Cleanup: unused imports, dead code in test_truncated_transaction_committed_discarded
 
 ### Short-term
 4. P30.4 — ReplayRecord upgrade: Object/Link/Capability (now TransactionDelta-based)
 5. P30.5 — ReplayEngine full world replay + Receipt verification
 6. Clean up state_map/apply_records dual path
+7. ObjectId allocation (unblocked by Step 3, Kernel boundary closure needed first)
 
 ### Medium-term (from audit Critical findings)
 7. Capability always-on: remove capability_enforced toggle, unify all access checks
@@ -179,4 +181,4 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 176 tests pass.
+See README. 178 tests pass.
