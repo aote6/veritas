@@ -5,3 +5,4 @@ target/
 .DS_Store
 wal_*.log
 wal.log
+wal_*.log
