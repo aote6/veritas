@@ -489,4 +489,40 @@ impl ObjectRecord {
     pub fn is_dead(&self) -> bool {
         self.state.is_dead()
     }
+
+
 }
+
+/// P30 Step 1b: TransactionDelta — 一次事务的全部副作用集合。
+///
+/// WAL 原子写入单元。apply() 的唯一输入。
+/// 所有字段都是"原始请求"，不含派生结果：
+/// - deaths 仅为用户显式请求死亡的对象，不含 OWNS 级联展开
+///   （apply() 内部需自行调用 expand_owns_death_closure）
+#[derive(Debug, Clone)]
+pub struct TransactionDelta {
+    pub tx_id: TxId,
+    pub commit_version: Version,
+
+    // State
+    pub writes: Vec<(Address, Vec<u8>)>,
+
+    // Scope
+    pub scope_changes: Vec<(ScopeId, ScopeChangeType, StateId)>,
+
+    // Object lifecycle (原始请求，非展开后)
+    pub births: Vec<ObjectId>,
+    pub deaths: Vec<ObjectId>,    // 仅用户显式请求，apply() 内部展开 OWNS
+    pub freezes: Vec<ObjectId>,
+
+    // Topology
+    pub links: Vec<(ObjectId, ObjectId, LinkType)>,
+    pub unlinks: Vec<(ObjectId, ObjectId)>,
+
+    // Capability
+    pub capability_grants: Vec<PendingCapabilityGrant>,
+
+    // Effects (待执行)
+    pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
+}
+

@@ -367,3 +367,50 @@ fn p8_3_alive_resource_capability_still_works() {
     let res = kernel.engine.commit(&mut tx);
     assert!(res.is_ok(), "Alive resource must still accept authorized writes: {:?}", res);
 }
+
+/// Step 1b: verify build_delta().deaths contains only the original request,
+/// not OWNS-cascaded objects.
+#[test]
+fn step1b_build_delta_deaths_before_owns_expansion() {
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let a = root ^ 0x8001;
+    let b = root ^ 0x8002;
+
+    // Setup: A --OWNS--> B
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, a).unwrap();
+    kernel.engine.object_birth(&mut tx, b).unwrap();
+    kernel.engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::Owns).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    // Request death(A)
+    let mut tx = kernel.begin();
+    kernel.engine.object_death(&mut tx, a).unwrap();
+
+    // Before commit, pending_deaths contains only A
+    let requested = tx.pending_deaths.clone();
+    assert_eq!(requested, vec![a], "before OWNS expansion: pending_deaths must be [A]");
+
+    // build_delta with the original request
+    let delta = kernel.engine.build_delta(&tx, requested.clone());
+
+    // Core assertion: Delta.deaths == [A], NOT [A, B]
+    assert_eq!(
+        delta.deaths,
+        vec![a],
+        "Delta.deaths must contain only the explicitly requested death A"
+    );
+    assert_eq!(delta.deaths.len(), 1, "Delta.deaths.len() must be 1");
+
+    // Commit — OWNS cascade still happens at commit time
+    kernel.engine.commit(&mut tx).unwrap();
+
+    assert_eq!(kernel.engine.get_object_state(a), Some(veritas_kernel::types::ObjectState::Dead));
+    assert_eq!(
+        kernel.engine.get_object_state(b),
+        Some(veritas_kernel::types::ObjectState::Dead),
+        "B must still die via OWNS cascade"
+    );
+}
+

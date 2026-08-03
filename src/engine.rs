@@ -506,6 +506,10 @@ impl VeritasEngine {
         self.detect_scope_conflict(ctx)?;
         self.verify_capability(ctx)?;
 
+        // Step 1b: 保存原始 deaths（OWNS 展开前），构建 TransactionDelta
+        let requested_deaths = ctx.pending_deaths.clone();
+        let _delta = self.build_delta(ctx, requested_deaths);
+
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
         let mut writes_map = HashMap::new();
@@ -764,6 +768,57 @@ impl VeritasEngine {
         self.record_history(ctx);
 
         Ok(())
+    }
+
+    /// Step 1b: 从 TransactionContext 构建 TransactionDelta。
+    ///
+    /// 只提取原始事实，不做任何派生计算。
+    /// deaths 使用 OWNS 展开**之前**的原始请求集合。
+    pub fn build_delta(
+        &self,
+        ctx: &TransactionContext,
+        requested_deaths: Vec<ObjectId>,
+    ) -> TransactionDelta {
+        let writes: Vec<(Address, Vec<u8>)> = ctx
+            .write_set
+            .iter()
+            .map(|(addr, val)| (*addr, val.clone()))
+            .collect();
+
+        let scope_changes: Vec<(ScopeId, ScopeChangeType, StateId)> = ctx
+            .scope_write_set
+            .iter()
+            .map(|c| (c.scope_id, c.change_type.clone(), c.state_id))
+            .collect();
+
+        let effects: Vec<(String, Vec<u8>)> = ctx
+            .effect_queue
+            .effects
+            .iter()
+            .map(|e| (e.idempotency_key.clone(), e.payload.clone()))
+            .collect();
+
+        let links: Vec<(ObjectId, ObjectId, LinkType)> = ctx
+            .pending_links
+            .iter()
+            .map(|e| (e.from, e.to, e.link_type))
+            .collect();
+
+        let unlinks: Vec<(ObjectId, ObjectId)> = ctx.pending_unlinks.clone();
+
+        TransactionDelta {
+            tx_id: ctx.tx_id(),
+            commit_version: 0, // dummy, caller sets
+            writes,
+            scope_changes,
+            births: ctx.pending_objects.clone(),
+            deaths: requested_deaths,
+            freezes: ctx.pending_freezes.clone(),
+            links,
+            unlinks,
+            capability_grants: ctx.pending_capabilities.clone(),
+            effects,
+        }
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权

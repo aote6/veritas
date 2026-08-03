@@ -75,6 +75,12 @@ pub enum WalEntry {
 
 impl WalEntry {
     pub fn serialize(&self) -> String {
+        let payload = self.serialize_payload();
+        let crc = crc32fast::hash(payload.as_bytes());
+        format!("LEN={} CRC={:08x} {}", payload.len(), crc, payload)
+    }
+
+    fn serialize_payload(&self) -> String {
         match self {
             WalEntry::Commit {
                 tx_id,
@@ -152,11 +158,34 @@ impl WalEntry {
     }
 
     pub fn deserialize(line: &str) -> Option<Self> {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        let line_trimmed = line.trim();
+        if line_trimmed.is_empty() || line_trimmed.starts_with('#') {
             return None;
         }
-        let parts: Vec<&str> = line.split_whitespace().collect();
+
+        let mut tokens = line_trimmed.splitn(3, ' ');
+        let len_part = tokens.next()?;
+        let crc_part = tokens.next()?;
+        let payload = tokens.next()?;
+
+        if !len_part.starts_with("LEN=") || !crc_part.starts_with("CRC=") {
+            return None;
+        }
+        let crc_str = crc_part.strip_prefix("CRC=")?;
+        let crc_expected = u32::from_str_radix(crc_str, 16).ok()?;
+
+        // lines() strips trailing \n, but serialize() CRC includes it
+        let crc_actual = crc32fast::hash(payload.as_bytes());
+        if crc_actual != crc_expected {
+            let mut payload_with_nl = payload.to_string();
+            if !payload_with_nl.ends_with('\n') {
+                payload_with_nl.push('\n');
+            }
+            if crc32fast::hash(payload_with_nl.as_bytes()) != crc_expected {
+                return None;
+            }
+        }
+        let parts: Vec<&str> = payload.split_whitespace().collect();
         if parts.is_empty() || parts.last() != Some(&"END") {
             return None;
         }
@@ -626,6 +655,52 @@ mod tests {
     }
 
     #[test]
+    fn test_crc_mismatch_rejected() {
+        let entry = WalEntry::Commit {
+            tx_id: 1,
+            version: 1,
+            writes: vec![],
+            scope_changes: vec![],
+            effects: vec![],
+        };
+        let good = entry.serialize();
+        assert!(WalEntry::deserialize(&good).is_some());
+
+        // 篡改 payload 中的一个字节
+        let tampered = good.replace("COMMIT", "XCOMMIT");
+        assert!(WalEntry::deserialize(&tampered).is_none());
+    }
+
+    #[test]
+    fn test_truncated_with_crc() {
+        let entry = WalEntry::Commit {
+            tx_id: 1,
+            version: 1,
+            writes: vec![],
+            scope_changes: vec![],
+            effects: vec![],
+        };
+        let full = entry.serialize();
+        // 截断到一半
+        let half = &full[..full.len() / 2];
+        assert!(WalEntry::deserialize(half).is_none());
+    }
+
+    #[test]
+    fn test_truncated_at_len_prefix() {
+        // 模拟文件末尾只写了 "LEN=" 就断电
+        assert!(WalEntry::deserialize("LEN=").is_none());
+        assert!(WalEntry::deserialize("LEN=123").is_none());
+    }
+
+    #[test]
+    fn test_truncated_at_crc_prefix() {
+        // 模拟文件末尾写到 CRC= 就断电
+        assert!(WalEntry::deserialize("LEN=123 CRC=").is_none());
+        assert!(WalEntry::deserialize("LEN=123 CRC=abc").is_none());
+    }
+
+    #[test]
     fn test_wal_write_and_read() {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path();
@@ -678,12 +753,22 @@ mod tests {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path();
         {
+            let writer = WalWriter::open(path).unwrap();
+            let entry = WalEntry::Commit {
+                tx_id: 1,
+                version: 1,
+                writes: vec![(Address::new(0, 100), vec![10, 11])],
+                scope_changes: vec![],
+                effects: vec![],
+            };
+            writer.append_and_sync(&entry).unwrap();
+
+            // Write a corrupted line with wrong CRC
             let mut file = std::fs::OpenOptions::new()
-                .write(true)
+                .append(true)
                 .open(path)
                 .unwrap();
-            writeln!(file, "COMMIT TX=1 VERSION=1 WRITE 0 100 0A0B END").unwrap();
-            write!(file, "COMMIT TX=2 VERSION=2 WRITE 200").unwrap();
+            writeln!(file, "LEN=20 CRC=12345678 COMMIT TX=2 BROKEN").unwrap();
         }
         let (records, max_version) = RecoveryManager::recover(path).unwrap();
         assert_eq!(records.len(), 1);
