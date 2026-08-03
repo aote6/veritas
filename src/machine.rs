@@ -356,49 +356,15 @@ impl Machine {
             }
             Instruction::Trap { service_id } => {
                 // P28: TRAP unified kernel service call
-                // Decode registers into KernelCall, dispatch to Kernel::handle()
+                // Decode registers via KernelCall::decode(), dispatch to Kernel::handle()
                 {
                     let r0 = self.registers.get_u64(0);
                     let r1 = self.registers.get_u64(1);
                     let r2 = self.registers.get_u64(2);
 
-                    let call = match service_id {
-                        0 => crate::kernel::KernelCall::ObjectBirth {
-                            object_type: if r0 == 0 {
-                                crate::types::ObjectType::StateObject
-                            } else {
-                                crate::types::ObjectType::ModuleObject
-                            },
-                        },
-                        1 => crate::kernel::KernelCall::ObjectDeath {
-                            object_id: r0,
-                        },
-                        2 => {
-                            let link_type = match r2 as u8 {
-                                0 => crate::types::LinkType::DependsOn,
-                                1 => crate::types::LinkType::Owns,
-                                2 => crate::types::LinkType::References,
-                                _ => {
-                                    self.status = MachineStatus::Trapped(
-                                        crate::types::TrapReason::InvalidEncoding { pc: self.pc }
-                                    );
-                                    return Ok(());
-                                }
-                            };
-                            crate::kernel::KernelCall::ObjectLink {
-                                from: r0,
-                                to: r1,
-                                link_type,
-                            }
-                        }
-                        3 => crate::kernel::KernelCall::ObjectUnlink {
-                            from: r0,
-                            to: r1,
-                        },
-                        4 => crate::kernel::KernelCall::ObjectFreeze {
-                            object_id: r0,
-                        },
-                        _ => {
+                    let call = match crate::kernel::KernelCall::decode(service_id, r0, r1, r2) {
+                        Ok(call) => call,
+                        Err(_) => {
                             self.status = MachineStatus::Trapped(
                                 crate::types::TrapReason::InvalidEncoding { pc: self.pc }
                             );

@@ -56,6 +56,58 @@ pub enum KernelCall {
         size_hint: u64,
     },
 }
+// ===== Phase 1 Step 7: KernelCall ABI codec =====
+
+impl KernelCall {
+    /// Decode register values from a TRAP instruction into a KernelCall.
+    /// This is the Veritas TRAP ABI: service_id selects the operation,
+    /// r0/r1/r2 carry operands.
+    pub fn decode(
+        service_id: u8,
+        r0: u64,
+        r1: u64,
+        r2: u64,
+    ) -> Result<Self, crate::types::VeritasError> {
+        match service_id {
+            0 => Ok(KernelCall::ObjectBirth {
+                object_type: if r0 == 0 {
+                    crate::types::ObjectType::StateObject
+                } else {
+                    crate::types::ObjectType::ModuleObject
+                },
+            }),
+            1 => Ok(KernelCall::ObjectDeath {
+                object_id: r0,
+            }),
+            2 => {
+                let link_type = match r2 as u8 {
+                    0 => crate::types::LinkType::DependsOn,
+                    1 => crate::types::LinkType::Owns,
+                    2 => crate::types::LinkType::References,
+                    _ => return Err(crate::types::VeritasError::EngineError(
+                        format!("Invalid LinkType: {}", r2)
+                    )),
+                };
+                Ok(KernelCall::ObjectLink {
+                    from: r0,
+                    to: r1,
+                    link_type,
+                })
+            }
+            3 => Ok(KernelCall::ObjectUnlink {
+                from: r0,
+                to: r1,
+            }),
+            4 => Ok(KernelCall::ObjectFreeze {
+                object_id: r0,
+            }),
+            _ => Err(crate::types::VeritasError::EngineError(
+                format!("Unknown kernel service_id: {}", service_id)
+            )),
+        }
+    }
+}
+
 
 /// TrapResult is returned by Kernel::handle() after processing a KernelCall.
 /// The result is written to register r0 by Machine.
@@ -96,7 +148,7 @@ impl Kernel {
         call: KernelCall,
     ) -> Result<TrapResult, VeritasError> {
         match call {
-            KernelCall::ObjectBirth { object_type } => {
+            KernelCall::ObjectBirth { object_type: _object_type } => {
                 // Phase 1 Step 4: temporary - caller still provides object_id
                 // Phase 2 will have Kernel allocate ObjectId internally
                 let id = ctx.tx_id; // placeholder until Kernel allocator
@@ -519,5 +571,68 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => assert!(id > 0),
             _ => panic!("Expected ObjectId from ObjectBirth"),
         }
+    }
+
+    // ===== Phase 1 Step 7: ABI encoding boundary tests =====
+
+    #[test]
+    fn abi_decode_valid_service_ids() {
+        assert!(KernelCall::decode(0, 0, 0, 0).is_ok());
+        assert!(KernelCall::decode(1, 42, 0, 0).is_ok());
+        assert!(KernelCall::decode(2, 10, 20, 0).is_ok());
+        assert!(KernelCall::decode(3, 10, 20, 0).is_ok());
+        assert!(KernelCall::decode(4, 99, 0, 0).is_ok());
+    }
+
+    #[test]
+    fn abi_decode_invalid_service_id_rejected() {
+        assert!(KernelCall::decode(99, 0, 0, 0).is_err());
+        assert!(KernelCall::decode(255, 0, 0, 0).is_err());
+    }
+
+    #[test]
+    fn abi_decode_invalid_link_type_rejected() {
+        assert!(KernelCall::decode(2, 10, 20, 99).is_err());
+    }
+
+    #[test]
+    fn abi_decode_object_type_state() {
+        let call = KernelCall::decode(0, 0, 0, 0).unwrap();
+        match call {
+            KernelCall::ObjectBirth { object_type } => {
+                assert!(matches!(object_type, ObjectType::StateObject));
+            }
+            _ => panic!("Expected ObjectBirth"),
+        }
+    }
+
+    #[test]
+    fn abi_decode_object_type_module() {
+        let call = KernelCall::decode(0, 1, 0, 0).unwrap();
+        match call {
+            KernelCall::ObjectBirth { object_type } => {
+                assert!(matches!(object_type, ObjectType::ModuleObject));
+            }
+            _ => panic!("Expected ObjectBirth"),
+        }
+    }
+
+    #[test]
+    fn abi_full_trap_roundtrip() {
+        // Full TRAP ABI roundtrip: registers -> decode -> handle -> commit
+        let kernel = Kernel::new();
+
+        // Create object via decode + handle
+        let mut ctx = kernel.begin();
+        let call = KernelCall::decode(0, 0, 0, 0).unwrap();
+        let result = kernel.handle(&mut ctx, call).unwrap();
+        let id = match result {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("Expected ObjectId"),
+        };
+        kernel.commit(&mut ctx).unwrap();
+
+        assert!(id > 0);
+        assert_eq!(kernel.get_object_state(id), Some(ObjectState::Alive));
     }
 }
