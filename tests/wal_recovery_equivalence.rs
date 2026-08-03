@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use veritas_kernel::engine::VeritasEngine;
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::ObjectType;
 use veritas_kernel::types::{ObjectState, LinkType};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -52,22 +54,22 @@ impl EngineSnapshot {
 /// P29.3: Recovery(WAL) must produce the same engine state as the
 /// engine that wrote the WAL before crash. This is the strongest
 /// recovery invariant.
-fn assert_recovery_equivalence(operations: &[&dyn Fn(&VeritasEngine)]) {
+fn assert_recovery_equivalence(operations: &[&dyn Fn(&Kernel)]) {
     let wal_path = unique_wal_path();
     let _ = std::fs::remove_file(&wal_path);
 
     let snapshot_before;
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let kernel = Kernel::with_wal_path(wal_path.clone());
         for op in operations {
-            op(&engine);
+            op(&kernel);
         }
-        snapshot_before = EngineSnapshot::capture(&engine);
+        snapshot_before = EngineSnapshot::capture(kernel.engine());
     } // crash
 
     {
-        let recovered = VeritasEngine::with_wal_path(wal_path.clone());
-        let snapshot_after = EngineSnapshot::capture(&recovered);
+        let recovered = Kernel::with_wal_path(wal_path.clone());
+        let snapshot_after = EngineSnapshot::capture(recovered.engine());
 
         assert_eq!(
             snapshot_after.object_ids, snapshot_before.object_ids,
@@ -90,35 +92,41 @@ fn assert_recovery_equivalence(operations: &[&dyn Fn(&VeritasEngine)]) {
     let _ = std::fs::remove_file(&wal_path);
 }
 
-fn commit_birth(engine: &VeritasEngine, id: u64) {
-    let mut tx = engine.begin();
-    engine.object_birth(&mut tx, id).unwrap();
-    engine.commit(&mut tx).unwrap();
+fn commit_birth(kernel: &Kernel) -> u64 {
+    let mut tx = kernel.begin();
+    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
+        object_type: ObjectType::StateObject,
+    }).unwrap() {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
 }
 
-fn commit_link(engine: &VeritasEngine, from: u64, to: u64, lt: LinkType) {
-    let mut tx = engine.begin();
-    engine.object_link(&mut tx, from, to, lt).unwrap();
-    engine.commit(&mut tx).unwrap();
+fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
-fn commit_death(engine: &VeritasEngine, id: u64) {
-    let mut tx = engine.begin();
-    engine.object_death(&mut tx, id).unwrap();
-    engine.commit(&mut tx).unwrap();
+fn commit_death(kernel: &Kernel, id: u64) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
-fn commit_freeze(engine: &VeritasEngine, id: u64) {
-    let mut tx = engine.begin();
-    engine.object_freeze(&mut tx, id).unwrap();
-    engine.commit(&mut tx).unwrap();
+fn commit_freeze(kernel: &Kernel, id: u64) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 /// P29.3: Single object birth → recovery equivalence
 #[test]
 fn equivalence_single_birth() {
     assert_recovery_equivalence(&[
-        &|e| commit_birth(e, 1),
+        &|e| { commit_birth(e); },
     ]);
 }
 
@@ -126,9 +134,7 @@ fn equivalence_single_birth() {
 #[test]
 fn equivalence_birth_and_link() {
     assert_recovery_equivalence(&[
-        &|e| commit_birth(e, 10),
-        &|e| commit_birth(e, 20),
-        &|e| commit_link(e, 10, 20, LinkType::Owns),
+        &|e| { let a = commit_birth(e); let b = commit_birth(e); commit_link(e, a, b, LinkType::Owns); },
     ]);
 }
 
@@ -136,9 +142,7 @@ fn equivalence_birth_and_link() {
 #[test]
 fn equivalence_full_lifecycle() {
     assert_recovery_equivalence(&[
-        &|e| commit_birth(e, 100),
-        &|e| commit_freeze(e, 100),
-        &|e| commit_death(e, 100),
+        &|e| { let id = commit_birth(e); commit_freeze(e, id); commit_death(e, id); },
     ]);
 }
 
@@ -146,12 +150,7 @@ fn equivalence_full_lifecycle() {
 #[test]
 fn equivalence_multi_object_topology() {
     assert_recovery_equivalence(&[
-        &|e| commit_birth(e, 1),
-        &|e| commit_birth(e, 2),
-        &|e| commit_birth(e, 3),
-        &|e| commit_link(e, 1, 2, LinkType::Owns),
-        &|e| commit_link(e, 1, 3, LinkType::DependsOn),
-        &|e| commit_link(e, 2, 3, LinkType::References),
+        &|e| { let a = commit_birth(e); let b = commit_birth(e); let c = commit_birth(e); commit_link(e, a, b, LinkType::Owns); commit_link(e, a, c, LinkType::DependsOn); commit_link(e, b, c, LinkType::References); },
     ]);
 }
 
@@ -159,12 +158,7 @@ fn equivalence_multi_object_topology() {
 #[test]
 fn equivalence_death_cascade() {
     assert_recovery_equivalence(&[
-        &|e| commit_birth(e, 1),
-        &|e| commit_birth(e, 2),
-        &|e| commit_birth(e, 3),
-        &|e| commit_link(e, 1, 2, LinkType::Owns),
-        &|e| commit_link(e, 2, 3, LinkType::Owns),
-        &|e| commit_death(e, 1), // cascade kills 2 and 3
+        &|e| { let a = commit_birth(e); let b = commit_birth(e); let c = commit_birth(e); commit_link(e, a, b, LinkType::Owns); commit_link(e, b, c, LinkType::Owns); commit_death(e, a); },
     ]);
 }
 
@@ -185,34 +179,34 @@ fn cross_tx_unlink_then_death_no_cascade() {
     // tx2: unlink A --OWNS--> B
     // tx3: kill A
     // Expect: B is still alive (unlinked before death)
-    let engine = VeritasEngine::with_wal_path(wal_path.clone());
-    commit_birth(&engine, 1); // A
-    commit_birth(&engine, 2); // B
+    let kernel = Kernel::with_wal_path(wal_path.clone());
+    let a = commit_birth(&kernel); // A
+    let b = commit_birth(&kernel); // B
     {
-        let mut tx = engine.begin();
-        engine.object_link(&mut tx, 1, 2, LinkType::Owns).unwrap();
-        engine.commit(&mut tx).unwrap();
+        let mut tx = kernel.begin();
+        kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns }).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
     {
-        let mut tx = engine.begin();
-        engine.object_unlink(&mut tx, 1, 2).unwrap();
-        engine.commit(&mut tx).unwrap();
+        let mut tx = kernel.begin();
+        kernel.handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b }).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
-    commit_death(&engine, 1); // kill A
-    drop(engine); // crash
+    commit_death(&kernel, a); // kill A
+    drop(kernel); // crash
 
     // Recovery
-    let recovered = VeritasEngine::with_wal_path(wal_path.clone());
+    let recovered = Kernel::with_wal_path(wal_path.clone());
     assert!(
-        recovered.is_object_dead(1),
+        recovered.engine().is_object_dead(a),
         "A should be dead after recovery"
     );
     assert!(
-        !recovered.is_object_dead(2),
+        !recovered.engine().is_object_dead(b),
         "B must survive: unlinked before A's death"
     );
     assert!(
-        !recovered.has_link(1, 2),
+        !recovered.engine().has_link(a, b),
         "A->B link must be gone after unlink + death cleanup"
     );
     let _ = std::fs::remove_file(&wal_path);
@@ -232,26 +226,26 @@ fn cross_tx_link_then_death_cascade() {
     // tx1: create A and B, link A --OWNS--> B
     // tx2: kill A
     // Expect: both A and B dead
-    let engine = VeritasEngine::with_wal_path(wal_path.clone());
-    commit_birth(&engine, 1); // A
-    commit_birth(&engine, 2); // B
+    let kernel = Kernel::with_wal_path(wal_path.clone());
+    let a = commit_birth(&kernel); // A
+    let b = commit_birth(&kernel); // B
     {
-        let mut tx = engine.begin();
-        engine.object_link(&mut tx, 1, 2, LinkType::Owns).unwrap();
-        engine.commit(&mut tx).unwrap();
+        let mut tx = kernel.begin();
+        kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns }).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
-    commit_death(&engine, 1); // kill A → cascade to B
-    drop(engine); // crash
+    commit_death(&kernel, a); // kill A → cascade to B
+    drop(kernel); // crash
 
     // Recovery
-    let recovered = VeritasEngine::with_wal_path(wal_path.clone());
-    assert!(recovered.is_object_dead(1), "A should be dead");
+    let recovered = Kernel::with_wal_path(wal_path.clone());
+    assert!(recovered.engine().is_object_dead(a), "A should be dead");
     assert!(
-        recovered.is_object_dead(2),
+        recovered.engine().is_object_dead(b),
         "B must be dead: linked when A died, cascade applies"
     );
     assert!(
-        !recovered.has_link(1, 2),
+        !recovered.engine().has_link(a, b),
         "A->B link must be gone after cascade cleanup"
     );
     let _ = std::fs::remove_file(&wal_path);

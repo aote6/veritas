@@ -1,12 +1,14 @@
 #![allow(dead_code)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use veritas_kernel::engine::VeritasEngine;
-use veritas_kernel::types::{ObjectId, StateId, TransactionContext};
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::{LinkType, ObjectId, ObjectType, StateId, TransactionContext};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct TestKernel {
     pub engine: VeritasEngine,
+    pub kernel: Kernel,
     pub root_object: ObjectId,
 }
 
@@ -40,8 +42,11 @@ pub fn new_kernel() -> TestKernel {
     engine.write(&mut tx_init, 0, init_data).expect("Failed to init Root Object memory");
     engine.commit(&mut tx_init).expect("Failed to commit Root Object initialization");
 
+    let kernel = Kernel::with_wal_path(wal_path.clone());
+
     TestKernel {
         engine,
+        kernel,
         root_object,
     }
 }

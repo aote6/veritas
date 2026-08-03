@@ -152,6 +152,12 @@ impl Kernel {
         }
     }
 
+    /// 返回内部 Engine 的只读引用。
+    /// 仅用于测试/工具读取世界状态，不可绕过 Kernel 修改世界。
+    pub fn engine(&self) -> &VeritasEngine {
+        &self.engine
+    }
+
     // ===== Phase 1 Step 4: KernelCall dispatch =====
 
     /// Handle a decoded kernel service call.
