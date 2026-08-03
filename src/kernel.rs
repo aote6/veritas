@@ -55,6 +55,16 @@ pub enum KernelCall {
         object_id: ObjectId,
         size_hint: u64,
     },
+    Commit,
+    Effect {
+        payload: Vec<u8>,
+    },
+    Savepoint {
+        name: String,
+    },
+    RollbackTo {
+        name: String,
+    },
 }
 // ===== Phase 1 Step 7: KernelCall ABI codec =====
 
@@ -101,6 +111,10 @@ impl KernelCall {
             4 => Ok(KernelCall::ObjectFreeze {
                 object_id: r0,
             }),
+            5 => Ok(KernelCall::Commit),
+            6 => Ok(KernelCall::Effect { payload: vec![] }),
+            7 => Ok(KernelCall::Savepoint { name: String::new() }),
+            8 => Ok(KernelCall::RollbackTo { name: String::new() }),
             _ => Err(crate::types::VeritasError::EngineError(
                 format!("Unknown kernel service_id: {}", service_id)
             )),
@@ -116,6 +130,7 @@ pub enum TrapResult {
     ObjectId(ObjectId),
     CapabilityId(CapabilityId),
     StateId(StateId),
+    EffectKey(String),
     Success,
 }
 
@@ -184,6 +199,22 @@ impl Kernel {
             }
             KernelCall::Abort { reason } => {
                 self.abort(ctx, reason);
+                Ok(TrapResult::Success)
+            }
+            KernelCall::Commit => {
+                self.commit(ctx)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::Effect { payload } => {
+                let key = self.effect(ctx, payload)?;
+                Ok(TrapResult::EffectKey(key))
+            }
+            KernelCall::Savepoint { name } => {
+                self.savepoint(ctx, &name)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::RollbackTo { name } => {
+                self.rollback_to(ctx, &name)?;
                 Ok(TrapResult::Success)
             }
         }

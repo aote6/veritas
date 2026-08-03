@@ -306,7 +306,8 @@ impl Machine {
             Instruction::Abort { reason } => {
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 let r = reason;
-                self.kernel.abort(&mut self.ctx, r);
+                let call = crate::kernel::KernelCall::Abort { reason: r };
+                self.kernel.handle(&mut self.ctx, call)?;
         self.pc += consumed;
                 self.status = MachineStatus::Aborted(r);
                 return Ok(());
@@ -316,8 +317,15 @@ impl Machine {
                 let h = holder;
                 let p = permission;
                 let r = resource;
-                let cap_id = self.kernel.capability_grant(&mut self.ctx, h, &p, r)?;
-                self.registers.set(0, RegisterValue::U64(cap_id));
+                let call = crate::kernel::KernelCall::CapabilityGrant {
+                    grantee: h,
+                    capability_type: p.clone(),
+                    resource: r,
+                };
+                let result = self.kernel.handle(&mut self.ctx, call)?;
+                if let crate::kernel::TrapResult::CapabilityId(cap_id) = result {
+                    self.registers.set(0, RegisterValue::U64(cap_id));
+                }
         self.pc += consumed;
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
@@ -437,6 +445,7 @@ impl Machine {
                         crate::kernel::TrapResult::StateId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));
                         }
+                        crate::kernel::TrapResult::EffectKey(_) => {}
                         crate::kernel::TrapResult::Success => {}
                     }
                 }
@@ -469,33 +478,7 @@ impl Machine {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
-        if let Err(e) = self.execute_kernel_instruction(&instruction) {
-            match e {
-                VeritasError::PermissionDenied => {
-                    self.status = MachineStatus::Trapped(
-                        crate::types::TrapReason::AccessDenied { pc: self.pc }
-                    );
-                    return Ok(());
-                }
-                VeritasError::Abort(r) => {
-                    let _ = self.kernel.handle(
-                        &mut self.ctx,
-                        crate::kernel::KernelCall::Abort { reason: r },
-                    );
-                    self.status = MachineStatus::Aborted(r);
-                    return Err(VeritasError::Abort(r));
-                }
-                _ => {
-                    let reason = AbortReason::WriteConflict;
-                    let _ = self.kernel.handle(
-                        &mut self.ctx,
-                        crate::kernel::KernelCall::Abort { reason },
-                    );
-                    self.status = MachineStatus::Aborted(reason);
-                    return Err(e);
-                }
-            }
-        }
+        // P1a: execute_kernel_instruction removed — all kernel ops now via KernelCall
 
 
 
@@ -525,30 +508,7 @@ impl Machine {
         Ok(())
     }
 
-    /// Dispatch kernel-service instructions to Kernel.
-    /// Local instructions (arithmetic, jumps, etc.) are handled inline in step().
-    fn execute_kernel_instruction(
-        &self,
-        instruction: &crate::instruction::Instruction,
-    ) -> Result<(), crate::types::VeritasError> {
-        // In Phase 1.1, we delegate to kernel methods directly.
-        // In Phase 1.2, this will use KernelCall enum + Kernel::handle().
-        match instruction {
-            crate::instruction::Instruction::Read { state_id: _ } => {
-                // Handled inline via self.kernel.read() in step()
-                Ok(())
-            }
-            crate::instruction::Instruction::Write { state_id: _, payload: _ } => {
-                // Handled inline via self.kernel.write() in step()
-                Ok(())
-            }
-            crate::instruction::Instruction::Commit => {
-                // Now handled inline in step() — commit dispatched above
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
+// P1a: execute_kernel_instruction removed — KernelCall is the sole dispatch path
 
     pub fn run(&mut self) -> Result<(), VeritasError> {
         while self.status == MachineStatus::Ready || self.status == MachineStatus::Running {
