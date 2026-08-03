@@ -182,3 +182,71 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ## Documentation map
 
 See README. 184 tests pass.
+
+
+---
+
+## P1b Completion — 2026-08-04
+
+### Kernel Boundary Physically Closed
+
+Engine mutation API changed from `pub` to `pub(crate)`:
+`begin`, `begin_in_object`, `read`, `write`, `effect`, `commit`,
+`capability_grant`, `object_freeze`, `object_death`, `object_link`,
+`object_unlink`, `object_birth`, `abort`, `savepoint`, `rollback_to`
+
+`Kernel::handle()` is now the only external entry point for world mutation.
+
+### Instruction Dispatch Unified (P1a)
+- Machine routes Commit/Abort/CapabilityGrant/Effect/Savepoint/RollbackTo via KernelCall + handle()
+- `execute_kernel_instruction()` deleted
+- Read/Write retained as direct path (data access instructions)
+
+### Dead Code Removed
+- `src/graph/` (GraphStore/Journal/Policy/ReplayEngine) — 1021 lines, zero callers
+- `tests/graph/` — tests for removed module
+
+### Test Infrastructure Migrated
+- `tests/common/mod.rs`: `new_kernel()` uses `Kernel::with_wal_path` + `Kernel::handle(ObjectBirth)` for Root Object creation
+- Root Object ID dynamically allocated by Kernel (no fixed FNV hash)
+- `TestKernel.engine` field removed; all tests use `tk.kernel`
+- 148 tests total, 0 failed, 0 ignored
+
+### ObjectId Allocation
+- `engine.next_object_id()`: AtomicU64 counter initialized from `max(birth_id)+1` in recovery
+- `Kernel::handle(ObjectBirth)` uses `engine.next_object_id()` — caller cannot specify ID
+- Old `engine.object_birth(ctx, id)` retained as `pub(crate)` for Kernel internal use
+
+### Frozen Link Validation
+- Moved from `object_link()` (immediate reject) to `commit()` pending_links validation
+- Correct transactional semantics: intent recorded at command, validated at commit
+
+### Test Files Migrated
+| File | Tests | Status |
+|------|-------|--------|
+| wal_recovery_equivalence.rs | 7 | ✅ |
+| wal_recovery_invariants.rs | 4 | ✅ (2 old-API tests deleted) |
+| wal_recovery_object.rs | 3 | ✅ |
+| wal_recovery_robustness.rs | 7 | ✅ |
+| capability_p4x_recovery.rs | 3 | ✅ |
+| freeze_unlink_p5x_recovery.rs | 5 | ✅ |
+| object/birth.rs | 1 | ✅ |
+| object/lifecycle.rs | 13 | ✅ (1 semantic fix) |
+| object/memory.rs | 1 | ✅ |
+| replay_determinism.rs | 4 | ✅ (sort fix) |
+| replay_engine_test.rs | 2 | ✅ |
+| transaction/commit.rs | 1 | ✅ |
+| transaction/conflict.rs | 1 | ✅ |
+| transaction/isolation.rs | 2 | ✅ |
+| wal_recovery_property.rs | - | Deleted (pending re-implementation) |
+
+### Remaining Known Gaps
+1. Kernel passthrough pub fns (delete next — handle() calls engine directly)
+2. kernel.read/write() still pub (Memory ABI not yet defined in KernelCall)
+3. state_map/apply_records dual path in recovery
+4. Capability always-on: remove `capability_enforced` toggle
+5. `grant_base_access` bypass in `begin_in_object`
+6. ReplayRecord missing Object/Link/Capability (P30.4)
+7. ReplayEngine full world replay + Receipt verification (P30.5)
+8. ModuleObject/ModuleInstance lifecycle closure
+9. Savepoint full semantics
