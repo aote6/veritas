@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 178 tests pass
+- 184 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -95,7 +95,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 178 tests pass
+- 184 tests pass
 
 
 ## Known gaps
@@ -158,7 +158,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ### Immediate (unlocked by Step 3)
 1. ✅ Step 3.5 — Effect retry: apply_records dedup + with_wal_path pending loop (2 tests)
-2. ObjectId allocation: Kernel assigns via max(birth_id)+1 from committed TransactionCommitted entries
+2. ✅ ObjectId allocation: Kernel assigns via engine.next_object_id() (3 tests, 94 total)
 3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 178 total)
 4. ✅ Cleanup: unused imports, dead code in test_truncated_transaction_committed_discarded
 
@@ -166,7 +166,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 4. P30.4 — ReplayRecord upgrade: Object/Link/Capability (now TransactionDelta-based)
 5. P30.5 — ReplayEngine full world replay + Receipt verification
 6. Clean up state_map/apply_records dual path
-7. ObjectId allocation (unblocked by Step 3, Kernel boundary closure needed first)
+7. ✅ ObjectId allocation (TRAP path uses next_object_id; pub fn retained for test compat)
 
 ### Medium-term (from audit Critical findings)
 7. Capability always-on: remove capability_enforced toggle, unify all access checks
@@ -181,4 +181,4 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 178 tests pass.
+See README. 184 tests pass.
