@@ -1,4 +1,19 @@
 use veritas_kernel::engine::VeritasEngine;
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::ObjectType;
+
+
+fn birth(kernel: &Kernel) -> u64 {
+    let mut tx = kernel.begin();
+    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
+        object_type: ObjectType::StateObject,
+    }).unwrap() {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
 
 /// P29.5: Write a valid WAL, then truncate the last N bytes.
 /// Recovery must either succeed with the state before the truncated
@@ -11,15 +26,11 @@ fn test_truncated_wal(truncate_bytes: usize) {
     );
     let _ = std::fs::remove_file(&wal_path);
 
-    let obj_id: u64 = 42;
+    let obj_id: u64;
 
-    // Phase 1: create a valid WAL with some operations
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, obj_id).unwrap();
-        engine.commit(&mut tx).unwrap();
-        // engine dropped → WAL flushed
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        obj_id = birth(&kernel);
     }
 
     // Phase 2: truncate the WAL file
@@ -33,10 +44,8 @@ fn test_truncated_wal(truncate_bytes: usize) {
 
     // Phase 3: attempt recovery — must not panic
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        // If the WAL was truncated after Commit, object may or may not exist.
-        // Either outcome is acceptable; the invariant is: no panic.
-        let _state = engine.get_object_state(obj_id);
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        let _state = kernel.engine().get_object_state(obj_id);
         // If we got here without panicking, the test passes.
     }
 
@@ -52,11 +61,10 @@ fn test_corrupted_wal(corrupt_offset: usize, corrupt_byte: u8) {
     );
     let _ = std::fs::remove_file(&wal_path);
 
+    let _obj_id: u64;
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, 1).unwrap();
-        engine.commit(&mut tx).unwrap();
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        _obj_id = birth(&kernel);
     }
 
     // Corrupt a byte
