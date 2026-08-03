@@ -118,8 +118,8 @@ Object lifecycle instructions stay Trap ABI
 - Boundary: only count Births from TransactionCommitted entries, not orphaned ones
 
 **Dual stores**:
-- src/graph/ exists as an independent module (GraphStore/Journal/Policy/ReplayEngine) with zero callers outside its own tree
-- engine.topology (Mutex<Vec<LinkEdge>>) is the active implementation; src/graph is dead code, not an active dual store
+- ✅ src/graph/ removed — 1021 lines dead code deleted
+
 
 ✅ P1a: Machine routes kernel ops via KernelCall; execute_kernel_instruction deleted; pub API not yet closed (P1b pending)
 
@@ -171,7 +171,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ### Medium-term (from audit Critical findings)
 7. Capability always-on: remove capability_enforced toggle, unify all access checks
 8. Kernel boundary: P1a ✅ (Machine side); P1b pending — pub → pub(crate)
-9. Remove src/graph/ dead code; engine.topology is the sole topology store
+9. ✅ src/graph/ dead code removed; engine.topology is sole topology store
 
 ### Later
 10. P31 — Checkpoint / Snapshot
