@@ -203,6 +203,8 @@ impl Machine {
         self.execution.begin_instruction(pc_before, regs_before, instruction.clone());
 
         // P13.1: 本地指令直接在 Machine 内部消化
+        // Clone instruction for record_trace before destructuring moves fields
+        let instruction_for_trace = instruction.clone();
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(reg, RegisterValue::U64(val));
@@ -298,6 +300,49 @@ impl Machine {
                 self.kernel.commit(&mut self.ctx)?;
         self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Abort { reason } => {
+                self.record_trace(pc_before, regs_before, &instruction, consumed);
+                let r = reason;
+                self.kernel.abort(&mut self.ctx, r);
+        self.pc += consumed;
+                self.status = MachineStatus::Aborted(r);
+                return Ok(());
+            }
+            Instruction::CapabilityGrant { holder, permission, resource } => {
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                let h = holder;
+                let p = permission;
+                let r = resource;
+                let cap_id = self.kernel.capability_grant(&mut self.ctx, h, &p, r)?;
+                self.registers.set(0, RegisterValue::U64(cap_id));
+        self.pc += consumed;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Effect { payload } => {
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                let p = payload;
+                let _key = self.kernel.effect(&mut self.ctx, p)?;
+        self.pc += consumed;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Savepoint { name } => {
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                let n = name;
+                self.kernel.savepoint(&mut self.ctx, &n)?;
+        self.pc += consumed;
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::RollbackTo { name } => {
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                let n = name;
+                self.kernel.rollback_to(&mut self.ctx, &n)?;
+        self.pc += consumed;
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
