@@ -294,6 +294,13 @@ impl Machine {
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
+            Instruction::Commit => {
+                self.kernel.commit(&mut self.ctx)?;
+        self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
             Instruction::Halt => {
         
         self.pc += consumed;
@@ -491,7 +498,7 @@ impl Machine {
                 Ok(())
             }
             crate::instruction::Instruction::Commit => {
-                // Handled inline in step()
+                // Now handled inline in step() — commit dispatched above
                 Ok(())
             }
             _ => Ok(()),
