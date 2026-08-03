@@ -1,53 +1,46 @@
 use crate::common::new_kernel;
+use veritas_kernel::kernel::KernelCall;
 use veritas_kernel::types::AbortReason;
 
-/// T2 Invariant: Abort 强保证回滚至事务开启前/持久库中的原始状态，脏写入彻底丢弃
 #[test]
-fn t2_abort_has_no_effect() {
-    let kernel = new_kernel();
-    let state_id = 99;
+fn t3_snapshot_isolation_read_own_writes() {
+    let tk = new_kernel();
+    let state_id = 50;
 
-    // 1. 在 root_object 下合规 Commit 初始值 vec![1]
-    let mut setup_tx = kernel.begin();
-    kernel.engine.write(&mut setup_tx, state_id, vec![1]).unwrap();
-    kernel.engine.commit(&mut setup_tx).unwrap();
+    let mut tx = tk.kernel.begin_in_object(tk.root_object);
+    tk.kernel.write(&mut tx, state_id, vec![1]).unwrap();
+    tk.kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 
-    // 2. 开启新事务尝试脏写 vec![9]，然后 Abort
-    let mut tx = kernel.begin();
-    kernel.engine.write(&mut tx, state_id, vec![9]).unwrap();
-    kernel.engine.abort(&mut tx, AbortReason::AlreadyAborted);
+    // Write in tx and read back before commit
+    let mut tx = tk.kernel.begin_in_object(tk.root_object);
+    tk.kernel.write(&mut tx, state_id, vec![9]).unwrap();
+    let val = tk.kernel.read(&mut tx, state_id).unwrap();
+    assert_eq!(val, vec![9], "Must read own writes");
+    tk.kernel.handle(&mut tx, KernelCall::Abort { reason: AbortReason::AlreadyAborted }).unwrap();
 
-    // 3. 验证全局状态依旧是 committed 的 vec![1]
-    let mut read_tx = kernel.begin();
-    let value = kernel.engine.read(&mut read_tx, state_id).unwrap();
-
-    assert_eq!(
-        value,
-        vec![1],
-        "T2 Invariant Violation: Aborted write leaked into global state!"
-    );
+    // After abort, must see old value
+    let mut read_tx = tk.kernel.begin_in_object(tk.root_object);
+    let value = tk.kernel.read(&mut read_tx, state_id).unwrap();
+    assert_eq!(value, vec![1], "After abort, must see committed snapshot");
 }
 
-/// T3 Invariant: Transaction 本地读写视图优先级高于底座持久库，保证 Read-Your-Own-Write
 #[test]
-fn t3_read_your_write() {
-    let kernel = new_kernel();
-    let state_id = 10;
+fn t4_abort_rollback_all() {
+    let tk = new_kernel();
+    let state_id = 77;
 
-    // 1. 在 root_object 下合规 Commit 初始值 vec![0]
-    let mut setup_tx = kernel.begin();
-    kernel.engine.write(&mut setup_tx, state_id, vec![0]).unwrap();
-    kernel.engine.commit(&mut setup_tx).unwrap();
+    // Setup committed value
+    let mut setup_tx = tk.kernel.begin_in_object(tk.root_object);
+    tk.kernel.write(&mut setup_tx, state_id, vec![0]).unwrap();
+    tk.kernel.handle(&mut setup_tx, KernelCall::Commit).unwrap();
 
-    // 2. 本地事务写入 vec![100]，未 Commit 前读取
-    let mut tx = kernel.begin();
-    kernel.engine.write(&mut tx, state_id, vec![100]).unwrap();
+    // Write then abort
+    let mut tx = tk.kernel.begin_in_object(tk.root_object);
+    tk.kernel.write(&mut tx, state_id, vec![100]).unwrap();
+    tk.kernel.handle(&mut tx, KernelCall::Abort { reason: AbortReason::WriteConflict }).unwrap();
 
-    let value = kernel.engine.read(&mut tx, state_id).unwrap();
-
-    assert_eq!(
-        value,
-        vec![100],
-        "T3 Invariant Violation: Transaction cannot see its own uncommitted write!"
-    );
+    // Must see original value
+    let mut read_tx = tk.kernel.begin_in_object(tk.root_object);
+    let val = tk.kernel.read(&mut read_tx, state_id).unwrap();
+    assert_eq!(val, vec![0], "Abort must rollback all writes");
 }

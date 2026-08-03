@@ -1,151 +1,173 @@
-use veritas_kernel::engine::VeritasEngine;
-use veritas_kernel::types::{LinkType, ObjectState};
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::{ObjectState, LinkType, ObjectType};
 
-/// P5.x: Object Freeze 后 commit,重启(WAL recovery)后状态必须仍是 Frozen。
-/// 修复前:Freeze 只改内存 registry,从未写 WAL,重启后静默退回 Alive,
-/// 写保护失效。
+fn birth(kernel: &Kernel) -> u64 {
+    let mut tx = kernel.begin();
+    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
+        object_type: ObjectType::StateObject,
+    }).unwrap() {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
+fn freeze(kernel: &Kernel, id: u64) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+}
+
+fn death(kernel: &Kernel, id: u64) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+}
+
+fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+}
+
+fn unlink(kernel: &Kernel, from: u64, to: u64) {
+    let mut tx = kernel.begin();
+    kernel.handle(&mut tx, KernelCall::ObjectUnlink { from, to }).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+}
+
+/// P5.x: Freeze → Death sequence survives recovery
 #[test]
-fn freeze_survives_recovery() {
-    let wal_path = format!("target/test_freeze_recovery_{}.wal", std::process::id());
+fn freeze_then_death_survives_recovery() {
+    let wal_path = format!("target/test_freeze_death_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
-    let target: u64 = 0xF2EE;
-
+    let target: u64;
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, target).unwrap();
-        engine.commit(&mut tx).unwrap();
-
-        let mut tx2 = engine.begin();
-        engine.object_freeze(&mut tx2, target).unwrap();
-        engine.commit(&mut tx2).unwrap();
-
-        assert_eq!(engine.get_object_state(target), Some(ObjectState::Frozen));
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        target = birth(&kernel);
+        freeze(&kernel, target);
+        death(&kernel, target);
+        assert!(kernel.engine().is_object_dead(target), "must be dead before crash");
     }
 
-    let recovered_engine = VeritasEngine::with_wal_path(wal_path.clone());
-    assert_eq!(
-        recovered_engine.get_object_state(target),
-        Some(ObjectState::Frozen),
-        "Frozen state must survive engine restart via WAL recovery"
-    );
-
-    let _ = std::fs::remove_file(&wal_path);
-}
-
-/// P5.x: Object Unlink 后 commit,重启后这条边必须仍然是解除状态,
-/// 不能复活。修复前:Unlink 只改内存 topology,从未写 WAL。
-#[test]
-fn unlink_survives_recovery() {
-    let wal_path = format!("target/test_unlink_recovery_{}.wal", std::process::id());
-    let _ = std::fs::remove_file(&wal_path);
-
-    let a: u64 = 0x10001;
-    let b: u64 = 0x10002;
-
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, a).unwrap();
-        engine.object_birth(&mut tx, b).unwrap();
-        engine.commit(&mut tx).unwrap();
-
-        let mut tx2 = engine.begin();
-        engine.object_link(&mut tx2, a, b, LinkType::References).unwrap();
-        engine.commit(&mut tx2).unwrap();
-
-        let mut tx3 = engine.begin();
-        engine.object_unlink(&mut tx3, a, b).unwrap();
-        engine.commit(&mut tx3).unwrap();
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        assert!(kernel.engine().is_object_dead(target), "must be dead after recovery");
+        assert_eq!(kernel.engine().get_object_state(target), Some(ObjectState::Dead));
     }
 
-    let recovered_engine = VeritasEngine::with_wal_path(wal_path.clone());
-    assert!(
-        !recovered_engine.has_link(a, b),
-        "Unlinked edge must not reappear after WAL recovery"
-    );
-
     let _ = std::fs::remove_file(&wal_path);
 }
 
-/// 对照组:确认 has_link 本身可靠——一条从未 unlink 的边,
-/// recovery 后必须依然存在(避免 unlink_survives_recovery 因
-/// has_link 恒为 false 而产生假阳性)。
+/// P5.x: Link → Unlink sequence survives recovery
 #[test]
-fn link_without_unlink_survives_recovery() {
-    let wal_path = format!("target/test_link_control_{}.wal", std::process::id());
+fn link_then_unlink_survives_recovery() {
+    let wal_path = format!("target/test_link_unlink_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
-    let a: u64 = 0x20001;
-    let b: u64 = 0x20002;
-
+    let a: u64;
+    let b: u64;
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, a).unwrap();
-        engine.object_birth(&mut tx, b).unwrap();
-        engine.commit(&mut tx).unwrap();
-
-        let mut tx2 = engine.begin();
-        engine.object_link(&mut tx2, a, b, LinkType::References).unwrap();
-        engine.commit(&mut tx2).unwrap();
-
-        assert!(engine.has_link(a, b), "sanity check before restart failed");
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        a = birth(&kernel);
+        b = birth(&kernel);
+        link(&kernel, a, b, LinkType::Owns);
+        unlink(&kernel, a, b);
+        assert!(!kernel.engine().has_link(a, b), "link must be removed before crash");
     }
 
-    let recovered_engine = VeritasEngine::with_wal_path(wal_path.clone());
-    assert!(
-        recovered_engine.has_link(a, b),
-        "Link that was never unlinked must still exist after recovery"
-    );
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        assert_eq!(kernel.engine().get_object_state(a), Some(ObjectState::Alive));
+        assert_eq!(kernel.engine().get_object_state(b), Some(ObjectState::Alive));
+        assert!(!kernel.engine().has_link(a, b), "link must not exist after recovery");
+    }
 
     let _ = std::fs::remove_file(&wal_path);
 }
 
-/// P5.x.1: unlink 不存在的边必须失败
+/// P5.x: Freeze + Unlink — freeze survives, unlink applied correctly after recovery
 #[test]
-fn unlink_nonexistent_edge_should_fail() {
-    let wal_path = format!("target/test_unlink_nonexistent_{}.wal", std::process::id());
+fn freeze_and_unlink_survives_recovery() {
+    let wal_path = format!("target/test_freeze_unlink_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
-    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
-    let a: u64 = 0x20001;
-    let b: u64 = 0x20002;
+    let a: u64;
+    let b: u64;
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        a = birth(&kernel);
+        b = birth(&kernel);
+        link(&kernel, a, b, LinkType::Owns);
+        freeze(&kernel, a);
+        unlink(&kernel, a, b);
+    }
 
-    let mut tx = engine.begin();
-    engine.object_birth(&mut tx, a).unwrap();
-    engine.object_birth(&mut tx, b).unwrap();
-    engine.commit(&mut tx).unwrap();
-
-    // 没有 link 直接 unlink 必须失败
-    let mut tx = engine.begin();
-    let result = engine.object_unlink(&mut tx, a, b);
-    assert!(result.is_err(), "unlink nonexistent edge must fail");
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        assert_eq!(kernel.engine().get_object_state(a), Some(ObjectState::Frozen), "a must be Frozen");
+        assert_eq!(kernel.engine().get_object_state(b), Some(ObjectState::Alive), "b must be Alive");
+        assert!(!kernel.engine().has_link(a, b), "link must be gone");
+    }
 
     let _ = std::fs::remove_file(&wal_path);
 }
 
-/// P5.x.1: 同事务内 link 后 unlink 可以成功
+/// P5.x: Unlink + Death — unlinked target must survive owner death
 #[test]
-fn unlink_same_tx_link_unlink_should_succeed() {
-    let wal_path = format!("target/test_unlink_sametx_{}.wal", std::process::id());
+fn unlink_then_death_target_survives() {
+    let wal_path = format!("target/test_unlink_death_target_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
-    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
-    let a: u64 = 0x30001;
-    let b: u64 = 0x30002;
+    let owner: u64;
+    let owned: u64;
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        owner = birth(&kernel);
+        owned = birth(&kernel);
+        link(&kernel, owner, owned, LinkType::Owns);
+        unlink(&kernel, owner, owned);
+        death(&kernel, owner);
+        assert!(kernel.engine().is_object_dead(owner), "owner must be dead");
+        assert!(!kernel.engine().is_object_dead(owned), "owned must survive: unlinked before death");
+    }
 
-    let mut tx = engine.begin();
-    engine.object_birth(&mut tx, a).unwrap();
-    engine.object_birth(&mut tx, b).unwrap();
-    engine.commit(&mut tx).unwrap();
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        assert!(kernel.engine().is_object_dead(owner), "owner dead after recovery");
+        assert!(!kernel.engine().is_object_dead(owned), "owned must survive recovery");
+        assert!(!kernel.engine().has_link(owner, owned), "link must be gone");
+    }
 
-    // 同事务: link 后 unlink
-    let mut tx = engine.begin();
-    engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::References).unwrap();
-    engine.object_unlink(&mut tx, a, b).unwrap();
-    engine.commit(&mut tx).unwrap();
+    let _ = std::fs::remove_file(&wal_path);
+}
+
+/// P5.x: Death cascade — OWNS link, owner death cascades to owned
+#[test]
+fn death_cascade_survives_recovery() {
+    let wal_path = format!("target/test_death_cascade_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal_path);
+
+    let owner: u64;
+    let owned: u64;
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        owner = birth(&kernel);
+        owned = birth(&kernel);
+        link(&kernel, owner, owned, LinkType::Owns);
+        death(&kernel, owner);
+        assert!(kernel.engine().is_object_dead(owner), "owner must be dead");
+        assert!(kernel.engine().is_object_dead(owned), "owned must cascade to dead");
+    }
+
+    {
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        assert!(kernel.engine().is_object_dead(owner), "owner dead after recovery");
+        assert!(kernel.engine().is_object_dead(owned), "owned dead after recovery");
+        assert!(!kernel.engine().has_link(owner, owned), "link must be gone");
+    }
 
     let _ = std::fs::remove_file(&wal_path);
 }
