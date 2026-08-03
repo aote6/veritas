@@ -91,33 +91,31 @@ fn recovery_is_idempotent() {
     let wal_path = format!("target/test_idempotent_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
-    let obj_a: u64 = 10;
-    let obj_b: u64 = 20;
+    let obj_a: u64;
+    let obj_b: u64;
 
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        let mut tx = engine.begin();
-        engine.object_birth(&mut tx, obj_a).unwrap();
-        engine.object_birth(&mut tx, obj_b).unwrap();
-        engine.commit(&mut tx).unwrap();
+        let kernel = Kernel::with_wal_path(wal_path.clone());
+        obj_a = birth(&kernel);
+        obj_b = birth(&kernel);
     }
 
     // Recover once
     let state_after_first;
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let kernel = Kernel::with_wal_path(wal_path.clone());
         state_after_first = (
-            engine.get_object_state(obj_a),
-            engine.get_object_state(obj_b),
+            kernel.engine().get_object_state(obj_a),
+            kernel.engine().get_object_state(obj_b),
         );
     }
 
     // Recover again (idempotent)
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let kernel = Kernel::with_wal_path(wal_path.clone());
         let state_after_second = (
-            engine.get_object_state(obj_a),
-            engine.get_object_state(obj_b),
+            kernel.engine().get_object_state(obj_a),
+            kernel.engine().get_object_state(obj_b),
         );
         assert_eq!(
             state_after_second, state_after_first,
@@ -127,10 +125,10 @@ fn recovery_is_idempotent() {
 
     // Recover a third time
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let kernel = Kernel::with_wal_path(wal_path.clone());
         let state_after_third = (
-            engine.get_object_state(obj_a),
-            engine.get_object_state(obj_b),
+            kernel.engine().get_object_state(obj_a),
+            kernel.engine().get_object_state(obj_b),
         );
         assert_eq!(
             state_after_third, state_after_first,

@@ -406,7 +406,7 @@ impl VeritasEngine {
         &self.lock_mgr
     }
 
-    pub fn begin(&self) -> TransactionContext {
+    pub(crate) fn begin(&self) -> TransactionContext {
         let snapshot_version = self.global_version.load(Ordering::Acquire);
         self.controller.begin(snapshot_version)
     }
@@ -423,13 +423,13 @@ impl VeritasEngine {
     }
 
 
-    pub fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
+    pub(crate) fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
         let mut ctx = self.begin();
         ctx.enter_object(object_id);
         self.grant_base_access(&mut ctx, object_id);
         ctx
     }
-    pub fn read(
+    pub(crate) fn read(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
@@ -460,7 +460,7 @@ impl VeritasEngine {
         Ok(entry.value.clone())
     }
 
-    pub fn write(
+    pub(crate) fn write(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
@@ -496,7 +496,7 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn effect(
+    pub(crate) fn effect(
         &self,
         ctx: &mut TransactionContext,
         payload: Vec<u8>,
@@ -556,7 +556,7 @@ impl VeritasEngine {
         ctx.pending_deaths = queue;
     }
 
-    pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
+    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
         self.controller.pre_commit_check(ctx)?;
 
         let _lock = self.commit_lock.lock().unwrap();
@@ -811,7 +811,7 @@ impl VeritasEngine {
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权
-    pub fn capability_grant(
+    pub(crate) fn capability_grant(
         &self,
         ctx: &mut TransactionContext,
         grantee: ObjectId,
@@ -847,7 +847,7 @@ impl VeritasEngine {
     }
 
     /// P26: OBJECT_FREEZE - 冻结Object，使其变为只读
-    pub fn object_freeze(
+    pub(crate) fn object_freeze(
         &self,
         ctx: &mut TransactionContext,
         object_id: ObjectId,
@@ -865,7 +865,7 @@ impl VeritasEngine {
     }
 
     /// P8.1: OBJECT_DEATH 物理原语
-    pub fn object_death(
+    pub(crate) fn object_death(
         &self,
         ctx: &mut TransactionContext,
         object_id: ObjectId,
@@ -895,7 +895,7 @@ impl VeritasEngine {
     }
 
     /// P6: OBJECT_LINK 物理原语
-    pub fn object_link(
+    pub(crate) fn object_link(
         &self,
         ctx: &mut TransactionContext,
         from: ObjectId,
@@ -935,7 +935,7 @@ impl VeritasEngine {
     }
 
     /// P26: OBJECT_UNLINK - 移除Object间的Link
-    pub fn object_unlink(
+    pub(crate) fn object_unlink(
         &self,
         ctx: &mut TransactionContext,
         from: ObjectId,
@@ -961,7 +961,7 @@ impl VeritasEngine {
     }
 
     /// P4: OBJECT_BIRTH 最小物理原语
-    pub fn object_birth(
+    pub(crate) fn object_birth(
         &self,
         ctx: &mut TransactionContext,
         object_id: ObjectId,
@@ -1004,7 +1004,7 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
+    pub(crate) fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
         self.controller.abort(ctx, reason);
     }
 
@@ -1041,7 +1041,7 @@ impl VeritasEngine {
         self.global_version.load(Ordering::Acquire)
     }
 
-    pub fn savepoint(
+    pub(crate) fn savepoint(
         &self,
         ctx: &mut TransactionContext,
         name: &str,
@@ -1063,7 +1063,7 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn rollback_to(
+    pub(crate) fn rollback_to(
         &self,
         ctx: &mut TransactionContext,
         name: &str,
