@@ -132,13 +132,9 @@ Object lifecycle instructions stay Trap ABI
 **Savepoint**:
 - Structure exists, full semantics not implemented; constitution declares "future extension"
 
-### From this refactoring cycle — identified, not yet done
+### From this refactoring cycle — completed
 
-**Effect retry execution (Step 3.5)**:
-- Recovery correctly extracts unacked effects from TransactionCommitted entries ✅
-- Extraction path is correct; only the re-execution step is missing
-- Current behavior: effects are logged and EffectAck written, but not re-enqueued for execution
-- Missing: re-enqueue and execute pending effects after recovery
+### From this refactoring cycle — remaining
 
 **state_map/apply_records dual path**:
 - Recovery: state_map computed by apply_records → StateStore::from_map()
