@@ -12,6 +12,7 @@ pub mod executor;
 // Veritas Kernel V0.2 - 主入口
 
 pub mod engine;
+pub mod kernel;
 pub mod types;
 pub mod wal;
 pub mod view;
