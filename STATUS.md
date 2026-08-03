@@ -86,8 +86,6 @@ Object lifecycle instructions stay Trap ABI
   fully own state_store init, keeping apply_records only for scope_map/effects.
 - Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
   to verify topology correctly reflects unlink before closure recomputation.
-- Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
-  to verify topology correctly reflects unlink before closure recomputation.
 
 ## Step 3 (atomic WAL write) completed
 
@@ -105,26 +103,27 @@ Object lifecycle instructions stay Trap ABI
 ### From audit — not yet addressed this cycle
 
 **Capability** (Critical #4):
-- capability_enforced can be set to false, skipping all checks
+- capability_enforced defaults to true, but the toggle still exists and can disable all checks
 - grant_base_access (begin_in_object) injects directly into cap_graph, bypassing normal Grant path
 - verify_capability only covers write_set, not reads/links/death/freeze/cross-object calls
 
 **Kernel boundary** (Critical #3):
-- object_birth/object_death/object_link/capability_grant are `pub fn`, callable directly without TRAP
+- object_birth/object_death/object_link/capability_grant/commit/abort are pub fn, callable directly without TRAP
 - Kernel is still a thin pass-through wrapper; no User/Kernel mode enforcement
+- Machine direct Instruction::Commit/Abort path and TRAP → KernelCall path both exist (two dispatch paths)
 
 **ObjectId allocation**:
 - ObjectId still provided by caller, not assigned by Kernel
-- Dependency on committed-tx判定 is now satisfied (Step 3 complete); ready to schedule
+- Dependency on committed-tx determination is now satisfied (Step 3 complete); ready to schedule
 - Boundary: only count Births from TransactionCommitted entries, not orphaned ones
 
 **Dual stores**:
-- engine.topology (Mutex<Vec<LinkEdge>>) vs src/graph/* (GraphStore/Journal/Policy)
-- Two independent implementations; STATUS.md explicitly acknowledges this
+- src/graph/ exists as an independent module (GraphStore/Journal/Policy/ReplayEngine) with zero callers outside its own tree
+- engine.topology (Mutex<Vec<LinkEdge>>) is the active implementation; src/graph is dead code, not an active dual store
 
 **Instruction dispatch**:
-- Three paths: Machine direct match on Instruction::Commit/etc, TRAP → KernelCall, legacy execute_kernel_instruction()
-- Same semantics, multiple entry points
+- Two active paths: Machine direct match on Instruction::Commit/etc, TRAP → KernelCall
+- Legacy execute_kernel_instruction() is now a no-op stub (all logic marked "Handled inline" or "now handled inline in step()"), but the function still exists
 
 **Module lifecycle**:
 - ModuleObject/ModuleInstance separation not fully closed per constitution
@@ -137,7 +136,8 @@ Object lifecycle instructions stay Trap ABI
 
 **Effect retry execution (Step 3.5)**:
 - Recovery correctly extracts unacked effects from TransactionCommitted entries ✅
-- But extracted effects are only logged, not actually re-executed
+- Extraction path is correct; only the re-execution step is missing
+- Current behavior: effects are logged and EffectAck written, but not re-enqueued for execution
 - Missing: re-enqueue and execute pending effects after recovery
 
 **state_map/apply_records dual path**:
@@ -155,7 +155,7 @@ Object lifecycle instructions stay Trap ABI
 engine.rs size / modular split deferred
 DEPENDS_ON carrier may evolve (Effect/Trap); event semantics fixed
 Eager capability purge on death: not required (lazy is normative)
-Commit instruction duplicated in step() and execute_kernel_instruction()
+execute_kernel_instruction() is a no-op stub — all logic has been moved inline to step()
 ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Next milestones
@@ -173,12 +173,12 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ### Medium-term (from audit Critical findings)
 7. Capability always-on: remove capability_enforced toggle, unify all access checks
 8. Kernel boundary: close non-TRAP entry points (pub → pub(crate)), single TRAP dispatch
-9. Eliminate engine.topology vs src/graph dual stores
+9. Remove src/graph/ dead code; engine.topology is the sole topology store
 
 ### Later
 10. P31 — Checkpoint / Snapshot
 11. ModuleObject/ModuleInstance lifecycle closure
-12. Unify instruction dispatch paths (Machine direct + TRAP + legacy)
+12. Unify instruction dispatch paths (Machine direct + TRAP)
 13. Savepoint full semantics
 
 ## Documentation map
