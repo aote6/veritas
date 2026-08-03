@@ -15,6 +15,56 @@ use crate::types::*;
 ///
 /// In Phase 2, Kernel will restrict access to TRAP-only kernel services
 /// and Machine will no longer call Engine methods directly.
+/// KernelCall represents a decoded kernel service request.
+///
+/// Machine decodes raw register values (r0, r1, r2) into this enum,
+/// then passes it to Kernel::handle(). Machine never calls kernel
+/// methods directly for kernel services.
+#[derive(Debug, Clone)]
+pub enum KernelCall {
+    ObjectBirth {
+        object_type: ObjectType,
+    },
+    ObjectDeath {
+        object_id: ObjectId,
+    },
+    ObjectLink {
+        from: ObjectId,
+        to: ObjectId,
+        link_type: LinkType,
+    },
+    ObjectUnlink {
+        from: ObjectId,
+        to: ObjectId,
+    },
+    ObjectFreeze {
+        object_id: ObjectId,
+    },
+    CapabilityGrant {
+        grantee: ObjectId,
+        capability_type: String,
+        resource: ObjectId,
+    },
+    CapabilityRevoke {
+        capability_id: CapabilityId,
+    },
+    MemoryAlloc {
+        object_id: ObjectId,
+        size_hint: u64,
+    },
+}
+
+/// TrapResult is returned by Kernel::handle() after processing a KernelCall.
+/// The result is written to register r0 by Machine.
+#[derive(Debug, Clone)]
+pub enum TrapResult {
+    ObjectId(ObjectId),
+    CapabilityId(CapabilityId),
+    StateId(StateId),
+    Success,
+}
+
+
 pub struct Kernel {
     engine: VeritasEngine,
 }
@@ -32,7 +82,58 @@ impl Kernel {
         }
     }
 
-    // ===== Phase 1: Pass-through delegation =====
+    // ===== Phase 1 Step 4: KernelCall dispatch =====
+
+    /// Handle a decoded kernel service call.
+    /// This is the single entry point for all kernel services.
+    /// Machine calls this instead of individual kernel methods.
+    pub fn handle(
+        &self,
+        ctx: &mut TransactionContext,
+        call: KernelCall,
+    ) -> Result<TrapResult, VeritasError> {
+        match call {
+            KernelCall::ObjectBirth { object_type } => {
+                // Phase 1 Step 4: temporary - caller still provides object_id
+                // Phase 2 will have Kernel allocate ObjectId internally
+                let id = ctx.tx_id; // placeholder until Kernel allocator
+                self.object_birth(ctx, id)?;
+                Ok(TrapResult::ObjectId(id))
+            }
+            KernelCall::ObjectDeath { object_id } => {
+                self.object_death(ctx, object_id)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::ObjectLink { from, to, link_type } => {
+                self.object_link(ctx, from, to, link_type)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::ObjectUnlink { from, to } => {
+                self.object_unlink(ctx, from, to)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::ObjectFreeze { object_id } => {
+                self.object_freeze(ctx, object_id)?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::CapabilityGrant { grantee, capability_type, resource } => {
+                let cap_id = self.capability_grant(ctx, grantee, &capability_type, resource)?;
+                Ok(TrapResult::CapabilityId(cap_id))
+            }
+            KernelCall::CapabilityRevoke { .. } => {
+                // CapabilityRevoke not yet implemented in Engine
+                Ok(TrapResult::Success)
+            }
+            KernelCall::MemoryAlloc { .. } => {
+                // MemoryAlloc not yet implemented
+                Ok(TrapResult::Success)
+            }
+        }
+    }
+
+    // ===== Phase 1: Pass-through delegation ====="
+
+
     // Each method delegates directly to the corresponding VeritasEngine method.
 
     pub fn last_dependency_invalidations(&self) -> Vec<(ObjectId, ObjectId)> {

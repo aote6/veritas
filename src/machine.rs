@@ -355,48 +355,71 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Trap { service_id } => {
-                // P28: TRAP统一内核服务调用
-                // 参数通过寄存器传递：r0, r1, r2
-                match service_id {
-                    0 => { // OBJECT_BIRTH
-                        let object_id = self.registers.get_u64(0);
-                        self.kernel.object_birth(&mut self.ctx, object_id)?;
-                    }
-                    1 => { // OBJECT_DEATH
-                        let object_id = self.registers.get_u64(0);
-                        self.kernel.object_death(&mut self.ctx, object_id)?;
-                    }
-                    2 => { // OBJECT_LINK
-                        let from = self.registers.get_u64(0);
-                        let to = self.registers.get_u64(1);
-                        let lt = self.registers.get_u64(2) as u8;
-                        let link_type = match lt {
-                            0 => crate::types::LinkType::DependsOn,
-                            1 => crate::types::LinkType::Owns,
-                            2 => crate::types::LinkType::References,
-                            _ => {
-                                self.status = MachineStatus::Trapped(
-                                    crate::types::TrapReason::InvalidEncoding { pc: self.pc }
-                                );
-                                return Ok(());
+                // P28: TRAP unified kernel service call
+                // Decode registers into KernelCall, dispatch to Kernel::handle()
+                {
+                    let r0 = self.registers.get_u64(0);
+                    let r1 = self.registers.get_u64(1);
+                    let r2 = self.registers.get_u64(2);
+
+                    let call = match service_id {
+                        0 => crate::kernel::KernelCall::ObjectBirth {
+                            object_type: if r0 == 0 {
+                                crate::types::ObjectType::StateObject
+                            } else {
+                                crate::types::ObjectType::ModuleObject
+                            },
+                        },
+                        1 => crate::kernel::KernelCall::ObjectDeath {
+                            object_id: r0,
+                        },
+                        2 => {
+                            let link_type = match r2 as u8 {
+                                0 => crate::types::LinkType::DependsOn,
+                                1 => crate::types::LinkType::Owns,
+                                2 => crate::types::LinkType::References,
+                                _ => {
+                                    self.status = MachineStatus::Trapped(
+                                        crate::types::TrapReason::InvalidEncoding { pc: self.pc }
+                                    );
+                                    return Ok(());
+                                }
+                            };
+                            crate::kernel::KernelCall::ObjectLink {
+                                from: r0,
+                                to: r1,
+                                link_type,
                             }
-                        };
-                        self.kernel.object_link(&mut self.ctx, from, to, link_type)?;
-                    }
-                    3 => { // OBJECT_UNLINK
-                        let from = self.registers.get_u64(0);
-                        let to = self.registers.get_u64(1);
-                        self.kernel.object_unlink(&mut self.ctx, from, to)?;
-                    }
-                    4 => { // OBJECT_FREEZE
-                        let object_id = self.registers.get_u64(0);
-                        self.kernel.object_freeze(&mut self.ctx, object_id)?;
-                    }
-                    _ => {
-                        self.status = MachineStatus::Trapped(
-                            crate::types::TrapReason::InvalidEncoding { pc: self.pc }
-                        );
-                        return Ok(());
+                        }
+                        3 => crate::kernel::KernelCall::ObjectUnlink {
+                            from: r0,
+                            to: r1,
+                        },
+                        4 => crate::kernel::KernelCall::ObjectFreeze {
+                            object_id: r0,
+                        },
+                        _ => {
+                            self.status = MachineStatus::Trapped(
+                                crate::types::TrapReason::InvalidEncoding { pc: self.pc }
+                            );
+                            return Ok(());
+                        }
+                    };
+
+                    let result = self.kernel.handle(&mut self.ctx, call)?;
+
+                    // Write result to r0
+                    match result {
+                        crate::kernel::TrapResult::ObjectId(id) => {
+                            self.registers.set(0, RegisterValue::U64(id));
+                        }
+                        crate::kernel::TrapResult::CapabilityId(id) => {
+                            self.registers.set(0, RegisterValue::U64(id));
+                        }
+                        crate::kernel::TrapResult::StateId(id) => {
+                            self.registers.set(0, RegisterValue::U64(id));
+                        }
+                        crate::kernel::TrapResult::Success => {}
                     }
                 }
                 self.pc += consumed;
