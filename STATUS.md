@@ -50,15 +50,8 @@ P30.2         - WAL full world state replay: object/link/capability (2 tests)
   P30.1 — Same WAL → same Engine ✅
   P30.2 — WAL → object_registry + topology correct ✅
   P30.3 — Capability Identity Replay ✅
-
-  Known gap: CapabilityGraph::new() resets grant_sequence to 1.
-  Recovered cap_graph replays grants correctly (the edges exist),
-  but CapabilityIds change. This means:
-    - holds_capability(cap_id_before, holder) returns false after recovery
-    - capability_sequence() is lower after recovery than before crash
-  Root cause: grant_sequence is not persisted to WAL or restored.
-  Fix: persist grant_sequence in WAL Checkpoint or restore from
-    max cap_id in replayed CapabilityGrant entries.
+  grant_sequence + capability_id now persist via WAL TransactionCommitted.
+  restore_grant() uses the persisted sequence on recovery.
 
 ### ReplayRecord Gap
 
@@ -67,7 +60,8 @@ P30.2         - WAL full world state replay: object/link/capability (2 tests)
   Source comment: "ReplayRecord目前不记录object_id，统一归属内核Object(0)"
   This means the old ReplayEngine (src/replay.rs) only replays StateMemory,
   not the Veritas world. Real ReplayEngine must be upgraded to handle
-  the full WalEntry vocabulary.
+  the full TransactionDelta vocabulary.
+  Status: TransactionDelta is now the canonical unit; ReplayRecord upgrade = P30.4.
 
 ## Explicit non-goals
 
@@ -83,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 174 tests pass
+- 176 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -92,6 +86,19 @@ Object lifecycle instructions stay Trap ABI
   fully own state_store init, keeping apply_records only for scope_map/effects.
 - Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
   to verify topology correctly reflects unlink before closure recomputation.
+- Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
+  to verify topology correctly reflects unlink before closure recomputation.
+
+## Step 3 (atomic WAL write) completed
+
+- WalEntry::TransactionCommitted(TransactionDelta) — single atomic WAL entry
+- commit(): 7 independent append_and_sync → 1 TransactionCommitted + apply()
+- Recovery: with_wal_path() handles TransactionCommitted alongside legacy WalEntry::Commit
+- CRC truncation test for new format (test_truncated_transaction_committed_discarded)
+- Orphan test updated: corrupted TransactionCommitted discarded by CRC check
+- Critical #1 (Commit non-atomicity) resolved ✅
+- 176 tests pass
+
 
 ## Known gaps
 
@@ -103,21 +110,19 @@ capability_enforced default false (transition)
 Eager capability purge on death: not required (lazy is normative)
 grant_base_access (begin_in_object) still grants capability_graph directly
 object_birth still `pub`, not `pub(crate)`
-WAL mid-write crash untested
 Commit instruction duplicated in step() and execute_kernel_instruction()
 execute_kernel_instruction() legacy path for Read/Write
-RecoveryManager::apply_records ignores Object/Link/Capability WAL entries
-  — VeritasEngine::with_wal_path() does second-pass rebuild (dual path)
-grant_sequence not persisted across recovery — CapabilityIds change (P30.3)
 ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Next milestones
 
-1. P30.3 — Capability Identity Replay ✅ (grant_sequence + capability_id now persisted)
-2. P30.4 — ReplayRecord upgrade: Object/Link/Capability in replay entries
-3. P30.5 — ReplayEngine full world replay + Receipt verification
-4. P31   — Checkpoint / Snapshot
+1. P30.4 — ReplayRecord upgrade: Object/Link/Capability in replay entries (now TransactionDelta-based)
+2. P30.5 — ReplayEngine full world replay + Receipt verification
+3. P31   — Checkpoint / Snapshot
+4. Effect retry logic on recovery (Step 3.5) — Commit exists but EffectAck missing → re-enqueue
+5. Cross-tx unlink-then-death recovery boundary test
+6. Clean up state_map/apply_records dual path for state_store init
 
 ## Documentation map
 
-See README. 174 tests pass.
+See README. 176 tests pass.
