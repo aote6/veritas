@@ -460,13 +460,19 @@ impl Machine {
                     return Ok(());
                 }
                 VeritasError::Abort(r) => {
-                    self.kernel.abort(&mut self.ctx, r);
+                    let _ = self.kernel.handle(
+                        &mut self.ctx,
+                        crate::kernel::KernelCall::Abort { reason: r },
+                    );
                     self.status = MachineStatus::Aborted(r);
                     return Err(VeritasError::Abort(r));
                 }
                 _ => {
                     let reason = AbortReason::WriteConflict;
-                    self.kernel.abort(&mut self.ctx, reason);
+                    let _ = self.kernel.handle(
+                        &mut self.ctx,
+                        crate::kernel::KernelCall::Abort { reason },
+                    );
                     self.status = MachineStatus::Aborted(reason);
                     return Err(e);
                 }

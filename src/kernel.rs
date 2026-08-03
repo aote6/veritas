@@ -40,6 +40,9 @@ pub enum KernelCall {
     ObjectFreeze {
         object_id: ObjectId,
     },
+    Abort {
+        reason: AbortReason,
+    },
     CapabilityGrant {
         grantee: ObjectId,
         capability_type: String,
@@ -126,6 +129,10 @@ impl Kernel {
             }
             KernelCall::MemoryAlloc { .. } => {
                 // MemoryAlloc not yet implemented
+                Ok(TrapResult::Success)
+            }
+            KernelCall::Abort { reason } => {
+                self.abort(ctx, reason);
                 Ok(TrapResult::Success)
             }
         }
