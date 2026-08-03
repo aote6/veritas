@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::ObjectId;
 use crate::program::Program;
 use crate::memory::Memory;
@@ -97,7 +98,7 @@ struct CallFrame {
 }
 
 pub struct Machine {
-    kernel: crate::kernel::Kernel,
+    kernel: Arc<crate::kernel::Kernel>,
 
     program: Program,
     ram: Memory,
@@ -134,7 +135,7 @@ impl Machine {
     pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
-    pub fn new(kernel: crate::kernel::Kernel) -> Self {
+    pub fn new(kernel: Arc<crate::kernel::Kernel>) -> Self {
         let ctx = kernel.begin();
         Self {
             kernel,

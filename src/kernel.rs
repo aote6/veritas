@@ -237,23 +237,33 @@ mod kernel_tests {
 
     #[test]
     fn kernel_survives_multiple_machine_runs() {
-        // This is the critical Phase 1 verification test.
-        // It proves that Kernel is the persistent world container,
-        // not bound to a single Machine or Runtime::execute() call.
-        let kernel = Kernel::new();
+        // Phase 1 Step 3: Kernel survives beyond any single Machine.
+        // This is now fully implemented with Arc<Kernel>.
+        use std::sync::Arc;
 
-        // First execution: create an object
+        let kernel = Arc::new(Kernel::new());
+
+        // Machine 1 creates objects
         {
-            let mut machine = crate::machine::Machine::new(kernel);
-            // We need to set up a minimal program that does OBJECT_BIRTH
-            // For now, test directly via Kernel API
-            drop(machine); // Machine dropped, but Kernel lives on
+            let _machine1 = crate::machine::Machine::new(Arc::clone(&kernel));
+            let mut ctx = kernel.begin();
+            kernel.object_birth(&mut ctx, 10).unwrap();
+            kernel.object_birth(&mut ctx, 20).unwrap();
+            kernel.commit(&mut ctx).unwrap();
+            // Machine 1 dropped here
         }
 
-        // Kernel should still have its state
-        let kernel = Kernel::new(); // FIXME: this creates a new kernel!
-        // We need to share the same kernel across machines.
-        // This test documents the requirement; implementation follows.
+        // Machine 2 sees all objects (same kernel world)
+        {
+            let _machine2 = crate::machine::Machine::new(Arc::clone(&kernel));
+            assert_eq!(kernel.get_object_state(10), Some(ObjectState::Alive));
+            assert_eq!(kernel.get_object_state(20), Some(ObjectState::Alive));
+            // Machine 2 dropped here
+        }
+
+        // Kernel world persists independently
+        assert_eq!(kernel.get_object_state(10), Some(ObjectState::Alive));
+        assert_eq!(kernel.get_object_state(20), Some(ObjectState::Alive));
     }
 
     #[test]
@@ -313,6 +323,34 @@ mod kernel_tests {
         assert_eq!(kernel.get_object_state(1), Some(ObjectState::Alive));
         assert_eq!(kernel.get_object_state(2), Some(ObjectState::Alive));
         assert_eq!(kernel.get_object_state(3), Some(ObjectState::Alive));
+    }
+
+
+    #[test]
+    fn kernel_shared_by_multiple_machines() {
+        // Phase 1 Step 3 verification: multiple machines share one Kernel world.
+        use std::sync::Arc;
+
+        let kernel = Arc::new(Kernel::new());
+
+        // Machine 1 creates an object
+        {
+            let mut machine1 = crate::machine::Machine::new(Arc::clone(&kernel));
+            let mut ctx = kernel.begin();
+            kernel.object_birth(&mut ctx, 77).unwrap();
+            kernel.commit(&mut ctx).unwrap();
+            drop(machine1);
+        }
+
+        // Machine 2 sees the object (same kernel world)
+        {
+            let machine2 = crate::machine::Machine::new(Arc::clone(&kernel));
+            assert_eq!(kernel.get_object_state(77), Some(ObjectState::Alive));
+            drop(machine2);
+        }
+
+        // Object 77 persists beyond both machines
+        assert_eq!(kernel.get_object_state(77), Some(ObjectState::Alive));
     }
 
 }
