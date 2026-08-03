@@ -102,26 +102,84 @@ Object lifecycle instructions stay Trap ABI
 
 ## Known gaps
 
+### From audit — not yet addressed this cycle
+
+**Capability** (Critical #4):
+- capability_enforced can be set to false, skipping all checks
+- grant_base_access (begin_in_object) injects directly into cap_graph, bypassing normal Grant path
+- verify_capability only covers write_set, not reads/links/death/freeze/cross-object calls
+
+**Kernel boundary** (Critical #3):
+- object_birth/object_death/object_link/capability_grant are `pub fn`, callable directly without TRAP
+- Kernel is still a thin pass-through wrapper; no User/Kernel mode enforcement
+
+**ObjectId allocation**:
+- ObjectId still provided by caller, not assigned by Kernel
+- Dependency on committed-tx判定 is now satisfied (Step 3 complete); ready to schedule
+- Boundary: only count Births from TransactionCommitted entries, not orphaned ones
+
+**Dual stores**:
+- engine.topology (Mutex<Vec<LinkEdge>>) vs src/graph/* (GraphStore/Journal/Policy)
+- Two independent implementations; STATUS.md explicitly acknowledges this
+
+**Instruction dispatch**:
+- Three paths: Machine direct match on Instruction::Commit/etc, TRAP → KernelCall, legacy execute_kernel_instruction()
+- Same semantics, multiple entry points
+
+**Module lifecycle**:
+- ModuleObject/ModuleInstance separation not fully closed per constitution
+- ModuleInstance as StateObject subtype, auto-creation on load, death notification still partial
+
+**Savepoint**:
+- Structure exists, full semantics not implemented; constitution declares "future extension"
+
+### From this refactoring cycle — identified, not yet done
+
+**Effect retry execution (Step 3.5)**:
+- Recovery correctly extracts unacked effects from TransactionCommitted entries ✅
+- But extracted effects are only logged, not actually re-executed
+- Missing: re-enqueue and execute pending effects after recovery
+
+**state_map/apply_records dual path**:
+- Recovery: state_map computed by apply_records → StateStore::from_map()
+- Then apply(&delta) writes delta.writes again into state_store
+- Functionally harmless (same data), but violates "one truth source" principle this refactor established
+
+**Missing boundary tests**:
+- Cross-tx unlink-then-death: tx1 link → tx2 unlink → tx3 death → recovery should NOT cascade
+- Exercise topology correctness across multiple apply() calls in recovery
+- No known bug, but no test coverage for this ordering
+
+### Legacy — unchanged this cycle
+
 engine.rs size / modular split deferred
 DEPENDS_ON carrier may evolve (Effect/Trap); event semantics fixed
-Module lifecycle (instance vs template) not fully closed vs constitution
-engine.topology vs src/graph dual stores
-capability_enforced default false (transition)
 Eager capability purge on death: not required (lazy is normative)
-grant_base_access (begin_in_object) still grants capability_graph directly
-object_birth still `pub`, not `pub(crate)`
 Commit instruction duplicated in step() and execute_kernel_instruction()
-execute_kernel_instruction() legacy path for Read/Write
 ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Next milestones
 
-1. P30.4 — ReplayRecord upgrade: Object/Link/Capability in replay entries (now TransactionDelta-based)
-2. P30.5 — ReplayEngine full world replay + Receipt verification
-3. P31   — Checkpoint / Snapshot
-4. Effect retry logic on recovery (Step 3.5) — Commit exists but EffectAck missing → re-enqueue
-5. Cross-tx unlink-then-death recovery boundary test
-6. Clean up state_map/apply_records dual path for state_store init
+### Immediate (unlocked by Step 3)
+1. Step 3.5 — Effect retry: re-execute pending effects on recovery (extraction path already correct)
+2. ObjectId allocation: Kernel assigns via max(birth_id)+1 from committed TransactionCommitted entries
+3. Cross-tx unlink-then-death recovery boundary test
+
+### Short-term
+4. P30.4 — ReplayRecord upgrade: Object/Link/Capability (now TransactionDelta-based)
+5. P30.5 — ReplayEngine full world replay + Receipt verification
+6. Clean up state_map/apply_records dual path
+
+### Medium-term (from audit Critical findings)
+7. Capability always-on: remove capability_enforced toggle, unify all access checks
+8. Kernel boundary: close non-TRAP entry points (pub → pub(crate)), single TRAP dispatch
+9. Eliminate engine.topology vs src/graph dual stores
+
+### Later
+10. P31 — Checkpoint / Snapshot
+11. ModuleObject/ModuleInstance lifecycle closure
+12. Unify instruction dispatch paths (Machine direct + TRAP + legacy)
+13. Savepoint full semantics
 
 ## Documentation map
 
