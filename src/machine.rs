@@ -534,11 +534,11 @@ impl Machine {
         // In Phase 1.1, we delegate to kernel methods directly.
         // In Phase 1.2, this will use KernelCall enum + Kernel::handle().
         match instruction {
-            crate::instruction::Instruction::Read { state_id } => {
+            crate::instruction::Instruction::Read { state_id: _ } => {
                 // Handled inline via self.kernel.read() in step()
                 Ok(())
             }
-            crate::instruction::Instruction::Write { state_id, payload } => {
+            crate::instruction::Instruction::Write { state_id: _, payload: _ } => {
                 // Handled inline via self.kernel.write() in step()
                 Ok(())
             }
