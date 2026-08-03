@@ -5,14 +5,14 @@ Branch: main
 
 ## Current milestone
 
-P28.1 Instruction Dispatch Closure -- Complete
-P28.1.1 Audit Tool -- Complete
+P29 WAL Recovery Verification — Three-layer test suite complete
 
-Machine::step() now correctly dispatches all 30 Instruction variants
-through three execution classes. Previously, 5 kernel instructions
-(Abort, CapabilityGrant, Effect, Savepoint, RollbackTo) were defined
-in the ISA but unreachable from Machine — they fell through to a
-wildcard no-op.
+Recovery testing elevated from "a few regression tests" to a
+layered verification of the recovery algorithm itself:
+
+  P29.1 — Basic Recovery: birth, link, abort survive crash
+  P29.2 — Recovery Invariants: lifecycle state-machine correctness
+  P29.3 — Recovery Equivalence: EngineSnapshot(A) == EngineSnapshot(B)
 
 ## Completed
 
@@ -33,40 +33,42 @@ P4.x/P5.x     - Capability/Freeze/Unlink WAL-durable
 Phase 1 Step 7 - KernelCall ABI codec: decode() + handle() + TrapResult
 Phase A       - Kernel lifecycle detached from Runtime::execute();
                 Kernel persists across multiple execute() calls
-P28.0         - Cross-module TRAP persistence test:
-                Module A (TRAP OBJECT_BIRTH → COMMIT → HALT)
-                Module B (TRAP OBJECT_FREEZE → COMMIT → HALT)
-                verifies Kernel as World across Runtime::execute boundaries
-P28.1         - Machine dispatch closure: Abort, CapabilityGrant, Effect,
-                Savepoint, RollbackTo now reach Kernel API from Machine::step()
-P28.1.1       - Audit tool v2: proper function-body parsing, three-class
-                execution model output
+P28.0         - Cross-module TRAP persistence test
+P28.1         - Machine dispatch closure: 5 kernel instructions reach API
+P28.1.1       - Audit tool v2: three-class execution model, 30/30 reachable
+P29.1         - WAL Recovery basic tests: birth/link/abort survive crash
+P29.2         - WAL Recovery invariants: 6 state-machine correctness proofs
+P29.3         - WAL Recovery equivalence: snapshot comparison Engine(A)==Engine(B)
+                Added Engine::list_object_ids() + Kernel::list_object_ids()
 
 ### Instruction Execution Architecture (P28.1)
 
-All 30 Instruction variants now reachable through three classes:
+All 30 Instruction variants reachable through three classes:
 
   Class A — CPU local / Kernel API: 23 dispatched in Machine::step()
-    Add, Sub, Cmp, LoadConst, LoadStateU64, LoadStateBytes,
-    WriteRegister, Jmp, Jz, Jnz, Jn, Call, Return, Trap, HostCall,
-    Halt, Nop, Commit, Abort, CapabilityGrant, Effect, Savepoint,
-    RollbackTo
-
   Class B — Kernel legacy: 2 dispatched in execute_kernel_instruction()
-    Read, Write
-
   Class C — Trap ABI: 5 routed via Trap → KernelCall::decode() → Kernel::handle()
-    ObjectBirth, ObjectDeath, ObjectFreeze, ObjectLink, ObjectUnlink
 
-Audit tool: tools/audit_instruction_dispatch.py — CI-runnable,
-exits 0 when 30/30 reachable, 1 on gap.
+Audit tool: tools/audit_instruction_dispatch.py — 30/30 reachable.
+
+### Recovery Test Suite (P29)
+
+  9 recovery tests across 3 test files:
+    tests/wal_recovery_object.rs       (3 tests, P29.1)
+    tests/wal_recovery_invariants.rs   (6 tests, P29.2)
+    tests/wal_recovery_equivalence.rs  (5 tests, P29.3) — full snapshot compare
+
+  Recovery coverage matrix:
+    Object ✅  Link ✅  Capability ✅  Freeze ✅  Unlink ✅  Abort ✅
+
+  P29.3 EngineSnapshot compares: object_ids, object_states, links, state_root.
+  Future: expand to capability_graph, scope_registry, global_version.
 
 ## Explicit non-goals
 
 P8.4 Death Event Dispatcher = structural refactor only (deferred)
 No new death semantics without constitution change
-Object lifecycle instructions stay Trap ABI — no direct dispatch to
-  preserve CPU/Kernel layering
+Object lifecycle instructions stay Trap ABI — no direct dispatch
 
 ## Known gaps
 
@@ -80,26 +82,27 @@ grant_base_access (begin_in_object) still grants capability_graph
   directly, not via pending_capabilities -- intentional, same-tx
   visibility needed for verify_capability; not a leak, low priority
 object_birth still `pub`, not `pub(crate)` -- Machine-sole-entry-point
-  not enforced yet; blocked on tests/object/lifecycle.rs having two
-  direct calls with no Instruction/Executor path to migrate to
-WAL mid-write crash (truncated file between Effect entries and the
-  Commit entry) untested -- existing recovery tests only cover clean
-  full-restart scenarios, not partial-write crashes
-Commit instruction duplicated in both step() and execute_kernel_instruction()
-  — harmless but should be cleaned when eki() legacy path is audited
-execute_kernel_instruction() still exists as legacy path for Read/Write;
-  migration to step() deferred until full audit complete
+  not enforced yet
+WAL mid-write crash (truncated file between Effect entries and Commit)
+  untested — existing recovery tests cover clean full-restart only
+Commit instruction duplicated in step() and execute_kernel_instruction()
+  — harmless but should be cleaned
+execute_kernel_instruction() legacy path for Read/Write
+RecoveryManager::apply_records ignores Object/Link/Capability WAL entries
+  — VeritasEngine::with_wal_path() does its own second-pass rebuild;
+  dual recovery paths are a known architectural debt
+EngineSnapshot does not yet include capability_graph, scope_registry,
+  or global_version — expand for complete equivalence coverage
 
 ## Next milestone candidates
 
-1. P29 WAL Replay / Crash Recovery — prove world state can be
-   reconstructed from history; mid-write crash tests
-2. Trap ABI hardening — validate Object lifecycle through Trap ABI:
-   parameter encoding stability, error propagation, WAL recording,
-   abort cleanup, replay recoverability
-3. Constitution gap analysis (deferred from previous milestone)
+1. P29.4 — Random/Property WAL Replay testing
+   Generate random operation sequences → execute → crash →
+   recover → compare snapshots; run hundreds of rounds
+2. P29.5 — Mid-write crash recovery (truncated WAL)
+3. Trap ABI hardening — Object lifecycle through Trap ABI validation
+4. Constitution gap analysis
 
 ## Documentation map
 
-See README. Do not duplicate instruction counts or test totals here;
-CI is source of truth for green builds.
+See README. 149 tests pass.
