@@ -1,3 +1,4 @@
+use crate::types::CapabilityId;
 // Veritas Kernel V0.3 - WAL 模块
 // P1: Scope 结构变更持久化 + Effect 幂等确认与重试
 
@@ -58,6 +59,8 @@ pub enum WalEntry {
         grantor: ObjectId,
         grantee: ObjectId,
         resource: ObjectId,
+        capability_id: CapabilityId,
+        grant_sequence: u64,
     },
     ObjectFreeze {
         tx_id: TxId,
@@ -131,11 +134,10 @@ impl WalEntry {
                 format!("OBJECTDEATH TX={} OBJECT={} END
 ", tx_id, object_id)
             }
-            WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource } => {
+            WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, grant_sequence, capability_id } => {
                 format!(
-                    "CAPABILITYGRANT TX={} TYPE={} GRANTOR={} GRANTEE={} RESOURCE={} END
-",
-                    tx_id, cap_type, grantor, grantee, resource
+                    "CAPABILITYGRANT TX={} TYPE={} GRANTOR={} GRANTEE={} RESOURCE={} cap_id={} SEQ={} END\n",
+                    tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence
                 )
             }
             WalEntry::ObjectFreeze { tx_id, object_id } => {
@@ -321,7 +323,20 @@ impl WalEntry {
             .strip_prefix("RESOURCE=")?
             .parse::<ObjectId>()
             .ok()?;
-        Some(WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource })
+        let capability_id = parts
+            .iter()
+            .find(|p| p.starts_with("cap_id="))?
+            .strip_prefix("cap_id=")?
+            .parse::<CapabilityId>()
+            .ok()?;
+        let grant_sequence = parts
+            .iter()
+            .find(|p| p.starts_with("SEQ="))?
+            .strip_prefix("SEQ=")?
+            .parse::<u64>()
+            .ok()
+            .unwrap_or(0);
+        Some(WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence })
     }
 
     fn deserialize_object_freeze(parts: &[&str]) -> Option<Self> {

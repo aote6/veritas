@@ -580,19 +580,29 @@ impl VeritasEngine {
         // (Object 与其 Capability 视为同一语义闭合域,Commit 时一并生效)
         let tx_id = ctx.tx_id();
         for grant in ctx.pending_capabilities.drain(..) {
+            {
+                let mut cap_graph = self.capability_graph.lock().unwrap();
+                cap_graph.restore_grant(
+                    grant.capability_id,
+                    grant.cap_type.clone(),
+                    grant.grantor,
+                    grant.grantee,
+                    grant.resource,
+                    grant.grant_sequence,
+                );
+            }
             let grant_entry = WalEntry::CapabilityGrant {
                 tx_id,
                 cap_type: grant.cap_type.clone(),
                 grantor: grant.grantor,
                 grantee: grant.grantee,
                 resource: grant.resource,
+                capability_id: grant.capability_id,
+                grant_sequence: grant.grant_sequence,
             };
             self.wal
                 .append_and_sync(&grant_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL CapabilityGrant write failed: {}", e)))?;
-
-            let mut cap_graph = self.capability_graph.lock().unwrap();
-            cap_graph.grant(grant.cap_type, grant.grantor, grant.grantee, grant.resource);
         }
 
         // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
@@ -775,9 +785,20 @@ impl VeritasEngine {
             ObjectGuard::ensure_can_grant(&view, grantee)?;
         }
 
-        // grantor 暂时用 grantee 自身（自授权），后续可扩展
-        let mut graph = self.capability_graph.lock().unwrap();
-        let cap_id = graph.grant(capability_type.to_string(), grantee, grantee, resource);
+        let seq = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64
+        };
+        let cap_id = crate::capability::capability_id_of(grantee, grantee, resource, seq);
+
+        ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
+            capability_id: cap_id,
+            grant_sequence: seq,
+            grantor: grantee,
+            grantee,
+            resource,
+            cap_type: capability_type.to_string(),
+        });
         Ok(cap_id)
     }
 
@@ -920,9 +941,16 @@ impl VeritasEngine {
         ctx.pending_objects.push(object_id);
 
         // birth 时创建者自动获得该 Object 的 AdminCap
-        // P4.x: 不再立即写入 capability_graph(会在 abort 后残留、且 Recovery 时丢失)。
-        // 改为暂存,Commit 时统一落地 + 写 WAL;Recovery 时统一重放。
+        let (admin_cap_id, admin_seq) = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            let seq = cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64;
+            let id = crate::capability::capability_id_of(object_id, object_id, object_id, seq);
+            (id, seq)
+        };
+
         ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
+            capability_id: admin_cap_id,
+            grant_sequence: admin_seq,
             cap_type: "AdminCap".into(),
             grantor: object_id,
             grantee: object_id,

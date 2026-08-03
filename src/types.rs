@@ -221,6 +221,8 @@ pub struct Savepoint {
 
 #[derive(Debug, Clone)]
 pub struct PendingCapabilityGrant {
+    pub capability_id: u64,
+    pub grant_sequence: u64,
     pub cap_type: String,
     pub grantor: ObjectId,
     pub grantee: ObjectId,

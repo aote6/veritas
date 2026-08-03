@@ -98,19 +98,21 @@ fn wal_contains_full_world_state() {
     let _ = std::fs::remove_file(&wal_path);
 }
 
-/// P30.2: Capability grant must survive WAL roundtrip.
-/// Note: cap_id is derived from grant_sequence which resets on recovery
-/// (known gap: CapabilityGraph::new() resets grant_sequence).
-/// This test verifies that the grant exists in the recovered graph
-/// by checking that the holder has at least one capability on the resource.
+/// P30.3: Capability Identity Replay
+/// Verifies that grant_sequence is persisted in WAL and restored on recovery,
+/// P30.3: Strict Capability Identity & Sequence Replay
+/// Verifies that capability_id and grant_sequence are durable WAL first-class state,
+/// ensuring exact identity and sequence counter alignment across recovery.
 #[test]
-fn capability_roundtrip_through_wal() {
-    let wal_path = format!("target/test_cap_rt_{}.wal", std::process::id());
+fn capability_strict_identity_and_sequence_survives_recovery() {
+    let wal_path = format!("target/test_cap_strict_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
     let owner: u64 = 100;
     let holder: u64 = 200;
-    let cap_id_before: u64;
+    let cap_id_1: u64;
+    let cap_id_2: u64;
+    let seq_before: u64;
 
     {
         let engine = VeritasEngine::with_wal_path(wal_path.clone());
@@ -120,36 +122,35 @@ fn capability_roundtrip_through_wal() {
         engine.commit(&mut tx).unwrap();
 
         let mut tx2 = engine.begin();
-        cap_id_before = engine.capability_grant(&mut tx2, holder, "read", owner).unwrap();
+        cap_id_1 = engine.capability_grant(&mut tx2, holder, "read", owner).unwrap();
+        cap_id_2 = engine.capability_grant(&mut tx2, holder, "write", owner).unwrap();
         engine.commit(&mut tx2).unwrap();
 
-        assert!(engine.holds_capability(cap_id_before, holder), "capability must be held before crash");
+        seq_before = engine.capability_sequence();
+        assert!(engine.holds_capability(cap_id_1, holder));
+        assert!(engine.holds_capability(cap_id_2, holder));
     }
 
     {
         let engine = VeritasEngine::with_wal_path(wal_path.clone());
-        // Capability was granted in original execution — after recovery,
-        // the cap_id may differ due to grant_sequence reset, but the
-        // CapabilityGrant WAL entry should have been replayed.
-        // Check that holder (200) exists and the grant was replayed
-        // by verifying object state is consistent.
-        assert_eq!(
-            engine.get_object_state(holder),
-            Some(veritas_kernel::types::ObjectState::Alive),
-            "holder must survive recovery"
-        );
-        assert_eq!(
-            engine.get_object_state(owner),
-            Some(veritas_kernel::types::ObjectState::Alive),
-            "owner must survive recovery"
-        );
-        // Known gap: cap_id changes after recovery due to grant_sequence reset.
-        // TODO P30.3: fix grant_sequence persistence across recovery.
-        // For now, verify that the capability sequence advanced (grant was
-        // replayed), even if cap_id differs.
+        
+        // 1. Identity Exact Match Check
         assert!(
-            engine.capability_sequence() >= 2,
-            "capability_sequence should be >= 2 after recovery (2 births + 1 grant)"
+            engine.holds_capability(cap_id_1, holder),
+            "cap_id_1 ({}) must survive with exact identity match", cap_id_1
+        );
+        assert!(
+            engine.holds_capability(cap_id_2, holder),
+            "cap_id_2 ({}) must survive with exact identity match", cap_id_2
+        );
+
+        // 2. Monotonic Sequence Alignment Check
+        assert_eq!(
+            engine.capability_sequence(),
+            seq_before,
+            "capability_sequence after recovery ({}) must exactly match before recovery ({})",
+            engine.capability_sequence(),
+            seq_before
         );
     }
 

@@ -109,6 +109,62 @@ impl CapabilityGraph {
         self.grant_sequence
     }
 
+    /// 恢复时用：使用指定的 grant_sequence 重新生成 Capability，
+    /// 保证计算出的 CapabilityId 与崩溃前 100% 一致。
+    pub fn grant_with_sequence(
+        &mut self,
+        capability_type: String,
+        grantor: ObjectId,
+        grantee: ObjectId,
+        resource: ObjectId,
+        sequence: u64,
+    ) -> CapabilityId {
+        let cap_id = capability_id_of(grantor, grantee, resource, sequence);
+
+        self.grants.insert(
+            cap_id,
+            CapabilityInfo {
+                capability_type,
+                granted_by: grantor,
+                root_holder: grantee,
+                resource,
+            },
+        );
+        cap_id
+    }
+
+    /// Restores a capability grant during WAL replay with an explicitly persisted capability_id and sequence.
+    pub fn restore_grant(
+        &mut self,
+        capability_id: CapabilityId,
+        cap_type: String,
+        grantor: ObjectId,
+        grantee: ObjectId,
+        resource: ObjectId,
+        seq: u64,
+    ) {
+        if seq > self.grant_sequence {
+            self.grant_sequence = seq;
+        }
+
+        self.grants.insert(
+            capability_id,
+            CapabilityInfo {
+                capability_type: cap_type,
+                granted_by: grantor,
+                root_holder: grantee,
+                resource,
+            },
+        );
+        self.holders.insert(
+            (capability_id, grantee),
+            HolderRecord {
+                active: true,
+                parent: None,
+            },
+        );
+    }
+
     /// 纯数据层的 GRANT：只生成 CapabilityId 并建立树根，不做任何事务/WAL 逻辑。
     pub fn grant(
         &mut self,
