@@ -120,4 +120,3 @@ pub mod event;
 pub mod receipt;
 pub mod replay_verify;
 
-pub mod graph;
