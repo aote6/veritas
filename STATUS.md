@@ -9,7 +9,7 @@ P30 Deterministic Replay — World state replay verified; Capability identity ga
 
 P30.1: Same WAL → identical Engine state (4 determinism tests)
 P30.2: WAL contains full world state — object/link/capability replay (2 tests)
-P30.3: Capability Identity Replay — grant_sequence survives recovery (capability_id_of + restore_grant)
+P30.3: Capability Identity Replay ✅ — grant_sequence + capability_id persist via WAL + apply() (capability_id_of + restore_grant)
 
 ## Completed
 
@@ -75,6 +75,24 @@ P8.4 Death Event Dispatcher = structural refactor only (deferred)
 No new death semantics without constitution change
 Object lifecycle instructions stay Trap ABI
 
+## Step 2 (apply unification) completed
+
+- Step 1a: WAL CRC integrity (len-prefix + crc32, truncation tests)
+- Step 1b: TransactionDelta struct, build_delta() extracts raw facts
+- Step 2a: apply(&delta) — 10-step ordered projection, closure recomputed
+- Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
+- Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
+- Runtime apply == Recovery apply ✅
+- 174 tests pass
+
+### Remaining Step 2 tech debt
+
+- state_map/apply_records is now redundant for recovery state_store init;
+  apply() step 1 writes the same data again. Clean up by letting apply()
+  fully own state_store init, keeping apply_records only for scope_map/effects.
+- Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
+  to verify topology correctly reflects unlink before closure recomputation.
+
 ## Known gaps
 
 engine.rs size / modular split deferred
@@ -102,4 +120,4 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 165 tests pass.
+See README. 174 tests pass.

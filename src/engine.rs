@@ -196,65 +196,102 @@ impl VeritasEngine {
         let (state_map, scope_map, pending_effects, max_tx_id) =
             RecoveryManager::apply_records(&records);
 
-        // P7.5: 从 WAL records 重建 object_registry 和 topology
-        let mut recovered_objects: HashMap<ObjectId, crate::types::ObjectRecord> = HashMap::new();
-        let mut recovered_links: Vec<LinkEdge> = Vec::new();
-        let mut recovered_deaths: Vec<ObjectId> = Vec::new();
-        let mut recovered_cap_grants: Vec<(String, ObjectId, ObjectId, ObjectId)> = Vec::new();
+        let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
+        let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
+        let controller = TransactionController::new(Arc::clone(&tx_mgr), Arc::clone(&lock_mgr));
+
+        // Step 2c: 从 WAL records 按 tx_id 分组构建 TransactionDelta 列表
+        // 只保留有 Commit marker 的事务，丢弃孤儿条目
+        use std::collections::hash_map::Entry;
+        let mut partial_deltas: HashMap<TxId, TransactionDelta> = HashMap::new();
+        let mut ordered_deltas: Vec<TransactionDelta> = Vec::new();
+
         for record in &records {
             match record {
-                WalEntry::ObjectBirth { object_id, .. } => {
-                    recovered_objects.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
+                WalEntry::ObjectBirth { tx_id, object_id } => {
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        effects: vec![],
+                    });
+                    delta.births.push(*object_id);
                 }
-                WalEntry::ObjectDeath { object_id, .. } => {
-                    { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; recovered_objects.insert(*object_id, r); }
-                    recovered_links.retain(|edge| edge.from != *object_id && edge.to != *object_id);
-                    recovered_deaths.push(*object_id);
+                WalEntry::ObjectDeath { tx_id, object_id } => {
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
+                        births: vec![], deaths: vec![], freezes: vec![],
+                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
+                    });
+                    delta.deaths.push(*object_id);
                 }
-                WalEntry::ObjectLink { from, to, link_type, .. } => {
+                WalEntry::ObjectFreeze { tx_id, object_id } => {
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
+                        births: vec![], deaths: vec![], freezes: vec![],
+                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
+                    });
+                    delta.freezes.push(*object_id);
+                }
+                WalEntry::ObjectLink { tx_id, from, to, link_type, .. } => {
                     let relation = match link_type {
                         0 => LinkType::DependsOn,
                         1 => LinkType::Owns,
                         2 => LinkType::References,
                         _ => continue,
                     };
-                    recovered_links.push(LinkEdge { from: *from, to: *to, link_type: relation });
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
+                        births: vec![], deaths: vec![], freezes: vec![],
+                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
+                    });
+                    delta.links.push((*from, *to, relation));
                 }
-                WalEntry::CapabilityGrant { cap_type, grantor, grantee, resource, .. } => {
-                    recovered_cap_grants.push((cap_type.clone(), *grantor, *grantee, *resource));
+                WalEntry::ObjectUnlink { tx_id, from, to } => {
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
+                        births: vec![], deaths: vec![], freezes: vec![],
+                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
+                    });
+                    delta.unlinks.push((*from, *to));
                 }
-                WalEntry::ObjectFreeze { object_id, .. } => {
-                    if let Some(r) = recovered_objects.get_mut(object_id) {
-                        r.state = crate::types::ObjectState::Frozen;
-                    } else {
-                        let mut r = crate::types::ObjectRecord::new_state(*object_id);
-                        r.state = crate::types::ObjectState::Frozen;
-                        recovered_objects.insert(*object_id, r);
+                WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence } => {
+                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
+                        births: vec![], deaths: vec![], freezes: vec![],
+                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
+                    });
+                    delta.capability_grants.push(PendingCapabilityGrant {
+                        capability_id: *capability_id,
+                        grant_sequence: *grant_sequence,
+                        cap_type: cap_type.clone(),
+                        grantor: *grantor,
+                        grantee: *grantee,
+                        resource: *resource,
+                    });
+                }
+                WalEntry::Commit { tx_id, version, writes, scope_changes, effects } => {
+                    if let Entry::Occupied(mut entry) = partial_deltas.entry(*tx_id) {
+                        let delta = entry.get_mut();
+                        delta.commit_version = *version;
+                        delta.writes = writes.iter().map(|(addr, val)| (*addr, val.clone())).collect();
+                        delta.scope_changes = scope_changes.iter().map(|c| (c.scope_id, c.change_type.clone(), c.state_id)).collect();
+                        delta.effects = effects.iter().map(|e| (e.idempotency_key.clone(), e.payload.clone())).collect();
+                        ordered_deltas.push(delta.clone());
+                        entry.remove();
                     }
-                }
-                WalEntry::ObjectUnlink { from, to, .. } => {
-                    recovered_links.retain(|edge| edge.from != *from || edge.to != *to);
                 }
                 _ => {}
             }
         }
-
-        // P8-final: 重放 Capability Grant + 级联撤销
-        // (原实现只重放了 revoke、从未重放 grant,导致重启后所有 Capability 丢失,这里一并修正)
-        let recovered_cap_graph = {
-            let mut cap_graph = CapabilityGraph::new();
-            for (cap_type, grantor, grantee, resource) in &recovered_cap_grants {
-                cap_graph.grant(cap_type.clone(), *grantor, *grantee, *resource);
-            }
-            for dead_obj in &recovered_deaths {
-                cap_graph.revoke_holder(*dead_obj);
-            }
-            cap_graph
-        };
-
-        let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
-        let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
-        let controller = TransactionController::new(Arc::clone(&tx_mgr), Arc::clone(&lock_mgr));
+        // 丢弃留在 partial_deltas 中的无 Commit marker 的事务
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
@@ -268,9 +305,9 @@ impl VeritasEngine {
             scope_registry: ScopeRegistry::from_map(scope_map),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
-            object_registry: Mutex::new(recovered_objects),
-            topology: Mutex::new(recovered_links),
-            capability_graph: Mutex::new(recovered_cap_graph),
+            object_registry: Mutex::new(HashMap::new()),
+            topology: Mutex::new(Vec::new()),
+            capability_graph: Mutex::new(CapabilityGraph::new()),
             tx_mgr,
             lock_mgr,
             controller,
@@ -278,6 +315,11 @@ impl VeritasEngine {
             history: std::sync::Mutex::new(ExecutionHistory::new()),
             last_dep_inv: std::sync::Mutex::new(Vec::new()),
         };
+
+        // Step 2c: 按 Commit 顺序依次 apply 每个 Delta
+        for delta in &ordered_deltas {
+            engine.apply(delta);
+        }
 
         if !records.is_empty() {
             println!(
@@ -506,11 +548,13 @@ impl VeritasEngine {
         self.detect_scope_conflict(ctx)?;
         self.verify_capability(ctx)?;
 
-        // Step 1b: 保存原始 deaths（OWNS 展开前），构建 TransactionDelta
+        // Step 1b: 保存原始 deaths（OWNS 展开前），供后续 build_delta 使用
         let requested_deaths = ctx.pending_deaths.clone();
-        let _delta = self.build_delta(ctx, requested_deaths);
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
+
+        // Step 1b: 构建 TransactionDelta（现在 commit_version 已知）
+        let _delta = self.build_delta(ctx, requested_deaths, commit_version);
 
         let mut writes_map = HashMap::new();
         for (addr, value) in ctx.write_set.iter() {
@@ -634,67 +678,6 @@ impl VeritasEngine {
                 .append_and_sync(&freeze_entry)
                 .map_err(|e| VeritasError::EngineError(format!("WAL ObjectFreeze write failed: {}", e)))?;
         }
-        {
-            let mut registry = self.object_registry.lock().unwrap();
-            for object_id in &ctx.pending_deaths {
-                if let Some(r) = registry.get_mut(object_id) { r.state = crate::types::ObjectState::Dead; } else { let mut r = crate::types::ObjectRecord::new_state(*object_id); r.state = crate::types::ObjectState::Dead; registry.insert(*object_id, r); }
-            }
-            for object_id in freezes_to_apply {
-                if let Some(r) = registry.get_mut(&object_id) { r.state = crate::types::ObjectState::Frozen; } else { let mut r = crate::types::ObjectRecord::new_state(object_id); r.state = crate::types::ObjectState::Frozen; registry.insert(object_id, r); }
-            }
-        }
-
-        // P8.2: DEPENDS_ON → DependencyInvalidated（观察口）
-        {
-            let dead_set: HashSet<ObjectId> = ctx.pending_deaths.iter().copied().collect();
-            let unlinked: HashSet<(ObjectId, ObjectId)> =
-                ctx.pending_unlinks.iter().copied().collect();
-
-            let mut inv: Vec<(ObjectId, ObjectId)> = Vec::new();
-
-            {
-                let topo = self.topology.lock().unwrap();
-                for edge in topo.iter() {
-                    if edge.link_type == LinkType::DependsOn
-                        && dead_set.contains(&edge.to)
-                        && !unlinked.contains(&(edge.from, edge.to))
-                        && !dead_set.contains(&edge.from)
-                    {
-                        inv.push((edge.from, edge.to));
-                    }
-                }
-            }
-            for edge in &ctx.pending_links {
-                if edge.link_type == LinkType::DependsOn
-                    && dead_set.contains(&edge.to)
-                    && !unlinked.contains(&(edge.from, edge.to))
-                    && !dead_set.contains(&edge.from)
-                {
-                    inv.push((edge.from, edge.to));
-                }
-            }
-            inv.sort_unstable();
-            inv.dedup();
-            *self.last_dep_inv.lock().unwrap() = inv;
-        }
-
-        // P8.2: 确定性拓扑清理——剔除所有涉及已死亡 Object 的边
-        {
-            let dead_set: HashSet<ObjectId> = ctx.pending_deaths.iter().copied().collect();
-            if !dead_set.is_empty() {
-                let mut topo = self.topology.lock().unwrap();
-                topo.retain(|edge| !dead_set.contains(&edge.from) && !dead_set.contains(&edge.to));
-            }
-        }
-
-        // P8-final: 能力级联撤销——一行调用，零内聚泄露
-        {
-            let mut cap_graph = self.capability_graph.lock().unwrap();
-            for &dead_obj in &ctx.pending_deaths {
-                cap_graph.revoke_holder(dead_obj);
-            }
-        }
-
         // P6: 写入 ObjectLink WAL 条目并固化拓扑
         for edge in &ctx.pending_links {
             let link_entry = WalEntry::ObjectLink {
@@ -736,16 +719,8 @@ impl VeritasEngine {
             .append_and_sync(&wal_entry)
             .map_err(|e| VeritasError::EngineError(format!("WAL write failed: {}", e)))?;
 
-        {
-            let mut topo = self.topology.lock().unwrap();
-            for edge in &ctx.pending_links {
-                topo.push(edge.clone());
-            }
-            // P26: 处理 pending_unlinks
-            for (from, to) in &ctx.pending_unlinks {
-                topo.retain(|e| e.from != *from || e.to != *to);
-            }
-        }
+        // Step 2b: 所有 WAL 写入完成后，统一 apply 到内存
+        self.apply(&_delta);
 
         drop(_lock);
 
@@ -778,6 +753,7 @@ impl VeritasEngine {
         &self,
         ctx: &TransactionContext,
         requested_deaths: Vec<ObjectId>,
+        commit_version: Version,
     ) -> TransactionDelta {
         let writes: Vec<(Address, Vec<u8>)> = ctx
             .write_set
@@ -808,7 +784,7 @@ impl VeritasEngine {
 
         TransactionDelta {
             tx_id: ctx.tx_id(),
-            commit_version: 0, // dummy, caller sets
+            commit_version,
             writes,
             scope_changes,
             births: ctx.pending_objects.clone(),
@@ -819,6 +795,152 @@ impl VeritasEngine {
             capability_grants: ctx.pending_capabilities.clone(),
             effects,
         }
+    }
+
+    /// Step 2a: apply() — 将 TransactionDelta 投影到所有内存结构。
+    ///
+    /// 这是 Runtime commit 和 Recovery replay 的唯一入口。
+    /// 步骤顺序不可变更：links/unlinks 必须先于 OWNS 闭包展开，
+    /// 否则闭包会漏算本事务内新增的 OWNS 边。
+    pub fn apply(&self, delta: &TransactionDelta) {
+        // 1. State writes
+        for (addr, value) in &delta.writes {
+            self.state_store.insert(
+                *addr,
+                StateEntry {
+                    value: value.clone(),
+                    version: delta.commit_version,
+                },
+            );
+        }
+
+        // 2. Scope changes
+        for (scope_id, change_type, state_id) in &delta.scope_changes {
+            match change_type {
+                ScopeChangeType::Bind => {
+                    self.scope_registry.apply_bind(*scope_id, *state_id);
+                }
+                ScopeChangeType::Unbind => {
+                    self.scope_registry.apply_unbind(*scope_id, *state_id);
+                }
+            }
+        }
+
+        // 3. Births
+        {
+            let mut registry = self.object_registry.lock().unwrap();
+            for object_id in &delta.births {
+                registry.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
+            }
+        }
+
+        // 4. Capability grants
+        {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            for grant in &delta.capability_grants {
+                cap_graph.restore_grant(
+                    grant.capability_id,
+                    grant.cap_type.clone(),
+                    grant.grantor,
+                    grant.grantee,
+                    grant.resource,
+                    grant.grant_sequence,
+                );
+            }
+        }
+
+        // 5. Links / Unlinks — must happen before OWNS closure (step 6)
+        {
+            let mut topo = self.topology.lock().unwrap();
+            for (from, to, link_type) in &delta.links {
+                topo.push(LinkEdge {
+                    from: *from,
+                    to: *to,
+                    link_type: *link_type,
+                });
+            }
+            for (from, to) in &delta.unlinks {
+                topo.retain(|e| e.from != *from || e.to != *to);
+            }
+        }
+
+        // 6. OWNS death closure: expand from delta.deaths using committed topology
+        let full_death_set: HashSet<ObjectId> = {
+            let topo = self.topology.lock().unwrap();
+            let mut queue: Vec<ObjectId> = delta.deaths.clone();
+            let mut seen: HashSet<ObjectId> = queue.iter().copied().collect();
+            let mut i = 0;
+            while i < queue.len() {
+                let id = queue[i];
+                for edge in topo.iter() {
+                    if edge.from == id
+                        && edge.link_type == LinkType::Owns
+                        && seen.insert(edge.to)
+                    {
+                        queue.push(edge.to);
+                    }
+                }
+                i += 1;
+            }
+            seen
+        };
+
+        // 7. DEPENDS_ON → DependencyInvalidated
+        {
+            let topo = self.topology.lock().unwrap();
+            let mut inv: Vec<(ObjectId, ObjectId)> = Vec::new();
+            for edge in topo.iter() {
+                if edge.link_type == LinkType::DependsOn
+                    && full_death_set.contains(&edge.to)
+                    && !full_death_set.contains(&edge.from)
+                {
+                    inv.push((edge.from, edge.to));
+                }
+            }
+            inv.sort_unstable();
+            inv.dedup();
+            *self.last_dep_inv.lock().unwrap() = inv;
+        }
+
+        // 8. Topology cleanup: remove edges involving dead objects
+        {
+            let mut topo = self.topology.lock().unwrap();
+            topo.retain(|edge| !full_death_set.contains(&edge.from) && !full_death_set.contains(&edge.to));
+        }
+
+        // 9. Capability revoke for dead holders
+        {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            for &dead_obj in &full_death_set {
+                cap_graph.revoke_holder(dead_obj);
+            }
+        }
+
+        // 10. Object registry: update death/freeze status
+        {
+            let mut registry = self.object_registry.lock().unwrap();
+            for object_id in &full_death_set {
+                if let Some(r) = registry.get_mut(object_id) {
+                    r.state = crate::types::ObjectState::Dead;
+                } else {
+                    let mut r = crate::types::ObjectRecord::new_state(*object_id);
+                    r.state = crate::types::ObjectState::Dead;
+                    registry.insert(*object_id, r);
+                }
+            }
+            for object_id in &delta.freezes {
+                if let Some(r) = registry.get_mut(object_id) {
+                    r.state = crate::types::ObjectState::Frozen;
+                } else {
+                    let mut r = crate::types::ObjectRecord::new_state(*object_id);
+                    r.state = crate::types::ObjectState::Frozen;
+                    registry.insert(*object_id, r);
+                }
+            }
+        }
+
+        // Global version update
+        self.global_version.store(delta.commit_version, Ordering::SeqCst);
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权

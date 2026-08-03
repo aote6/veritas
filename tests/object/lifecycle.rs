@@ -393,7 +393,7 @@ fn step1b_build_delta_deaths_before_owns_expansion() {
     assert_eq!(requested, vec![a], "before OWNS expansion: pending_deaths must be [A]");
 
     // build_delta with the original request
-    let delta = kernel.engine.build_delta(&tx, requested.clone());
+    let delta = kernel.engine.build_delta(&tx, requested.clone(), 1);
 
     // Core assertion: Delta.deaths == [A], NOT [A, B]
     assert_eq!(
@@ -411,6 +411,164 @@ fn step1b_build_delta_deaths_before_owns_expansion() {
         kernel.engine.get_object_state(b),
         Some(veritas_kernel::types::ObjectState::Dead),
         "B must still die via OWNS cascade"
+    );
+}
+
+/// Step 2a: apply() 必须从 Delta.deaths 出发重新计算 OWNS 闭包，
+/// 不依赖 ctx.pending_links。
+#[test]
+fn step2a_apply_recomputes_owns_closure() {
+    use veritas_kernel::types::{LinkType, TransactionDelta};
+
+    let kernel = new_kernel();
+    let root = root_object_id();
+    let a = root ^ 0x9001;
+    let b = root ^ 0x9002;
+
+    // Setup: birth A and B, create A --OWNS--> B, commit
+    let mut tx = kernel.begin();
+    kernel.engine.object_birth(&mut tx, a).unwrap();
+    kernel.engine.object_birth(&mut tx, b).unwrap();
+    kernel.engine.object_link(&mut tx, a, b, LinkType::Owns).unwrap();
+    kernel.engine.commit(&mut tx).unwrap();
+
+    // Build a Delta by hand: only death(A), no OWNS cascade precomputed
+    let delta = TransactionDelta {
+        tx_id: 1,
+        commit_version: 2,
+        writes: vec![],
+        scope_changes: vec![],
+        births: vec![],
+        deaths: vec![a],   // only A requested
+        freezes: vec![],
+        links: vec![],
+        unlinks: vec![],
+        capability_grants: vec![],
+        effects: vec![],
+    };
+
+    // Call apply() directly — it must recompute the OWNS closure
+    kernel.engine.apply(&delta);
+
+    // Both A and B must be Dead
+    assert_eq!(
+        kernel.engine.get_object_state(a),
+        Some(veritas_kernel::types::ObjectState::Dead)
+    );
+    assert_eq!(
+        kernel.engine.get_object_state(b),
+        Some(veritas_kernel::types::ObjectState::Dead),
+        "apply() must recompute OWNS closure: B must die even though only A was in delta.deaths"
+    );
+}
+
+/// Step 2c: 单事务内 A OWNS B，death(A)，恢复后 B 也必须死
+#[test]
+fn step2c_recovery_single_tx_owns_cascade() {
+    use tempfile::NamedTempFile;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let wal_path = tmp.path().to_str().unwrap().to_string();
+    let root = root_object_id();
+    let a = root ^ 0xa001;
+    let b = root ^ 0xa002;
+
+    // Tx1: birth A, B
+    {
+        let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+        let mut tx = engine.begin_in_object(root);
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+    // Tx2: link A OWNS B + death(A)
+    {
+        let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+        let mut tx = engine.begin_in_object(root);
+        engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::Owns).unwrap();
+        engine.object_death(&mut tx, a).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+
+    // 恢复
+    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+
+    assert_eq!(engine.get_object_state(a), Some(veritas_kernel::types::ObjectState::Dead));
+    assert_eq!(
+        engine.get_object_state(b),
+        Some(veritas_kernel::types::ObjectState::Dead),
+        "Step 2c recovery: B must die via OWNS cascade recomputed by apply()"
+    );
+}
+
+/// Step 2c: 跨事务级联 — tx1 建 A OWNS B，tx2 death(A)，恢复后 B 必须死
+#[test]
+fn step2c_recovery_cross_tx_owns_cascade() {
+    use tempfile::NamedTempFile;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let wal_path = tmp.path().to_str().unwrap().to_string();
+    let root = root_object_id();
+    let a = root ^ 0xa003;
+    let b = root ^ 0xa004;
+
+    // Tx1: birth A, B + link A OWNS B
+    {
+        let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+        let mut tx = engine.begin_in_object(root);
+        engine.object_birth(&mut tx, a).unwrap();
+        engine.object_birth(&mut tx, b).unwrap();
+        engine.object_link(&mut tx, a, b, veritas_kernel::types::LinkType::Owns).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+
+    // Tx2: death(A)
+    {
+        let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+        let mut tx = engine.begin_in_object(root);
+        engine.object_death(&mut tx, a).unwrap();
+        engine.commit(&mut tx).unwrap();
+    }
+
+    // 恢复
+    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+
+    assert_eq!(engine.get_object_state(a), Some(veritas_kernel::types::ObjectState::Dead));
+    assert_eq!(
+        engine.get_object_state(b),
+        Some(veritas_kernel::types::ObjectState::Dead),
+        "Step 2c cross-tx: tx2 death(A) + recovery must cascade to B via tx1's OWNS edge"
+    );
+}
+
+/// Step 2c: 无 Commit marker 的孤儿条目不应产生效果
+#[test]
+fn step2c_recovery_orphan_tx_discarded() {
+    use tempfile::NamedTempFile;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let wal_path = tmp.path().to_str().unwrap().to_string();
+    let root = root_object_id();
+    let a = root ^ 0xa005;
+
+    // 写一个 WAL：有 ObjectBirth(A) 但没有 Commit marker
+    {
+        let writer = veritas_kernel::wal::WalWriter::open(&wal_path).unwrap();
+        let birth = veritas_kernel::wal::WalEntry::ObjectBirth {
+            tx_id: 42,
+            object_id: a,
+        };
+        writer.append_and_sync(&birth).unwrap();
+    }
+
+    // 恢复
+    let engine = veritas_kernel::engine::VeritasEngine::with_wal_path(wal_path.clone());
+
+    // A 不应该存在——没有 Commit marker 的事务被丢弃
+    assert_eq!(
+        engine.get_object_state(a),
+        None,
+        "Orphan ObjectBirth without Commit must be discarded"
     );
 }
 
