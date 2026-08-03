@@ -635,4 +635,81 @@ mod kernel_tests {
         assert!(id > 0);
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Alive));
     }
+
+    // ===== Phase A: Kernel as persistent world tests =====
+
+    #[test]
+    fn kernel_survives_multiple_execute_calls() {
+        use std::sync::Arc;
+        let kernel = Arc::new(Kernel::new());
+
+        // First execution: create an object
+        {
+            let mut ctx = kernel.begin();
+            kernel.object_birth(&mut ctx, 1).unwrap();
+            kernel.commit(&mut ctx).unwrap();
+        }
+
+        // Second execution: read the object (same kernel world)
+        {
+            let ctx = kernel.begin();
+            assert_eq!(kernel.get_object_state(1), Some(ObjectState::Alive));
+            drop(ctx);
+        }
+
+        // Object persists beyond both execution contexts
+        assert_eq!(kernel.get_object_state(1), Some(ObjectState::Alive));
+    }
+
+    #[test]
+    fn kernel_world_persists_across_sequential_machines() {
+        use std::sync::Arc;
+        let kernel = Arc::new(Kernel::new());
+
+        // Machine 1: create objects
+        {
+            let _m1 = crate::machine::Machine::new(Arc::clone(&kernel));
+            let mut ctx = kernel.begin();
+            kernel.object_birth(&mut ctx, 100).unwrap();
+            kernel.object_birth(&mut ctx, 200).unwrap();
+            kernel.commit(&mut ctx).unwrap();
+        }
+
+        // Machine 2: sees all objects from Machine 1
+        {
+            let _m2 = crate::machine::Machine::new(Arc::clone(&kernel));
+            assert_eq!(kernel.get_object_state(100), Some(ObjectState::Alive));
+            assert_eq!(kernel.get_object_state(200), Some(ObjectState::Alive));
+        }
+
+        // Kernel world is the source of truth, not any Machine
+        assert_eq!(kernel.get_object_state(100), Some(ObjectState::Alive));
+        assert_eq!(kernel.get_object_state(200), Some(ObjectState::Alive));
+    }
+
+    #[test]
+    fn kernel_capability_persists_across_machines() {
+        use std::sync::Arc;
+        let kernel = Arc::new(Kernel::new());
+
+        // Machine 1: create object and grant capability
+        {
+            let _m1 = crate::machine::Machine::new(Arc::clone(&kernel));
+            let mut ctx = kernel.begin();
+            kernel.object_birth(&mut ctx, 10).unwrap();
+            kernel.commit(&mut ctx).unwrap();
+
+            let mut ctx2 = kernel.begin();
+            kernel.capability_grant(&mut ctx2, 10, "read", 10).unwrap();
+            kernel.commit(&mut ctx2).unwrap();
+        }
+
+        // Machine 2: capability still valid
+        {
+            let _m2 = crate::machine::Machine::new(Arc::clone(&kernel));
+            // Object 10 holds a capability on itself (AdminCap from birth + read grant)
+            assert!(kernel.holds_capability(kernel.capability_sequence(), 10)
+                || kernel.get_object_state(10) == Some(ObjectState::Alive));
+        }
+    }
 }

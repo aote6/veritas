@@ -3,7 +3,9 @@ use std::fs;
 use std::process;
 use veritas_kernel::assembler::assemble_module;
 use veritas_kernel::module::{ModuleImage, ModuleLoader};
+use veritas_kernel::kernel::Kernel;
 use veritas_kernel::runtime::Runtime;
+use std::sync::Arc;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -12,14 +14,17 @@ fn main() {
         process::exit(1);
     }
 
-    let result = run_command(&args);
+    // Phase A: Kernel is created once and persists for all commands.
+    // Multiple 'run' commands share the same Object world.
+    let kernel = Arc::new(Kernel::new());
+    let result = run_command(&args, &kernel);
     if let Err(e) = result {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
 }
 
-fn run_command(args: &[String]) -> Result<(), String> {
+fn run_command(args: &[String], kernel: &Arc<Kernel>) -> Result<(), String> {
     match args[1].as_str() {
         "compile" => {
             if args.len() < 4 {
@@ -39,7 +44,7 @@ fn run_command(args: &[String]) -> Result<(), String> {
             let mut loader = ModuleLoader::new();
             let name = loader.load_and_install(&bytes).map_err(|e| format!("load: {:?}", e))?;
             let loaded = loader.get_module(&name).ok_or("module not found after install")?;
-            let (pc, r0) = Runtime::execute(&loaded.image).map_err(|e| format!("exec: {:?}", e))?;
+            let (pc, r0) = Runtime::execute(kernel, &loaded.image).map_err(|e| format!("exec: {:?}", e))?;
             println!("finished pc={} r0={}", pc, r0);
         }
         "info" => {
