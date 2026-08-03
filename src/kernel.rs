@@ -149,9 +149,8 @@ impl Kernel {
     ) -> Result<TrapResult, VeritasError> {
         match call {
             KernelCall::ObjectBirth { object_type: _object_type } => {
-                // Phase 1 Step 4: temporary - caller still provides object_id
-                // Phase 2 will have Kernel allocate ObjectId internally
-                let id = ctx.tx_id; // placeholder until Kernel allocator
+                // Step 3/ObjectId: Kernel allocates ObjectId internally
+                let id = self.engine.next_object_id();
                 self.object_birth(ctx, id)?;
                 Ok(TrapResult::ObjectId(id))
             }
@@ -715,5 +714,74 @@ mod kernel_tests {
             assert!(kernel.holds_capability(kernel.capability_sequence(), 10)
                 || kernel.get_object_state(10) == Some(ObjectState::Alive));
         }
+    }
+
+    /// ObjectId allocation: fresh Kernel assigns 1, then 2.
+    #[test]
+    fn object_id_allocation_via_trap_path() {
+        let kernel = Kernel::new();
+        let mut ctx = kernel.begin();
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
+        let id1 = match kernel.handle(&mut ctx, call).unwrap() {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("expected ObjectId"),
+        };
+        assert_eq!(id1, 1, "first allocated ObjectId must be 1");
+
+        let id2 = match kernel.handle(&mut ctx, KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        }).unwrap() {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("expected ObjectId"),
+        };
+        assert_eq!(id2, 2, "second allocated ObjectId must be 2");
+    }
+
+    /// ObjectId after commit: birth via TRAP path survives commit.
+    #[test]
+    fn object_id_allocation_committed_object_visible() {
+        let kernel = Kernel::new();
+        let mut ctx = kernel.begin();
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
+        let id = match kernel.handle(&mut ctx, call).unwrap() {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("expected ObjectId"),
+        };
+        kernel.commit(&mut ctx).unwrap();
+        assert_eq!(
+            kernel.get_object_state(id),
+            Some(ObjectState::Alive),
+            "committed birth must be visible in registry"
+        );
+    }
+
+    /// ObjectId after recovery: counter resumes from max(birth_id)+1.
+    #[test]
+    fn object_id_allocation_resumes_after_commit() {
+        use tempfile::NamedTempFile;
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+
+        let engine1 = crate::engine::VeritasEngine::with_wal_path(path.clone());
+        let mut ctx = engine1.begin();
+        engine1.object_birth(&mut ctx, 10).unwrap();
+        engine1.commit(&mut ctx).unwrap();
+        drop(engine1);
+
+        let engine2 = crate::engine::VeritasEngine::with_wal_path(path.clone());
+        assert_eq!(
+            engine2.next_object_id(),
+            11,
+            "recovered engine must start counter from max(birth_id)+1"
+        );
+        assert_eq!(
+            engine2.get_object_state(10),
+            Some(ObjectState::Alive),
+            "recovered birth must still be Alive"
+        );
     }
 }

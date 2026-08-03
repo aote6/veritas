@@ -46,6 +46,7 @@ pub struct VeritasEngine {
     pub state_memory: std::sync::Mutex<StateMemory>,
     pub history: std::sync::Mutex<ExecutionHistory>,
 
+    object_id_counter: AtomicU64,
     /// Test probe: DependencyInvalidated pairs from last commit. Not for production use.
     last_dep_inv: std::sync::Mutex<Vec<(crate::types::ObjectId, crate::types::ObjectId)>>,
 }
@@ -299,6 +300,15 @@ impl VeritasEngine {
         }
         // 丢弃留在 partial_deltas 中的无 Commit marker 的事务
 
+        // Step 3/ObjectId: 从所有已提交事务中取 max(birth_id) 作为计数器起点
+        let max_birth_id = ordered_deltas
+            .iter()
+            .flat_map(|d| d.births.iter())
+            .max()
+            .copied()
+            .unwrap_or(0);
+        let next_object_id = max_birth_id + 1;
+
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
             // 临时占位：WAL目前不记录object_id，恢复的状态统一归属内核Object(0)。
@@ -319,6 +329,7 @@ impl VeritasEngine {
             controller,
             state_memory: std::sync::Mutex::new(StateMemory::new()),
             history: std::sync::Mutex::new(ExecutionHistory::new()),
+            object_id_counter: AtomicU64::new(next_object_id),
             last_dep_inv: std::sync::Mutex::new(Vec::new()),
         };
 
@@ -1017,6 +1028,13 @@ impl VeritasEngine {
             }
         }
         Ok(())
+    }
+
+    /// Step 3/ObjectId: 返回下一个可用的 ObjectId。
+    /// 从已提交的 TransactionCommitted 条目中 max(birth_id)+1 起步，
+    /// 单调递增。调用者不能指定 ID，只能从 Kernel 分配。
+    pub fn next_object_id(&self) -> ObjectId {
+        self.object_id_counter.fetch_add(1, Ordering::SeqCst)
     }
 
     pub fn get_global_version(&self) -> Version {
