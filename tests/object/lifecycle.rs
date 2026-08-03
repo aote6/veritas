@@ -50,7 +50,7 @@ fn lifecycle_birth_freeze_dead() {
 }
 
 #[test]
-#[ignore = "frozen link check deferred to commit — pending validation"]
+#[test]
     fn lifecycle_frozen_rejects_link() {
     let tk = new_kernel();
     let a = birth(&tk.kernel);

@@ -565,6 +565,18 @@ impl VeritasEngine {
         self.detect_scope_conflict(ctx)?;
         self.verify_capability(ctx)?;
 
+        // Step 1b: 验证 pending_links —— frozen 对象拒绝新 Link
+        {
+            let reg = self.object_registry.lock().unwrap();
+            for edge in &ctx.pending_links {
+                let from_frozen = reg.get(&edge.from).map(|r| r.is_frozen()).unwrap_or(false);
+                let to_frozen = reg.get(&edge.to).map(|r| r.is_frozen()).unwrap_or(false);
+                if from_frozen || to_frozen {
+                    return Err(VeritasError::Abort(AbortReason::WriteConflict));
+                }
+            }
+        }
+
         // Step 1b: 保存原始 deaths（OWNS 展开前），供后续 build_delta 使用
         let requested_deaths = ctx.pending_deaths.clone();
 

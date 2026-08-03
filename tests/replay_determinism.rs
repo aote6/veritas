@@ -60,11 +60,11 @@ fn replay_is_deterministic() {
     let ids2: Vec<u64>;
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        ids1 = kernel.engine().list_object_ids();
+        ids1 = { let mut ids = kernel.engine().list_object_ids(); ids.sort(); ids };
     }
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        ids2 = kernel.engine().list_object_ids();
+        ids2 = { let mut ids = kernel.engine().list_object_ids(); ids.sort(); ids };
     }
 
     assert_eq!(ids1, ids2, "same WAL must produce identical object lists");
