@@ -72,7 +72,7 @@ plan (design proposal).*
 | Capability | Authoritative Entry Point | Unique |
 |------------|--------------------------|--------|
 | Commit | Executor::execute_instruction to engine.commit | Yes (P1-3 fix) |
-| ObjectBirth | TRAP (machine.rs) to engine.object_birth | Yes |
+| ObjectBirth | TRAP -> engine.object_birth | Entry unique, API violates constitution |
 | ObjectDeath | TRAP (machine.rs) to engine.object_death | Yes |
 | ObjectLink | TRAP (machine.rs) to engine.object_link | Yes |
 | ObjectFreeze | TRAP (machine.rs) to engine.object_freeze | Yes |
@@ -88,10 +88,10 @@ plan (design proposal).*
 ### 3.1 Kernel Lifecycle Violation
 
 Runtime::execute (runtime.rs:10)
-to VeritasEngine::new()
-to Machine::new(&engine)
-to ... execute ...
-to engine + machine dropped
+  -> VeritasEngine::new()
+  -> Machine::new(&engine)
+  -> execute loop
+  -> engine + machine dropped
 
 Each Runtime::execute call creates a new world. ObjectRegistry, StateMemory,
 CapabilityGraph, and WAL are all bound to a single execute() invocation.
