@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::view::TransactionObjectView;
 use crate::guard::ObjectGuard;
 use crate::types::*;
-use crate::wal::{RecoveryManager, WalEffect, WalEntry, WalScopeChange, WalWriter};
+use crate::wal::{RecoveryManager, WalEntry, WalWriter};
 use crate::store::StateStore;
 
 #[allow(dead_code)]

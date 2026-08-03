@@ -827,12 +827,7 @@ mod tests {
         let entry = WalEntry::TransactionCommitted(delta);
         writer.append_and_sync(&entry).unwrap();
 
-        // 2. Append a corrupted TransactionCommitted with wrong CRC
-        let serialized = entry.serialize();
-        // Tamper: replace a character in the payload portion
-        let tampered = serialized.replace("BIRTH 100", "BIRTH 999");
-        // Recompute the line with a wrong CRC that won't match
-        // Just append the tampered line directly with a fake CRC header
+        // 2. Append a corrupted entry with deliberately wrong CRC header
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(path)
