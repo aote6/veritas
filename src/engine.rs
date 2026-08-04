@@ -331,6 +331,10 @@ impl VeritasEngine {
             bytes
         };
 
+        let global_version = self.global_version.load(Ordering::Acquire);
+        let object_id_counter = self.object_id_counter.load(Ordering::Acquire);
+        let grant_sequence = self.capability_graph.lock().unwrap().current_sequence();
+
         WorldSnapshot {
             commitment_hash,
             tx_id,
@@ -339,6 +343,9 @@ impl VeritasEngine {
             objects,
             links,
             scopes,
+            global_version,
+            object_id_counter,
+            grant_sequence,
         }
     }
 
@@ -352,8 +359,21 @@ impl VeritasEngine {
         self.restore_links(&snap.links);
         // 4. CapabilityGraph
         self.capability_graph.lock().unwrap().restore_capabilities(&snap.capability_records);
+        // 0. 恢复 grant_sequence（必须在 restore_capabilities 之前）
+        self.capability_graph.lock().unwrap().set_grant_sequence(snap.grant_sequence);
+        // 1. StateStore
+        self.state_store.restore_snapshot(&snap.state_entries);
+        // 2. ObjectRegistry
+        self.restore_objects(&snap.objects);
+        // 3. Topology
+        self.restore_links(&snap.links);
+        // 4. CapabilityGraph
+        self.capability_graph.lock().unwrap().restore_capabilities(&snap.capability_records);
         // 5. ScopeRegistry
         self.scope_registry.restore_scopes(&snap.scopes);
+        // 6. 恢复 global_version 和 object_id_counter
+        self.global_version.store(snap.global_version, Ordering::SeqCst);
+        self.object_id_counter.store(snap.object_id_counter, Ordering::SeqCst);
         true
     }
 
@@ -1128,6 +1148,11 @@ impl VeritasEngine {
                     registry.insert(*object_id, r);
                 }
             }
+        }
+
+        // 11. StateStore cleanup: remove all entries for dead objects
+        for dead_obj in &full_death_set {
+            self.state_store.remove_object(*dead_obj);
         }
 
         // Global version update

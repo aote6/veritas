@@ -64,22 +64,28 @@ impl StateStore {
         self.map.into_inner().unwrap()
     }
 
-    /// 导出纯字节快照。不暴露 StateEntry，供 WorldSnapshot 使用。
-    pub fn snapshot(&self) -> Vec<(Address, Vec<u8>)> {
+    /// 导出完整快照（含 version），供 WorldSnapshot 使用。
+    pub fn snapshot(&self) -> Vec<(Address, StateEntry)> {
         let map = self.map.lock().unwrap();
-        map.iter().map(|(addr, entry)| (*addr, entry.value.clone())).collect()
+        map.iter().map(|(addr, entry)| (*addr, entry.clone())).collect()
     }
 
-    /// 从纯字节快照恢复，清空后重建。
-    pub fn restore_snapshot(&self, entries: &[(Address, Vec<u8>)]) {
+    /// 从完整快照恢复（含真实 version），清空后重建。
+    pub fn restore_snapshot(&self, entries: &[(Address, StateEntry)]) {
         let mut map = self.map.lock().unwrap();
         map.clear();
-        for (addr, bytes) in entries {
+        for (addr, entry) in entries {
             map.insert(*addr, StateEntry {
-                value: bytes.clone(),
-                version: 1,
+                value: entry.value.clone(),
+                version: entry.version,
             });
         }
+    }
+
+    /// 删除指定 Object 的所有状态条目（Object 死亡时回收 MemorySpace）
+    pub fn remove_object(&self, object_id: crate::types::ObjectId) {
+        let mut map = self.map.lock().unwrap();
+        map.retain(|addr, _| addr.object_id != object_id);
     }
 }
 

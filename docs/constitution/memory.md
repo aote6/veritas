@@ -92,8 +92,8 @@ WRITE:
 
 | 规范定义 | 当前代码 | 未来方向 |
 |---|---|---|
-| Memory Space | state_memory.rs StateMemory | 绑定到 Object |
-| 版本管理 | state_memory.rs version | 保持 |
+| Memory Space | store.rs StateStore | 绑定到 Object |
+| 版本管理 | store.rs StateEntry.version | 保持 |
 | 冲突检测 | engine.rs detect_conflict | 移到 Machine 层 |
 | 持久化 | wal.rs | 保持 |
 

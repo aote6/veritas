@@ -178,6 +178,11 @@ impl CapabilityGraph {
         self.grant_sequence
     }
 
+    /// Checkpoint 恢复时设置 grant_sequence（必须在 restore_capabilities 之前调用）
+    pub fn set_grant_sequence(&mut self, seq: u64) {
+        self.grant_sequence = seq;
+    }
+
     /// 返回所有授权信息的克隆（用于 RootHash 规范化计算）。
     pub fn all_grants(&self) -> Vec<(CapabilityId, CapabilityInfo)> {
         self.grants.iter().map(|(id, info)| (*id, info.clone())).collect()

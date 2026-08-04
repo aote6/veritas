@@ -130,7 +130,7 @@ Link 操作由 OBJECT_LINK 指令触发，需要指定 LinkType。
 | DEPENDS_ON invalidated | DependencyInvalidated | done (P8.2) |
 | Capability lazy resource liveness | verify_capability | done (P8.3) |
 | LinkType | engine.rs topology | done |
-| MemorySpace | state_memory.rs | done |
+| MemorySpace | store.rs StateStore | done |
 | ModuleObject / Instance | module.rs | partial |
 
 ## 11. 实现要求

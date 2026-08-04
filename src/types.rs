@@ -23,7 +23,7 @@ pub type TxId = u64;
 pub type ModuleId = u64;
 pub type CapabilityId = u64;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StateEntry {
     pub value: Vec<u8>,
     pub version: Version,
@@ -745,11 +745,14 @@ impl TransactionDelta {
 pub struct WorldSnapshot {
     pub commitment_hash: [u8; 32],
     pub tx_id: u64,
-    pub state_entries: Vec<(Address, Vec<u8>)>,
+    pub state_entries: Vec<(Address, StateEntry)>,
     pub capability_records: Vec<CapabilitySemanticRecord>,
     pub objects: Vec<ObjectSnapshot>,
     pub links: Vec<LinkSnapshot>,
     pub scopes: Vec<ScopeSnapshot>,
+    pub global_version: Version,
+    pub object_id_counter: u64,
+    pub grant_sequence: u64,
 }
 
 /// Object 的稳定语义快照。不绑定 ObjectRecord 内部布局。

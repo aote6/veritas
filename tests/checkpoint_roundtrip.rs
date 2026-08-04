@@ -92,10 +92,38 @@ fn checkpoint_root_hash_consistent() {
     let root_after = engine.state_root();
 
     // 恢复后 state_root 应与创建快照时一致
-    // state_root 基于 state_memory，而 restore 写 state_store 不更新 state_memory
-    // 这个测试验证当前行为，未来 state_root 切换到 state_store 后需调整
     let snap2 = engine.create_checkpoint();
     let snap3 = engine.create_checkpoint();
     assert_eq!(snap2.state_entries, snap3.state_entries,
         "连续两次 create_checkpoint 应该一致（世界未变）");
+}
+
+// ========== 5. 计数器 roundtrip（Stage 2 任务4） ==========
+
+#[test]
+fn checkpoint_counter_roundtrip() {
+    let kernel = Kernel::new();
+    build_world(&kernel);
+
+    let engine = kernel.engine();
+    let snap = engine.create_checkpoint();
+
+    // 验证快照包含计数器
+    assert!(snap.global_version > 0, "global_version should be > 0 after commit");
+    assert!(snap.object_id_counter > 2, "object_id_counter should be > 2 after two births");
+    assert!(snap.grant_sequence > 0, "grant_sequence should be > 0 after grant");
+
+    // restore 后计数器一致
+    engine.restore_checkpoint(&snap);
+    let snap2 = engine.create_checkpoint();
+    assert_eq!(snap.global_version, snap2.global_version, "global_version should survive roundtrip");
+    assert_eq!(snap.object_id_counter, snap2.object_id_counter, "object_id_counter should survive roundtrip");
+    assert_eq!(snap.grant_sequence, snap2.grant_sequence, "grant_sequence should survive roundtrip");
+
+    // restore 后继续执行：ObjectId 不会重用
+    let mut ctx = kernel.begin();
+    kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let snap3 = engine.create_checkpoint();
+    assert!(snap3.object_id_counter > snap.object_id_counter, "object_id_counter should advance after restore");
 }

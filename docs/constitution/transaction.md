@@ -181,7 +181,7 @@ SAVEPOINT 和 ROLLBACK_TO:
 | current_object | machine.rs ctx.current_object | 属于 TransactionContext |
 | call_stack | machine.rs Vec<CallFrame> | 已实现 |
 | 跨 Object 事务 | machine.rs Call/Return | 同一 tx 内切换 current_object |
-| Snapshot | state_memory.rs | 保持 |
+| Snapshot | store.rs StateStore | 保持 |
 | Savepoint | engine.rs savepoint | 保持现状，未来扩展 |
 
 ## 15. 实现要求
