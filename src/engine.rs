@@ -175,6 +175,117 @@ impl VeritasEngine {
         self.state_memory.lock().unwrap().root_hash()
     }
 
+    // ========== Stage 3.1: RootHash ==========
+
+    /// FNV-1a 确定性哈希。与 StateMemory::root_hash() 相同基础函数。
+    fn deterministic_hash(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &byte in bytes {
+            h ^= byte as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    }
+
+    /// 多个 u64 的 LE 8字节拼接后 FNV 哈希。
+    fn hash_u64s(items: &[u64]) -> u64 {
+        let mut buf = Vec::with_capacity(items.len() * 8);
+        for v in items {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        Self::deterministic_hash(&buf)
+    }
+
+    /// 对集合中每个元素调用 encode 函数拼接字节，最后 FNV 哈希。
+    /// 调用方负责在传入前排序。
+    fn hash_each<T, F>(items: &[T], encode: F) -> u64
+    where
+        F: Fn(&T, &mut Vec<u8>),
+    {
+        let mut buf = Vec::new();
+        for item in items {
+            encode(item, &mut buf);
+        }
+        Self::deterministic_hash(&buf)
+    }
+
+    /// 计算 WorldState 五组件的确定性根哈希。
+    ///
+    /// 五组件：StateStore, ObjectRegistry, Topology,
+    ///         CapabilityGraph, ScopeRegistry。
+    /// 每组件各自排序后独立哈希，最终 H(h1, h2, h3, h4, h5)。
+    pub fn root_hash(&self) -> u64 {
+        // 1. StateStore — Address 升序
+        let mut entries = self.state_store.all_entries();
+        entries.sort_by_key(|(addr, _)| *addr);
+        let h1 = Self::hash_each(&entries, |(addr, entry), buf| {
+            buf.extend_from_slice(&addr.object_id.to_le_bytes());
+            buf.extend_from_slice(&addr.state_id.to_le_bytes());
+            buf.extend_from_slice(&entry.value);
+            buf.extend_from_slice(&entry.version.to_le_bytes());
+        });
+
+        // 2. ObjectRegistry — ObjectId 升序
+        let mut records: Vec<(ObjectId, crate::types::ObjectRecord)> = {
+            let reg = self.object_registry.lock().unwrap();
+            reg.iter().map(|(id, r)| (*id, r.clone())).collect()
+        };
+        records.sort_by_key(|(id, _)| *id);
+        let h2 = Self::hash_each(&records, |(id, r), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            buf.push(r.state as u8);
+            buf.push(r.object_type as u8);
+            // ObjectBody 不进入 — Memory 内容属于 StateStore
+        });
+
+        // 3. Topology — (from, to, link_type) 升序
+        let mut edges = {
+            let topo = self.topology.lock().unwrap();
+            topo.clone()
+        };
+        edges.sort_by(|a, b| {
+            a.from.cmp(&b.from)
+                .then(a.to.cmp(&b.to))
+                .then((a.link_type as u8).cmp(&(b.link_type as u8)))
+        });
+        use crate::types::LinkType;
+        let h3 = Self::hash_each(&edges, |e, buf| {
+            buf.extend_from_slice(&e.from.to_le_bytes());
+            buf.extend_from_slice(&e.to.to_le_bytes());
+            buf.push(e.link_type as u8);
+        });
+
+        // 4. CapabilityGraph — CapabilityId 升序
+        let mut grants = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.all_grants()
+        };
+        grants.sort_by_key(|(id, _)| *id);
+        let h4 = Self::hash_each(&grants, |(id, info), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            buf.extend_from_slice(&info.granted_by.to_le_bytes());
+            buf.extend_from_slice(&info.root_holder.to_le_bytes());
+            buf.extend_from_slice(&info.resource.to_le_bytes());
+            buf.extend_from_slice(info.capability_type.as_bytes());
+        });
+
+        // 5. ScopeRegistry — ScopeId 升序，members 内部也排序
+        let mut scopes = self.scope_registry.all_scopes();
+        scopes.sort_by_key(|(id, _)| *id);
+        let h5 = Self::hash_each(&scopes, |(id, entry), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            let mut members = entry.members.clone();
+            members.sort();
+            for m in &members {
+                buf.extend_from_slice(&m.to_le_bytes());
+            }
+            buf.extend_from_slice(&entry.struct_version.to_le_bytes());
+        });
+
+        // 最终: H(h1, h2, h3, h4, h5)
+        Self::hash_u64s(&[h1, h2, h3, h4, h5])
+    }
+
     pub fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);

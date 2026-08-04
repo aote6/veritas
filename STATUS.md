@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 148 tests pass
+- 153 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -93,7 +93,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 148 tests pass
+- 153 tests pass
 
 
 ## Known gaps
@@ -138,10 +138,10 @@ Object lifecycle instructions stay Trap ABI
 - state_store/scope_registry 从 from_map() 预填改为 new() 空初始化
 - writes/scope_changes 完全由 apply() 循环第1、2步统一填充
 - apply_records() 保留（只需它的 pending_effects 和 max_tx_id）
-- 验证: 148 tests pass, wal_recovery_equivalence + robustness 全绿
+- 验证: 153 tests pass, wal_recovery_equivalence + robustness 全绿
 
 **Cross-tx unlink-then-death boundary test** ✅:
-- 2 tests added, 148 total
+- 2 tests added, 153 total
 
 ### Legacy — unchanged this cycle
 
@@ -156,7 +156,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ### Immediate (unlocked by Step 3)
 1. ✅ Step 3.5 — Effect retry: apply_records dedup + with_wal_path pending loop (2 tests)
 2. ⚠️ ObjectId allocation: Kernel internal allocator implemented (next_object_id), TRAP path works; pub engine.object_birth(ctx, id) still accepts caller-supplied ID — dual paths coexist, closure depends on P1b
-3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 148 total)
+3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 153 total)
 4. ✅ Cleanup: unused imports, dead code in test_truncated_transaction_committed_discarded
 
 ### Short-term
@@ -178,7 +178,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 148 tests pass.
+See README. 153 tests pass.
 
 
 ---
@@ -278,8 +278,34 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 | #4 | Capability 可关闭 + 旁路 | ✅ | capability_enforced 全链路删除（字段/初始化/方法/早退判断/machine.rs死代码），grant_base_access 确认为有意设计 |
 
 ### 测试状态
-148 tests, 0 failed, 0 ignored
+153 tests, 0 failed, 0 ignored
 
 ### 本轮附加发现
 - state_memory 影子系统: 与 state_store 平行脱节，影响后续 Checkpoint/Replay 设计
 - wal.rs unused import (PendingCapabilityGrant): 无害边角料，下次顺手清理
+
+
+---
+
+## Stage 3.1 RootHash — 2026-08-04
+
+### 实现
+- `engine.root_hash()` — WorldState 五组件确定性根哈希
+- 前置接口: `StateStore::all_entries()`, `CapabilityGraph::all_grants()`, `ScopeRegistry::all_scopes()`
+- 哈希: FNV-1a 变体，`u64` LE 编码，各组件独立排序后哈希，最终 H(h1..h5)
+- 五组件: StateStore, ObjectRegistry, Topology, CapabilityGraph, ScopeRegistry
+- ObjectBody 不入 Hash（Memory 内容属于 StateStore）
+- ObjectRegistry 保留 Dead 记录（object_id_counter 可重建）
+
+### 测试 (5 new)
+- `empty_world_root_hash_is_deterministic` — 空引擎 hash 非零且一致
+- `root_hash_changes_on_write` — 写入改变 hash
+- `root_hash_changes_on_birth` — 创建 Object 改变 hash
+- `root_hash_changes_on_link` — 建立 Link 改变 hash
+- `root_hash_order_independent` — 插入顺序不影响最终 hash
+
+### 不变式
+- 不修改 apply() / commit() / WAL
+- 不新增状态模型
+- 不引入第二套 hash 体系
+- 153 tests, 0 failed

@@ -52,6 +52,13 @@ impl StateStore {
         map.contains_key(&addr)
     }
 
+    /// 返回所有状态的克隆（用于 RootHash 规范化计算）。
+    /// 不持有锁——调用方负责排序和哈希。
+    pub fn all_entries(&self) -> Vec<(Address, StateEntry)> {
+        let map = self.map.lock().unwrap();
+        map.iter().map(|(addr, entry)| (*addr, entry.clone())).collect()
+    }
+
     /// 获取所有状态（用于恢复）
     pub fn into_inner(self) -> HashMap<Address, StateEntry> {
         self.map.into_inner().unwrap()

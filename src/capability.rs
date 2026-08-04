@@ -109,6 +109,11 @@ impl CapabilityGraph {
         self.grant_sequence
     }
 
+    /// 返回所有授权信息的克隆（用于 RootHash 规范化计算）。
+    pub fn all_grants(&self) -> Vec<(CapabilityId, CapabilityInfo)> {
+        self.grants.iter().map(|(id, info)| (*id, info.clone())).collect()
+    }
+
     /// 恢复时用：使用指定的 grant_sequence 重新生成 Capability，
     /// 保证计算出的 CapabilityId 与崩溃前 100% 一致。
     pub fn grant_with_sequence(

@@ -56,6 +56,12 @@ impl ScopeRegistry {
             .map(|e| e.struct_version)
     }
 
+    /// 返回所有 Scope 的克隆（用于 RootHash 规范化计算）。
+    pub fn all_scopes(&self) -> Vec<(ScopeId, ScopeEntry)> {
+        let map = self.scopes.read().unwrap();
+        map.iter().map(|(id, entry)| (*id, entry.clone())).collect()
+    }
+
     /// 只在 commit 阶段调用，真正落地结构变更
     pub fn apply_bind(&self, scope_id: ScopeId, state_id: StateId) {
         if let Some(entry) = self.scopes.write().unwrap().get_mut(&scope_id) {
