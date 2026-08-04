@@ -331,19 +331,46 @@ impl VeritasEngine {
 
     /// 创建 WorldState 完整快照。
     /// Commitment Domain 五组件 + Continuation Metadata。
+    /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
     pub fn create_checkpoint(&self) -> WorldSnapshot {
+        let tx_id = self.tx_mgr.current_tx_id();
+        let state_entries = self.state_store.snapshot();
+        let objects = self.snapshot_objects();
+        let links = self.snapshot_links();
+        let capability_records = self.capability_graph.lock().unwrap().snapshot_capabilities();
+        let scopes = self.scope_registry.snapshot_all_scopes();
+
+        // commitment_hash 直接用 engine 已有的 root_hash，不另写算法
+        let commitment_hash = {
+            let h = self.state_root();
+            let mut bytes = [0u8; 32];
+            bytes[0..8].copy_from_slice(&h.to_le_bytes());
+            bytes
+        };
+
         WorldSnapshot {
-            commitment_hash: [0u8; 32],
-            tx_id: self.tx_mgr.current_tx_id(),
-            state_entries: Vec::new(),
-            capability_records: Vec::new(),
-            objects: Vec::new(),
-            links: Vec::new(),
-            scopes: Vec::new(),
+            commitment_hash,
+            tx_id,
+            state_entries,
+            capability_records,
+            objects,
+            links,
+            scopes,
         }
     }
 
-    pub fn restore_checkpoint(&self, _snap: &WorldSnapshot) -> bool {
+    /// PR3: 从 WorldSnapshot 恢复五组件。固定恢复顺序，不做交叉依赖。
+    pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+        // 1. StateStore
+        self.state_store.restore_snapshot(&snap.state_entries);
+        // 2. ObjectRegistry
+        self.restore_objects(&snap.objects);
+        // 3. Topology
+        self.restore_links(&snap.links);
+        // 4. CapabilityGraph
+        self.capability_graph.lock().unwrap().restore_capabilities(&snap.capability_records);
+        // 5. ScopeRegistry
+        self.scope_registry.restore_scopes(&snap.scopes);
         true
     }
     pub fn apply_state_memory(&self, _ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {

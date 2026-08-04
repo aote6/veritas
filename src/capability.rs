@@ -98,13 +98,17 @@ impl CapabilityGraph {
         self.edges.clear();
         self.children.clear();
         for rec in records {
-            self.grant_with_sequence(
-                rec.capability_type.clone(),
-                rec.granted_by,
-                rec.holder,
-                rec.resource,
-                self.grant_sequence,
-            );
+            let cap_id = capability_id_of(rec.granted_by, rec.holder, rec.resource, self.grant_sequence);
+            self.grants.insert(cap_id, CapabilityInfo {
+                capability_type: rec.capability_type.clone(),
+                granted_by: rec.granted_by,
+                root_holder: rec.holder,
+                resource: rec.resource,
+            });
+            self.holders.insert((cap_id, rec.holder), HolderRecord {
+                active: rec.active,
+                parent: None,
+            });
         }
     }
 
@@ -112,12 +116,18 @@ impl CapabilityGraph {
     pub fn snapshot_capabilities(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
         let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.grants
             .iter()
-            .map(|(_id, info)| crate::types::CapabilitySemanticRecord {
-                granted_by: info.granted_by,
-                holder: info.root_holder,
-                resource: info.resource,
-                capability_type: info.capability_type.clone(),
-                active: true,
+            .map(|(cap_id, info)| {
+                let active = self.holders
+                    .get(&(*cap_id, info.root_holder))
+                    .map(|r| r.active)
+                    .unwrap_or(false);
+                crate::types::CapabilitySemanticRecord {
+                    granted_by: info.granted_by,
+                    holder: info.root_holder,
+                    resource: info.resource,
+                    capability_type: info.capability_type.clone(),
+                    active,
+                }
             })
             .collect();
         result.sort_by(|a, b| {
