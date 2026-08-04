@@ -136,6 +136,27 @@ Capability 树:
 - 撤销上游边时，下游级联撤销
 - Object 死亡时，所有以它为 resource 的 Capability 自动失效（lazy validation）
 
+### 6.1 自身对象访问豁免（Self-Access Exemption）
+
+当前执行上下文对自身所在 Object 的 MemorySpace 访问是**结构性豁免**，
+不经过 Capability 图查询。
+
+规则：
+- 若 `addr.object_id == ctx.current_object`，视为天然授权，无需持有
+  任何 Capability。
+- 语义上等价于 BaseAccess（grantor=grantee=resource=object_id），
+  但**不实例化为 CapabilityGraph 中的记录**，因此不进入 root_hash
+  （Commitment Domain），也不参与账本增长。
+- 此规则是对 Capability 唯一授权原则的**结构性补充**，不是例外——
+  自身访问的授权来源于 Object 的存在本身，而非外部授予。
+
+设计理由：
+- BaseAccess 可从 object_id 纯函数式推导，不携带跨事务状态，
+  不应进入持久化或确定性承诺域。
+- 若实例化为 cap_graph 记录，每次 begin_in_object 都会产生一条
+  永久记录，导致 root_hash 随对象访问频率漂移，破坏 live/recovery
+  状态一致性。
+
 ## 7. 当前实现映射
 
 | 规范定义 | 当前代码 | 未来方向 |

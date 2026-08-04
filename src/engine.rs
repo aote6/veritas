@@ -123,10 +123,17 @@ impl VeritasEngine {
     }
 
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+        // 结构性豁免：对象访问自己当前所在的 object 是天然授权的。
+        // 语义上等价于 BaseAccess，但不再实例化为 cap_graph 中的记录，
+        // 避免污染 root_hash（Commitment Domain）与 cap_graph 账本无限增长。
+        // 详见 docs/constitution/kernel.md §6 "自身对象访问豁免"。
 
         let cap_graph = self.capability_graph.lock().unwrap();
 
         for (addr, _) in &ctx.write_set.changes {
+            if addr.object_id == ctx.current_object {
+                continue;
+            }
             let has_valid_cap = ctx.capabilities.iter().any(|cap_id| {
                 cap_graph.is_capability_valid(*cap_id)
                     && cap_graph
@@ -256,18 +263,27 @@ impl VeritasEngine {
             buf.push(e.link_type as u8);
         });
 
-        // 4. CapabilityGraph — CapabilityId 升序
-        let mut grants = {
+        // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
+        let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.all_grants()
+                .into_iter()
+                .map(|(_, info)| {
+                    (info.granted_by, info.root_holder, info.resource, info.capability_type)
+                })
+                .collect()
         };
-        grants.sort_by_key(|(id, _)| *id);
-        let h4 = Self::hash_each(&grants, |(id, info), buf| {
-            buf.extend_from_slice(&id.to_le_bytes());
-            buf.extend_from_slice(&info.granted_by.to_le_bytes());
-            buf.extend_from_slice(&info.root_holder.to_le_bytes());
-            buf.extend_from_slice(&info.resource.to_le_bytes());
-            buf.extend_from_slice(info.capability_type.as_bytes());
+        grants.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.2.cmp(&b.2))
+                .then(a.3.cmp(&b.3))
+        });
+        let h4 = Self::hash_each(&grants, |g, buf| {
+            buf.extend_from_slice(&g.0.to_le_bytes());
+            buf.extend_from_slice(&g.1.to_le_bytes());
+            buf.extend_from_slice(&g.2.to_le_bytes());
+            buf.extend_from_slice(g.3.as_bytes());
         });
 
         // 5. ScopeRegistry — ScopeId 升序，members 内部也排序
@@ -326,17 +342,27 @@ impl VeritasEngine {
             buf.push(e.link_type as u8);
         });
 
-        let mut grants = {
+        // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
+        let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.all_grants()
+                .into_iter()
+                .map(|(_, info)| {
+                    (info.granted_by, info.root_holder, info.resource, info.capability_type)
+                })
+                .collect()
         };
-        grants.sort_by_key(|(id, _)| *id);
-        let h4 = Self::hash_each(&grants, |(id, info), buf| {
-            buf.extend_from_slice(&id.to_le_bytes());
-            buf.extend_from_slice(&info.granted_by.to_le_bytes());
-            buf.extend_from_slice(&info.root_holder.to_le_bytes());
-            buf.extend_from_slice(&info.resource.to_le_bytes());
-            buf.extend_from_slice(info.capability_type.as_bytes());
+        grants.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.2.cmp(&b.2))
+                .then(a.3.cmp(&b.3))
+        });
+        let h4 = Self::hash_each(&grants, |g, buf| {
+            buf.extend_from_slice(&g.0.to_le_bytes());
+            buf.extend_from_slice(&g.1.to_le_bytes());
+            buf.extend_from_slice(&g.2.to_le_bytes());
+            buf.extend_from_slice(g.3.as_bytes());
         });
 
         let mut scopes = self.scope_registry.all_scopes();
@@ -525,27 +551,12 @@ impl VeritasEngine {
         self.controller.begin(snapshot_version)
     }
 
-    // 设计说明：BaseAccess cap 由 object_id 自身确定性推导
-    // (grantor=grantee=resource=object_id)，不携带跨事务状态，
-    // 每次 begin_in_object 重新生成，因此不经过
-    // pending_capabilities/WAL 持久化路径。
-    // 这是有意设计的按需生成，不是审计发现的旁路 bug。
-    fn grant_base_access(&self, ctx: &mut TransactionContext, object_id: ObjectId) {
-        let mut cap_graph = self.capability_graph.lock().unwrap();
-        let cap_id = cap_graph.grant(
-            "BaseAccess".into(),
-            object_id,
-            object_id,
-            object_id,
-        );
-        ctx.capabilities.push(cap_id);
-    }
+
 
 
     pub(crate) fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
         let mut ctx = self.begin();
         ctx.enter_object(object_id);
-        self.grant_base_access(&mut ctx, object_id);
         ctx
     }
     pub(crate) fn read(

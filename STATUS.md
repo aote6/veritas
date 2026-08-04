@@ -350,9 +350,12 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - `receipt_before_after_consistency` — before_root != after_root, after 一致
 - `receipt_replay_consistency` — Replay == idle Recovery, receipt.after == live engine
 
-### 已知未闭合
-- Live runtime root_hash ≠ Recovery reconstructed root_hash
-- 非 Delta 完整性问题（Replay == Recovery 已验证）
-- 根因：非 WAL 持久化的运行时元数据可能进入了 root_hash 计算
-- 需 Stage 3.4 明确 Commitment Domain（哪些组件进入承诺，哪些是运行时）
+### Stage 3.4a 闭合 — 2026-08-04
+
+**Commitment Domain 修正：**
+- CapabilityGraph hash 改为纯语义 hash（去掉 CapabilityId）
+- grant_base_access 删除：自身对象访问改为 verify_capability 结构性豁免
+- 根因：grant_base_access 直接写 cap_graph 绕过 WAL，污染 root_hash
+- 修复后 live == recovery 五组件全部一致
+- constitution/kernel.md §6.1 新增"自身对象访问豁免"条款
 - 160 tests, 0 failed
