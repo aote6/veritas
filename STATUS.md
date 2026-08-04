@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 160 tests pass
+- 162 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -93,7 +93,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 160 tests pass
+- 162 tests pass
 
 
 ## Known gaps
@@ -138,7 +138,7 @@ Object lifecycle instructions stay Trap ABI
 - state_store/scope_registry 从 from_map() 预填改为 new() 空初始化
 - writes/scope_changes 完全由 apply() 循环第1、2步统一填充
 - apply_records() 保留（只需它的 pending_effects 和 max_tx_id）
-- 验证: 160 tests pass, wal_recovery_equivalence + robustness 全绿
+- 验证: 162 tests pass, wal_recovery_equivalence + robustness 全绿
 
 **Cross-tx unlink-then-death boundary test** ✅:
 - 2 tests added, 157 total
@@ -178,7 +178,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 160 tests pass.
+See README. 162 tests pass.
 
 
 ---
@@ -278,7 +278,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 | #4 | Capability 可关闭 + 旁路 | ✅ | capability_enforced 全链路删除（字段/初始化/方法/早退判断/machine.rs死代码），grant_base_access 确认为有意设计 |
 
 ### 测试状态
-160 tests, 0 failed, 0 ignored
+162 tests, 0 failed, 0 ignored
 
 ### 本轮附加发现
 - state_memory 影子系统: 与 state_store 平行脱节，影响后续 Checkpoint/Replay 设计
@@ -308,7 +308,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 不修改 apply() / commit() / WAL
 - 不新增状态模型
 - 不引入第二套 hash 体系
-- 160 tests, 0 failed
+- 162 tests, 0 failed
 
 
 ---
@@ -332,7 +332,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 不新增 apply 变体
 - 不处理 Effect
 - Replay 验证的是 WAL 中已提交的完整历史
-- 160 tests, 0 failed
+- 162 tests, 0 failed
 
 
 ---
@@ -358,4 +358,4 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 根因：grant_base_access 直接写 cap_graph 绕过 WAL，污染 root_hash
 - 修复后 live == recovery 五组件全部一致
 - constitution/kernel.md §6.1 新增"自身对象访问豁免"条款
-- 160 tests, 0 failed
+- 162 tests, 0 failed
