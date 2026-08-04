@@ -1,5 +1,3 @@
-use crate::history::{ExecutionHistory, ReplayRecord};
-use crate::state_memory::StateMemory;
 // Veritas Kernel V0.3 - 事务引擎核心
 // P1: WAL 格式扩展 + Effect 崩溃恢复重试 + tx_id_counter 恢复续接
 
@@ -43,8 +41,6 @@ pub struct VeritasEngine {
     #[allow(dead_code)]
     lock_mgr: Arc<LockManager>,
     controller: TransactionController,
-    pub state_memory: std::sync::Mutex<StateMemory>,
-    pub history: std::sync::Mutex<ExecutionHistory>,
 
     object_id_counter: AtomicU64,
     /// Test probe: DependencyInvalidated pairs from last commit. Not for production use.
@@ -318,19 +314,6 @@ impl VeritasEngine {
         Ok(())
     }
 
-    pub fn record_history(&self, ctx: &crate::types::TransactionContext) {
-        let before = self.state_root();
-        let write_set = &ctx.write_set;
-        self.apply_state_memory(ctx, write_set);
-        let after = self.state_root();
-        if let Ok(mut hist) = self.history.lock() {
-            let writes_for_record: Vec<(crate::types::Address, Vec<u8>)> = write_set.changes.iter().map(|(addr, val)| (*addr, val.clone())).collect();
-        hist.push(ReplayRecord::new(ctx.tx_id(), ctx.capabilities.clone(), ctx.program_hash.unwrap_or(0), writes_for_record, before, after));
-        }
-    }
-
-    /// 创建 WorldState 完整快照。
-    /// Commitment Domain 五组件 + Continuation Metadata。
     /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
     pub fn create_checkpoint(&self) -> WorldSnapshot {
         let tx_id = self.tx_mgr.current_tx_id();
@@ -373,21 +356,14 @@ impl VeritasEngine {
         self.scope_registry.restore_scopes(&snap.scopes);
         true
     }
-    pub fn apply_state_memory(&self, _ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
-        if let Ok(mut mem) = self.state_memory.lock() {
-            for (addr, payload) in &write_set.changes {
-                mem.write(*addr, payload.clone());
-            }
-        }
-    }
 
     pub fn state_root(&self) -> u64 {
-        self.state_memory.lock().unwrap().root_hash()
+        self.root_hash()
     }
 
     // ========== Stage 3.1: RootHash ==========
 
-    /// FNV-1a 确定性哈希。与 StateMemory::root_hash() 相同基础函数。
+    /// FNV-1a 确定性哈希。
     fn deterministic_hash(bytes: &[u8]) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
         for &byte in bytes {
@@ -591,9 +567,7 @@ impl VeritasEngine {
         use crate::tx_manager::TransactionManager;
         use crate::controller::TransactionController;
         use crate::capability::CapabilityGraph;
-        use crate::history::ExecutionHistory;
-        use crate::state_memory::StateMemory;
-        use crate::store::StateStore;
+                use crate::store::StateStore;
         use crate::scope_registry::ScopeRegistry;
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(1));
@@ -613,8 +587,6 @@ impl VeritasEngine {
             tx_mgr,
             lock_mgr,
             controller,
-            state_memory: Mutex::new(StateMemory::new()),
-            history: Mutex::new(ExecutionHistory::new()),
             object_id_counter: AtomicU64::new(1),
             last_dep_inv: Mutex::new(Vec::new()),
         }
@@ -669,8 +641,6 @@ impl VeritasEngine {
             tx_mgr,
             lock_mgr,
             controller,
-            state_memory: std::sync::Mutex::new(StateMemory::new()),
-            history: std::sync::Mutex::new(ExecutionHistory::new()),
             object_id_counter: AtomicU64::new(next_object_id),
             last_dep_inv: std::sync::Mutex::new(Vec::new()),
         };
@@ -954,7 +924,6 @@ impl VeritasEngine {
         }
 
         self.controller.post_commit(ctx.tx_id());
-        self.record_history(ctx);
 
         let after_root = self.root_hash();
         let receipt = TransactionReceipt {

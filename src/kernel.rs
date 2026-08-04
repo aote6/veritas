@@ -275,9 +275,6 @@ impl Kernel {
         self.engine.has_link(from, to)
     }
 
-    pub fn record_history(&self, ctx: &TransactionContext) {
-        self.engine.record_history(ctx)
-    }
 
     pub fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
@@ -287,9 +284,6 @@ impl Kernel {
         self.engine.restore_checkpoint(snap)
     }
 
-    pub fn apply_state_memory(&self, _ctx: &TransactionContext, write_set: &WriteSet) {
-        self.engine.apply_state_memory(_ctx, write_set)
-    }
 
     pub fn state_root(&self) -> u64 {
         self.engine.state_root()

@@ -1,7 +1,6 @@
 pub mod runtime;
 pub mod module;
 pub mod memory;
-pub mod state_memory;
 pub mod machine;
 pub mod instruction;
 pub mod instruction_codec;
@@ -111,12 +110,8 @@ HALT";
 
     }
 }
-pub mod checkpoint;
-pub mod history;
-pub mod replay;
 pub mod trace;
 pub mod execution;
 pub mod event;
 pub mod receipt;
-pub mod replay_verify;
 
