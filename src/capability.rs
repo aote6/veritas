@@ -91,6 +91,23 @@ impl CapabilityGraph {
         self.all_grants()
     }
 
+    /// 从 CapabilitySemanticRecord 恢复，清空后重建。
+    pub fn restore_capabilities(&mut self, records: &[crate::types::CapabilitySemanticRecord]) {
+        self.grants.clear();
+        self.holders.clear();
+        self.edges.clear();
+        self.children.clear();
+        for rec in records {
+            self.grant_with_sequence(
+                rec.capability_type.clone(),
+                rec.granted_by,
+                rec.holder,
+                rec.resource,
+                self.grant_sequence,
+            );
+        }
+    }
+
     /// PR2.1: 导出 Capability 稳定语义快照。不暴露 CapabilityInfo。
     pub fn snapshot_capabilities(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
         let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.grants

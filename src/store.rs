@@ -70,8 +70,8 @@ impl StateStore {
         map.iter().map(|(addr, entry)| (*addr, entry.value.clone())).collect()
     }
 
-    /// 从纯字节快照加载，清空后重建。
-    pub fn load_snapshot(&self, entries: &[(Address, Vec<u8>)]) {
+    /// 从纯字节快照恢复，清空后重建。
+    pub fn restore_snapshot(&self, entries: &[(Address, Vec<u8>)]) {
         let mut map = self.map.lock().unwrap();
         map.clear();
         for (addr, bytes) in entries {

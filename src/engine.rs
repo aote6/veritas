@@ -119,7 +119,7 @@ impl VeritasEngine {
     }
 
     /// 将 ObjectBody 序列化为稳定字节。不引入外部 serde 依赖。
-    fn serialize_object_body(body: &crate::types::ObjectBody) -> Vec<u8> {
+    pub fn serialize_object_body(body: &crate::types::ObjectBody) -> Vec<u8> {
         match body {
             crate::types::ObjectBody::State => vec![0x00],
             crate::types::ObjectBody::Module {
@@ -163,6 +163,87 @@ impl VeritasEngine {
         ctx.capabilities.push(cap_id);
     }
 
+    /// 从 ObjectSnapshot 恢复 ObjectRegistry，清空后重建。
+    pub fn restore_objects(&self, snapshots: &[crate::types::ObjectSnapshot]) {
+        let mut registry = self.object_registry.lock().unwrap();
+        registry.clear();
+        for snap in snapshots {
+            registry.insert(snap.id, crate::types::ObjectRecord {
+                id: snap.id,
+                object_type: snap.object_type,
+                state: snap.lifecycle_state,
+                body: Self::deserialize_object_body(&snap.payload),
+            });
+        }
+    }
+
+    /// 将稳定字节反序列化为 ObjectBody。与 serialize_object_body 互逆。
+    pub fn deserialize_object_body(payload: &[u8]) -> crate::types::ObjectBody {
+        if payload.is_empty() {
+            return crate::types::ObjectBody::State;
+        }
+        match payload[0] {
+            0x00 => crate::types::ObjectBody::State,
+            0x01 => {
+                let mut pos = 1;
+                // code_section
+                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                pos += 4;
+                let code_section = payload[pos..pos+len].to_vec();
+                pos += len;
+                // import_section
+                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                pos += 4;
+                let mut import_section = Vec::new();
+                for _ in 0..len {
+                    let id = u64::from_le_bytes([
+                        payload[pos], payload[pos+1], payload[pos+2], payload[pos+3],
+                        payload[pos+4], payload[pos+5], payload[pos+6], payload[pos+7],
+                    ]);
+                    import_section.push(id);
+                    pos += 8;
+                }
+                // export_section
+                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                pos += 4;
+                let mut export_section = std::collections::HashMap::new();
+                for _ in 0..len {
+                    let name_len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                    pos += 4;
+                    let name = String::from_utf8(payload[pos..pos+name_len].to_vec()).unwrap_or_default();
+                    pos += name_len;
+                    let idx = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                    pos += 4;
+                    export_section.insert(name, idx);
+                }
+                // verification_rule
+                let verification_rule = match payload[pos] {
+                    0x00 => None,
+                    0x01 => {
+                        pos += 1;
+                        let max_instances = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]);
+                        pos += 4;
+                        let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                        pos += 4;
+                        let allow_instructions = payload[pos..pos+len].to_vec();
+                        Some(crate::types::VerificationRule {
+                            max_instances: if max_instances == 0 { None } else { Some(max_instances) },
+                            allow_instructions,
+                        })
+                    }
+                    _ => None,
+                };
+                crate::types::ObjectBody::Module {
+                    code_section,
+                    import_section,
+                    export_section,
+                    verification_rule,
+                }
+            }
+            _ => crate::types::ObjectBody::State,
+        }
+    }
+
     /// PR2.1: 导出 Link 稳定语义快照。不暴露 LinkEdge。
     pub fn snapshot_links(&self) -> Vec<crate::types::LinkSnapshot> {
         let topo = self.topology.lock().unwrap();
@@ -176,6 +257,19 @@ impl VeritasEngine {
             .collect();
         result.sort_by(|a, b| a.from.cmp(&b.from).then(a.to.cmp(&b.to)).then((a.link_type as u8).cmp(&(b.link_type as u8))));
         result
+    }
+
+    /// 从 LinkSnapshot 恢复 Topology，清空后重建。
+    pub fn restore_links(&self, snapshots: &[crate::types::LinkSnapshot]) {
+        let mut topo = self.topology.lock().unwrap();
+        topo.clear();
+        for snap in snapshots {
+            topo.push(crate::types::LinkEdge {
+                from: snap.from,
+                to: snap.to,
+                link_type: snap.link_type,
+            });
+        }
     }
 
     /// 只读查询：某个 holder 是否持有某个 cap_id 且该 cap 有效。测试与外部诊断用。

@@ -70,6 +70,20 @@ impl ScopeRegistry {
         map.iter().map(|(id, entry)| (*id, entry.clone())).collect()
     }
 
+    /// 从 ScopeSnapshot 恢复，清空后重建。
+    pub fn restore_scopes(&self, snapshots: &[crate::types::ScopeSnapshot]) {
+        let mut map = self.scopes.write().unwrap();
+        map.clear();
+        for snap in snapshots {
+            let mut entry = crate::types::ScopeEntry::new();
+            entry.owner = snap.owner as crate::types::ModuleId;
+            for member in &snap.members {
+                entry.bind(*member);
+            }
+            map.insert(snap.scope_id, entry);
+        }
+    }
+
     /// PR2.1: 导出 Scope 稳定语义快照。不暴露 ScopeEntry。
     pub fn snapshot_all_scopes(&self) -> Vec<crate::types::ScopeSnapshot> {
         let map = self.scopes.read().unwrap();

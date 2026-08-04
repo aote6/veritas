@@ -753,7 +753,7 @@ pub struct WorldSnapshot {
 }
 
 /// Object 的稳定语义快照。不绑定 ObjectRecord 内部布局。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectSnapshot {
     pub id: ObjectId,
     pub object_type: ObjectType,
@@ -763,7 +763,7 @@ pub struct ObjectSnapshot {
 }
 
 /// Link 的稳定语义快照。结构体形式支持未来扩展字段。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkSnapshot {
     pub from: ObjectId,
     pub to: ObjectId,
@@ -771,7 +771,7 @@ pub struct LinkSnapshot {
 }
 
 /// Scope 的稳定语义快照。owner 使用 ObjectId，不暴露 ModuleId。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeSnapshot {
     pub scope_id: ScopeId,
     pub members: Vec<StateId>,
