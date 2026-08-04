@@ -142,13 +142,16 @@ Capability 树:
 不经过 Capability 图查询。
 
 规则：
-- 若 `addr.object_id == ctx.current_object`，视为天然授权，无需持有
+- 若 `addr.object_id == ctx.current_object`，视为天然允许，无需持有
   任何 Capability。
+- 自身对象访问不是授权行为，而是地址空间归属规则。
+  Capability 控制的是 Object 之间的跨域访问。
+  Object 对自身 MemorySpace 的访问由当前执行上下文的 ObjectIdentity 决定。
 - 语义上等价于 BaseAccess（grantor=grantee=resource=object_id），
   但**不实例化为 CapabilityGraph 中的记录**，因此不进入 root_hash
   （Commitment Domain），也不参与账本增长。
-- 此规则是对 Capability 唯一授权原则的**结构性补充**，不是例外——
-  自身访问的授权来源于 Object 的存在本身，而非外部授予。
+- Capability 是所有跨 Object 访问的唯一授权来源；
+  Object 对自身 MemorySpace 的访问属于结构性内建权限，不属于 Capability 授权范畴。
 
 设计理由：
 - BaseAccess 可从 object_id 纯函数式推导，不携带跨事务状态，
