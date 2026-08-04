@@ -172,27 +172,27 @@ impl Kernel {
             KernelCall::ObjectBirth { object_type: _object_type } => {
                 // Step 3/ObjectId: Kernel allocates ObjectId internally
                 let id = self.engine.next_object_id();
-                self.object_birth(ctx, id)?;
+                self.engine.object_birth(ctx, id)?;
                 Ok(TrapResult::ObjectId(id))
             }
             KernelCall::ObjectDeath { object_id } => {
-                self.object_death(ctx, object_id)?;
+                self.engine.object_death(ctx, object_id)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::ObjectLink { from, to, link_type } => {
-                self.object_link(ctx, from, to, link_type)?;
+                self.engine.object_link(ctx, from, to, link_type)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::ObjectUnlink { from, to } => {
-                self.object_unlink(ctx, from, to)?;
+                self.engine.object_unlink(ctx, from, to)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::ObjectFreeze { object_id } => {
-                self.object_freeze(ctx, object_id)?;
+                self.engine.object_freeze(ctx, object_id)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::CapabilityGrant { grantee, capability_type, resource } => {
-                let cap_id = self.capability_grant(ctx, grantee, &capability_type, resource)?;
+                let cap_id = self.engine.capability_grant(ctx, grantee, &capability_type, resource)?;
                 Ok(TrapResult::CapabilityId(cap_id))
             }
             KernelCall::CapabilityRevoke { .. } => {
@@ -204,7 +204,7 @@ impl Kernel {
                 Ok(TrapResult::Success)
             }
             KernelCall::Abort { reason } => {
-                self.abort(ctx, reason);
+                self.engine.abort(ctx, reason);
                 Ok(TrapResult::Success)
             }
             KernelCall::Commit => {
@@ -226,7 +226,6 @@ impl Kernel {
         }
     }
 
-    // ===== Phase 1: Pass-through delegation ====="
 
 
     // Each method delegates directly to the corresponding VeritasEngine method.
@@ -337,62 +336,12 @@ impl Kernel {
         self.engine.commit(ctx)
     }
 
-    pub fn capability_grant(
-        &self,
-        ctx: &mut TransactionContext,
-        grantee: ObjectId,
-        capability_type: &str,
-        resource: ObjectId,
-    ) -> Result<CapabilityId, VeritasError> {
-        self.engine.capability_grant(ctx, grantee, capability_type, resource)
-    }
 
-    pub fn object_freeze(
-        &self,
-        ctx: &mut TransactionContext,
-        object_id: ObjectId,
-    ) -> Result<(), VeritasError> {
-        self.engine.object_freeze(ctx, object_id)
-    }
 
-    pub fn object_death(
-        &self,
-        ctx: &mut TransactionContext,
-        object_id: ObjectId,
-    ) -> Result<(), VeritasError> {
-        self.engine.object_death(ctx, object_id)
-    }
 
-    pub fn object_link(
-        &self,
-        ctx: &mut TransactionContext,
-        from: ObjectId,
-        to: ObjectId,
-        link_type: LinkType,
-    ) -> Result<(), VeritasError> {
-        self.engine.object_link(ctx, from, to, link_type)
-    }
 
-    pub fn object_unlink(
-        &self,
-        ctx: &mut TransactionContext,
-        from: ObjectId,
-        to: ObjectId,
-    ) -> Result<(), VeritasError> {
-        self.engine.object_unlink(ctx, from, to)
-    }
 
-    pub fn object_birth(
-        &self,
-        ctx: &mut TransactionContext,
-        object_id: ObjectId,
-    ) -> Result<(), VeritasError> {
-        self.engine.object_birth(ctx, object_id)
-    }
 
-    pub fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
-        self.engine.abort(ctx, reason)
-    }
 
     pub fn get_global_version(&self) -> Version {
         self.engine.get_global_version()
@@ -437,8 +386,8 @@ mod kernel_tests {
         {
             let _machine1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 10).unwrap();
-            kernel.object_birth(&mut ctx, 20).unwrap();
+            kernel.engine.object_birth(&mut ctx, 10).unwrap();
+            kernel.engine.object_birth(&mut ctx, 20).unwrap();
             kernel.commit(&mut ctx).unwrap();
         }
         {
@@ -454,7 +403,7 @@ mod kernel_tests {
     fn kernel_persists_object_across_machines() {
         let kernel = Kernel::new();
         let mut ctx = kernel.begin();
-        kernel.object_birth(&mut ctx, 42).unwrap();
+        kernel.engine.object_birth(&mut ctx, 42).unwrap();
         kernel.commit(&mut ctx).unwrap();
         let ctx2 = kernel.begin();
         assert_eq!(kernel.get_object_state(42), Some(ObjectState::Alive));
@@ -466,7 +415,7 @@ mod kernel_tests {
         let kernel = Kernel::new();
         {
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 100).unwrap();
+            kernel.engine.object_birth(&mut ctx, 100).unwrap();
             kernel.commit(&mut ctx).unwrap();
         }
         assert_eq!(kernel.get_object_state(100), Some(ObjectState::Alive));
@@ -479,11 +428,11 @@ mod kernel_tests {
     fn kernel_object_id_monotonic_across_machines() {
         let kernel = Kernel::new();
         let mut ctx1 = kernel.begin();
-        kernel.object_birth(&mut ctx1, 1).unwrap();
-        kernel.object_birth(&mut ctx1, 2).unwrap();
+        kernel.engine.object_birth(&mut ctx1, 1).unwrap();
+        kernel.engine.object_birth(&mut ctx1, 2).unwrap();
         kernel.commit(&mut ctx1).unwrap();
         let mut ctx2 = kernel.begin();
-        kernel.object_birth(&mut ctx2, 3).unwrap();
+        kernel.engine.object_birth(&mut ctx2, 3).unwrap();
         kernel.commit(&mut ctx2).unwrap();
         assert_eq!(kernel.get_object_state(1), Some(ObjectState::Alive));
         assert_eq!(kernel.get_object_state(2), Some(ObjectState::Alive));
@@ -497,7 +446,7 @@ mod kernel_tests {
         {
             let _machine1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 77).unwrap();
+            kernel.engine.object_birth(&mut ctx, 77).unwrap();
             kernel.commit(&mut ctx).unwrap();
         }
         {
@@ -686,7 +635,7 @@ mod kernel_tests {
         // First execution: create an object
         {
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 1).unwrap();
+            kernel.engine.object_birth(&mut ctx, 1).unwrap();
             kernel.commit(&mut ctx).unwrap();
         }
 
@@ -710,8 +659,8 @@ mod kernel_tests {
         {
             let _m1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 100).unwrap();
-            kernel.object_birth(&mut ctx, 200).unwrap();
+            kernel.engine.object_birth(&mut ctx, 100).unwrap();
+            kernel.engine.object_birth(&mut ctx, 200).unwrap();
             kernel.commit(&mut ctx).unwrap();
         }
 
@@ -736,11 +685,11 @@ mod kernel_tests {
         {
             let _m1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
-            kernel.object_birth(&mut ctx, 10).unwrap();
+            kernel.engine.object_birth(&mut ctx, 10).unwrap();
             kernel.commit(&mut ctx).unwrap();
 
             let mut ctx2 = kernel.begin();
-            kernel.capability_grant(&mut ctx2, 10, "read", 10).unwrap();
+            kernel.engine.capability_grant(&mut ctx2, 10, "read", 10).unwrap();
             kernel.commit(&mut ctx2).unwrap();
         }
 

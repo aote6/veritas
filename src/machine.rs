@@ -131,7 +131,6 @@ impl Machine {
         });
     }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
-    pub fn enable_capability_enforcement(&mut self) { self.ctx.enforce_capability(); }
     pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 

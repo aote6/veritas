@@ -1,6 +1,6 @@
 === Veritas Kernel STATUS ===
 
-Date: 2026-08-03
+Date: 2026-08-04
 Branch: main
 
 ## Current milestone
@@ -77,15 +77,13 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 184 tests pass
+- 148 tests pass
 
 ### Remaining Step 2 tech debt
 
-- state_map/apply_records is now redundant for recovery state_store init;
-  apply() step 1 writes the same data again. Clean up by letting apply()
-  fully own state_store init, keeping apply_records only for scope_map/effects.
-- Missing test: cross-tx unlink-then-death recovery (tx1 link, tx2 unlink, tx3 death)
-  to verify topology correctly reflects unlink before closure recomputation.
+✅ All resolved (2026-08-04):
+- state_map/apply_records dual path eliminated — state_store init fully owned by apply()
+- Cross-tx unlink-then-death test added
 
 ## Step 3 (atomic WAL write) completed
 
@@ -95,22 +93,24 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 184 tests pass
+- 148 tests pass
 
 
 ## Known gaps
 
 ### From audit — not yet addressed this cycle
 
-**Capability** (Critical #4):
-- capability_enforced defaults to true, but the toggle still exists and can disable all checks
-- grant_base_access (begin_in_object) injects directly into cap_graph, bypassing normal Grant path
-- verify_capability only covers write_set, not reads/links/death/freeze/cross-object calls
+**Capability** (Critical #4) ✅ (2026-08-04 audit hardening session):
+- capability_enforced field, constructor init, enforce_capability() method, verify_capability() early-return: all physically deleted
+- machine.rs enable_capability_enforcement() dead code removed
+- grant_base_access confirmed as intentional design (BaseAccess cap deterministically derived from object_id, regenerated each begin_in_object, no cross-tx state to persist) — design note added in source
+- Remaining: verify_capability only covers write_set, not reads/links/death/freeze/cross-object calls (scope expansion deferred)
 
-**Kernel boundary** (Critical #3):
-- object_birth/object_death/object_link/capability_grant/commit/abort are pub fn, callable directly without TRAP
-- Kernel is still a thin pass-through wrapper; no User/Kernel mode enforcement
-- Machine direct Instruction::Commit/Abort path and TRAP → KernelCall path both exist (two dispatch paths)
+**Kernel boundary** (Critical #3) ✅:
+- P1a: Machine dispatch unified via KernelCall; execute_kernel_instruction() deleted
+- P1b: Engine 15 mutation methods pub → pub(crate); Kernel::handle() is sole external mutation entry
+- 2026-08-04追加: kernel.rs 自身 7 个 mutation 透传方法(object_birth/death/link/unlink/freeze/capability_grant/abort)物理删除，handle() 改为直调 self.engine.xxx()
+- 保留 pub 的: begin/begin_in_object/commit/read/write/effect/savepoint/rollback_to (事务生命周期+数据访问+Machine TRAP 路径) + 只读查询透传
 
 **ObjectId allocation**:
 - ObjectId still provided by caller, not assigned by Kernel
@@ -134,17 +134,14 @@ Object lifecycle instructions stay Trap ABI
 
 ### From this refactoring cycle — completed
 
-### From this refactoring cycle — remaining
+**state_map/apply_records dual path** ✅ (2026-08-04 audit hardening session):
+- state_store/scope_registry 从 from_map() 预填改为 new() 空初始化
+- writes/scope_changes 完全由 apply() 循环第1、2步统一填充
+- apply_records() 保留（只需它的 pending_effects 和 max_tx_id）
+- 验证: 148 tests pass, wal_recovery_equivalence + robustness 全绿
 
-**state_map/apply_records dual path**:
-- Recovery: state_map computed by apply_records → StateStore::from_map()
-- Then apply(&delta) writes delta.writes again into state_store
-- Functionally harmless (same data), but violates "one truth source" principle this refactor established
-
-**Missing boundary tests**:
-- Cross-tx unlink-then-death: tx1 link → tx2 unlink → tx3 death → recovery should NOT cascade
-- Exercise topology correctness across multiple apply() calls in recovery
-- No known bug, but no test coverage for this ordering
+**Cross-tx unlink-then-death boundary test** ✅:
+- 2 tests added, 148 total
 
 ### Legacy — unchanged this cycle
 
@@ -159,18 +156,18 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ### Immediate (unlocked by Step 3)
 1. ✅ Step 3.5 — Effect retry: apply_records dedup + with_wal_path pending loop (2 tests)
 2. ⚠️ ObjectId allocation: Kernel internal allocator implemented (next_object_id), TRAP path works; pub engine.object_birth(ctx, id) still accepts caller-supplied ID — dual paths coexist, closure depends on P1b
-3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 178 total)
+3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 148 total)
 4. ✅ Cleanup: unused imports, dead code in test_truncated_transaction_committed_discarded
 
 ### Short-term
 4. P30.4 — ReplayRecord upgrade: Object/Link/Capability (now TransactionDelta-based)
 5. P30.5 — ReplayEngine full world replay + Receipt verification
-6. Clean up state_map/apply_records dual path
-7. ⚠️ ObjectId allocation: allocator done, TRAP path correct; pub fn bypass path remains (P1b dependency)
+6. ✅ state_map/apply_records dual path — cleaned up (2026-08-04)
+7. ✅ ObjectId allocation — exclusive TRAP path after P1b
 
 ### Medium-term (from audit Critical findings)
-7. Capability always-on: remove capability_enforced toggle, unify all access checks
-8. Kernel boundary: P1a ✅ (Machine side); P1b pending — pub → pub(crate)
+7. ✅ Capability always-on: capability_enforced toggle removed, verify_capability unconditional (2026-08-04)
+8. ✅ Kernel boundary: P1a ✅ + P1b ✅ + 7透传方法删除 (2026-08-04)
 9. ✅ src/graph/ dead code removed; engine.topology is sole topology store
 
 ### Later
@@ -181,7 +178,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 184 tests pass.
+See README. 148 tests pass.
 
 
 ---
@@ -240,13 +237,49 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 | transaction/isolation.rs | 2 | ✅ |
 | wal_recovery_property.rs | - | Deleted (pending re-implementation) |
 
-### Remaining Known Gaps
-1. Kernel passthrough pub fns (delete next — handle() calls engine directly)
-2. kernel.read/write() still pub (Memory ABI not yet defined in KernelCall)
-3. state_map/apply_records dual path in recovery
-4. Capability always-on: remove `capability_enforced` toggle
-5. `grant_base_access` bypass in `begin_in_object`
-6. ReplayRecord missing Object/Link/Capability (P30.4)
-7. ReplayEngine full world replay + Receipt verification (P30.5)
+### Remaining Known Gaps (2026-08-04 audit hardening session)
+
+**Immediate — ALL CLOSED:**
+1. ✅ Kernel passthrough pub fns — 7 mutation透传方法删除，handle() 直调 self.engine
+2. ⬜ kernel.read/write() still pub (Memory ABI not yet defined in KernelCall — deferred)
+3. ✅ state_map/apply_records dual path — eliminated
+4. ✅ Capability always-on — capability_enforced toggle removed, grant_base_access confirmed intentional design
+5. ✅ grant_base_access — confirmed intentional, design note added
+
+**Short-term:**
+6. P30.4 — ReplayRecord upgrade: Object/Link/Capability
+7. P30.5 — ReplayEngine full world replay + Receipt verification
+
+**Structural finding (not in original audit):**
+- state_memory 是与 state_store 平行、脱节的影子状态结构。record_history/apply_state_memory/create_checkpoint/restore_checkpoint/ReplayRecord 整条链路基于 state_memory，而非统一到 apply() 的主状态 state_store。在动 Checkpoint/Replay 之前必须先决定此链路是接入主状态还是废弃重做。
+
+**Later:**
 8. ModuleObject/ModuleInstance lifecycle closure
 9. Savepoint full semantics
+10. P31 — Checkpoint/Snapshot
+
+
+---
+
+## Audit Hardening Closeout — 2026-08-04
+
+### 核查方法论
+- 每条"已完成"结论必须看到实际源码/diff，不采信纯文字总结
+- 测试全绿只证明行为未破坏，不证明改动方式与声称一致
+- 每次验证前先假设"如果这条总结是错的，错在哪里"，据此设计验证命令
+
+### Critical 闭合确认
+
+| # | 审计发现 | 最终状态 | 验证方式 |
+|---|---------|---------|---------|
+| #1 | Commit 非原子 | ✅ | 源码确认: build_delta() → 单次 append_and_sync → apply()，注释"apply after WAL is durable" |
+| #2 | Runtime apply ≠ Recovery apply | ✅ | 第一轮发现 state_map 双路径残留 → 本轮修复: state_store/scope_registry 改为 new() 空初始化，完全由 apply() 统一填充 |
+| #3 | Kernel 边界可绕过 | ✅ | P1a/P1b + 本轮追加: kernel.rs 7个透传方法物理删除，handle() 改直调 self.engine |
+| #4 | Capability 可关闭 + 旁路 | ✅ | capability_enforced 全链路删除（字段/初始化/方法/早退判断/machine.rs死代码），grant_base_access 确认为有意设计 |
+
+### 测试状态
+148 tests, 0 failed, 0 ignored
+
+### 本轮附加发现
+- state_memory 影子系统: 与 state_store 平行脱节，影响后续 Checkpoint/Replay 设计
+- wal.rs unused import (PendingCapabilityGrant): 无害边角料，下次顺手清理

@@ -122,9 +122,6 @@ impl VeritasEngine {
     }
 
     fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
-        if !ctx.capability_enforced {
-            return Ok(());
-        }
 
         let cap_graph = self.capability_graph.lock().unwrap();
 
@@ -194,7 +191,7 @@ impl VeritasEngine {
                 (Vec::new(), 0)
             });
 
-        let (state_map, scope_map, pending_effects, max_tx_id) =
+        let (_, _, pending_effects, max_tx_id) =
             RecoveryManager::apply_records(&records);
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
@@ -311,14 +308,8 @@ impl VeritasEngine {
 
         let engine = VeritasEngine {
             global_version: AtomicU64::new(recovered_version),
-            // 临时占位：WAL目前不记录object_id，恢复的状态统一归属内核Object(0)。
-            // 待WAL格式扩展支持Object寻址后应移除此转换。
-            state_store: StateStore::from_map(
-                state_map.into_iter()
-                    .map(|(sid, entry)| (sid, entry))
-                    .collect()
-            ),
-            scope_registry: ScopeRegistry::from_map(scope_map),
+            state_store: StateStore::new(),
+            scope_registry: ScopeRegistry::new(),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
             object_registry: Mutex::new(HashMap::new()),
@@ -411,6 +402,11 @@ impl VeritasEngine {
         self.controller.begin(snapshot_version)
     }
 
+    // 设计说明：BaseAccess cap 由 object_id 自身确定性推导
+    // (grantor=grantee=resource=object_id)，不携带跨事务状态，
+    // 每次 begin_in_object 重新生成，因此不经过
+    // pending_capabilities/WAL 持久化路径。
+    // 这是有意设计的按需生成，不是审计发现的旁路 bug。
     fn grant_base_access(&self, ctx: &mut TransactionContext, object_id: ObjectId) {
         let mut cap_graph = self.capability_graph.lock().unwrap();
         let cap_id = cap_graph.grant(

@@ -246,7 +246,6 @@ pub struct TransactionContext {
     pub pending_objects: Vec<ObjectId>,
     pub pending_capabilities: Vec<PendingCapabilityGrant>,
     pub aborted: bool,
-    pub capability_enforced: bool,
     /// 当前执行上下文所属的Object。一切Read/Write在没有显式CALL切换的情况下，
     /// 隐式作用于这个Object的Memory Space——这是Memory宪法(memory.md)第4节
     /// "地址 = (ObjectId, StateId)"在执行层的落地方式：地址的ObjectId分量
@@ -276,15 +275,11 @@ impl TransactionContext {
             pending_freezes: Vec::new(),
             pending_deaths: Vec::new(),
             aborted: false,
-            capability_enforced: true,
             capability_context: 0,
             current_object: 0,
         }
     }
 
-    pub fn enforce_capability(&mut self) {
-        self.capability_enforced = true;
-    }
 
     /// 切换当前执行上下文到另一个Object。对应CALL指令跨Module调用时
     /// 的语义(module.md第6节)：Machine切换执行上下文到被调用Object的
