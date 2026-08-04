@@ -158,6 +158,20 @@ impl Kernel {
         &self.engine
     }
 
+    /// Replay: 从 WAL 重放全部已提交事务，返回最终 WorldState 根哈希。
+    /// 从空 WorldState 出发，不保留引擎用于后续操作。
+    /// 用于验证 WAL 的确定性——Replay(WAL) == 原始执行结束时的 root_hash()。
+    pub fn replay(wal_path: &str) -> u64 {
+        let (records, _) = crate::wal::RecoveryManager::recover(wal_path)
+            .unwrap_or_else(|_| (vec![], 0));
+        let ordered_deltas = crate::wal::build_ordered_deltas(&records);
+        let engine = VeritasEngine::new();
+        for delta in &ordered_deltas {
+            engine.apply(delta);
+        }
+        engine.root_hash()
+    }
+
     // ===== Phase 1 Step 4: KernelCall dispatch =====
 
     /// Handle a decoded kernel service call.

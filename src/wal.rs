@@ -639,6 +639,115 @@ impl RecoveryManager {
         (state_map, scope_map, pending, max_tx_id)
     }
 }
+/// 从 WAL records 按 tx_id 分组构建 TransactionDelta 列表。
+/// 只保留有 Commit marker 的事务，丢弃孤儿条目。
+/// Recovery 和 Replay 共用此函数。
+pub(crate) fn build_ordered_deltas(
+    records: &[WalEntry],
+) -> Vec<TransactionDelta> {
+    use std::collections::HashMap;
+    use crate::types::{LinkType, PendingCapabilityGrant, TransactionDelta};
+
+    let mut partial_deltas: HashMap<TxId, TransactionDelta> = HashMap::new();
+    let mut ordered_deltas: Vec<TransactionDelta> = Vec::new();
+
+    for record in records {
+        match record {
+            WalEntry::ObjectBirth { tx_id, object_id } => {
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.births.push(*object_id);
+            }
+            WalEntry::ObjectDeath { tx_id, object_id } => {
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.deaths.push(*object_id);
+            }
+            WalEntry::ObjectFreeze { tx_id, object_id } => {
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.freezes.push(*object_id);
+            }
+            WalEntry::ObjectLink { tx_id, from, to, link_type, .. } => {
+                let relation = match link_type {
+                    0 => LinkType::DependsOn,
+                    1 => LinkType::Owns,
+                    2 => LinkType::References,
+                    _ => continue,
+                };
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.links.push((*from, *to, relation));
+            }
+            WalEntry::ObjectUnlink { tx_id, from, to } => {
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.unlinks.push((*from, *to));
+            }
+            WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence } => {
+                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
+                    tx_id: *tx_id, commit_version: 0,
+                    writes: vec![], scope_changes: vec![],
+                    births: vec![], deaths: vec![], freezes: vec![],
+                    links: vec![], unlinks: vec![],
+                    capability_grants: vec![], effects: vec![],
+                });
+                delta.capability_grants.push(PendingCapabilityGrant {
+                    capability_id: *capability_id,
+                    grant_sequence: *grant_sequence,
+                    cap_type: cap_type.clone(),
+                    grantor: *grantor,
+                    grantee: *grantee,
+                    resource: *resource,
+                });
+            }
+            WalEntry::Commit { tx_id, version, writes, scope_changes, effects } => {
+                if let std::collections::hash_map::Entry::Occupied(mut entry) = partial_deltas.entry(*tx_id) {
+                    let delta = entry.get_mut();
+                    delta.commit_version = *version;
+                    delta.writes = writes.iter().map(|(addr, val)| (*addr, val.clone())).collect();
+                    delta.scope_changes = scope_changes.iter().map(|c| (c.scope_id, c.change_type.clone(), c.state_id)).collect();
+                    delta.effects = effects.iter().map(|e| (e.idempotency_key.clone(), e.payload.clone())).collect();
+                    ordered_deltas.push(delta.clone());
+                    entry.remove();
+                }
+            }
+            WalEntry::TransactionCommitted(delta) => {
+                ordered_deltas.push(delta.clone());
+                partial_deltas.remove(&delta.tx_id);
+            }
+            _ => {}
+        }
+    }
+    // 丢弃留在 partial_deltas 中的无 Commit marker 的事务
+
+    ordered_deltas
+}
 
 #[cfg(test)]
 mod tests {

@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 153 tests pass
+- 157 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -93,7 +93,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 153 tests pass
+- 157 tests pass
 
 
 ## Known gaps
@@ -138,10 +138,10 @@ Object lifecycle instructions stay Trap ABI
 - state_store/scope_registry 从 from_map() 预填改为 new() 空初始化
 - writes/scope_changes 完全由 apply() 循环第1、2步统一填充
 - apply_records() 保留（只需它的 pending_effects 和 max_tx_id）
-- 验证: 153 tests pass, wal_recovery_equivalence + robustness 全绿
+- 验证: 157 tests pass, wal_recovery_equivalence + robustness 全绿
 
 **Cross-tx unlink-then-death boundary test** ✅:
-- 2 tests added, 153 total
+- 2 tests added, 157 total
 
 ### Legacy — unchanged this cycle
 
@@ -156,7 +156,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 ### Immediate (unlocked by Step 3)
 1. ✅ Step 3.5 — Effect retry: apply_records dedup + with_wal_path pending loop (2 tests)
 2. ⚠️ ObjectId allocation: Kernel internal allocator implemented (next_object_id), TRAP path works; pub engine.object_birth(ctx, id) still accepts caller-supplied ID — dual paths coexist, closure depends on P1b
-3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 153 total)
+3. ✅ Cross-tx unlink-then-death recovery boundary test (2 tests, 157 total)
 4. ✅ Cleanup: unused imports, dead code in test_truncated_transaction_committed_discarded
 
 ### Short-term
@@ -178,7 +178,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 153 tests pass.
+See README. 157 tests pass.
 
 
 ---
@@ -278,7 +278,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 | #4 | Capability 可关闭 + 旁路 | ✅ | capability_enforced 全链路删除（字段/初始化/方法/早退判断/machine.rs死代码），grant_base_access 确认为有意设计 |
 
 ### 测试状态
-153 tests, 0 failed, 0 ignored
+157 tests, 0 failed, 0 ignored
 
 ### 本轮附加发现
 - state_memory 影子系统: 与 state_store 平行脱节，影响后续 Checkpoint/Replay 设计
@@ -308,4 +308,28 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 不修改 apply() / commit() / WAL
 - 不新增状态模型
 - 不引入第二套 hash 体系
-- 153 tests, 0 failed
+- 157 tests, 0 failed
+
+
+---
+
+## Stage 3.2 Replay — 2026-08-04
+
+### 实现
+- `Kernel::replay(wal_path) -> u64` — 从 WAL 重放全部已提交事务
+- `build_ordered_deltas()` 提取到 wal.rs，Recovery 和 Replay 共用
+- `VeritasEngine::empty()` — 完全空引擎构造器（不读 WAL）
+- Replay = Recovery 去掉恢复后的运行阶段
+
+### 测试 (4 new)
+- `replay_empty_wal_returns_nonzero` — 空 WAL 返回非零固定 hash
+- `replay_equals_recovery_idle` — Replay(WAL) == idle Recovery.root_hash()
+- `replay_is_deterministic` — 同一 WAL 两次 replay 相同 hash
+- `replay_different_ops_different_hash` — 不同操作不同 hash
+
+### 不变量
+- 不修改 apply() / TransactionDelta / 五组件
+- 不新增 apply 变体
+- 不处理 Effect
+- Replay 验证的是 WAL 中已提交的完整历史
+- 157 tests, 0 failed

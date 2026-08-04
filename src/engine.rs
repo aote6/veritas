@@ -35,6 +35,7 @@ pub struct VeritasEngine {
     scope_registry: ScopeRegistry,
     commit_lock: Mutex<()>,
     wal: WalWriter,
+    wal_path: String,
     object_registry: Mutex<HashMap<ObjectId, crate::types::ObjectRecord>>,
     topology: Mutex<Vec<LinkEdge>>,
     capability_graph: Mutex<CapabilityGraph>,
@@ -286,6 +287,44 @@ impl VeritasEngine {
         Self::hash_u64s(&[h1, h2, h3, h4, h5])
     }
 
+    /// 创建完全空的引擎，不读 WAL，不恢复。
+    /// 仅用于 Replay 和测试。
+    pub(crate) fn empty() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::{Arc, Mutex};
+        use crate::lock::LockManager;
+        use crate::tx_manager::TransactionManager;
+        use crate::controller::TransactionController;
+        use crate::capability::CapabilityGraph;
+        use crate::history::ExecutionHistory;
+        use crate::state_memory::StateMemory;
+        use crate::store::StateStore;
+        use crate::scope_registry::ScopeRegistry;
+
+        let tx_mgr = Arc::new(TransactionManager::with_start_id(1));
+        let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
+        let controller = TransactionController::new(Arc::clone(&tx_mgr), Arc::clone(&lock_mgr));
+
+        VeritasEngine {
+            global_version: AtomicU64::new(0),
+            state_store: StateStore::new(),
+            scope_registry: ScopeRegistry::new(),
+            commit_lock: Mutex::new(()),
+            wal: WalWriter::open("target/replay_dummy.wal").expect("dummy WAL"),
+            wal_path: String::new(),
+            object_registry: Mutex::new(HashMap::new()),
+            topology: Mutex::new(Vec::new()),
+            capability_graph: Mutex::new(CapabilityGraph::new()),
+            tx_mgr,
+            lock_mgr,
+            controller,
+            state_memory: Mutex::new(StateMemory::new()),
+            history: Mutex::new(ExecutionHistory::new()),
+            object_id_counter: AtomicU64::new(1),
+            last_dep_inv: Mutex::new(Vec::new()),
+        }
+    }
+
     pub fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -311,102 +350,7 @@ impl VeritasEngine {
 
         // Step 2c: 从 WAL records 按 tx_id 分组构建 TransactionDelta 列表
         // 只保留有 Commit marker 的事务，丢弃孤儿条目
-        use std::collections::hash_map::Entry;
-        let mut partial_deltas: HashMap<TxId, TransactionDelta> = HashMap::new();
-        let mut ordered_deltas: Vec<TransactionDelta> = Vec::new();
-
-        for record in &records {
-            match record {
-                WalEntry::ObjectBirth { tx_id, object_id } => {
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id,
-                        commit_version: 0,
-                        writes: vec![],
-                        scope_changes: vec![],
-                        births: vec![],
-                        deaths: vec![],
-                        freezes: vec![],
-                        links: vec![],
-                        unlinks: vec![],
-                        capability_grants: vec![],
-                        effects: vec![],
-                    });
-                    delta.births.push(*object_id);
-                }
-                WalEntry::ObjectDeath { tx_id, object_id } => {
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
-                        births: vec![], deaths: vec![], freezes: vec![],
-                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
-                    });
-                    delta.deaths.push(*object_id);
-                }
-                WalEntry::ObjectFreeze { tx_id, object_id } => {
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
-                        births: vec![], deaths: vec![], freezes: vec![],
-                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
-                    });
-                    delta.freezes.push(*object_id);
-                }
-                WalEntry::ObjectLink { tx_id, from, to, link_type, .. } => {
-                    let relation = match link_type {
-                        0 => LinkType::DependsOn,
-                        1 => LinkType::Owns,
-                        2 => LinkType::References,
-                        _ => continue,
-                    };
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
-                        births: vec![], deaths: vec![], freezes: vec![],
-                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
-                    });
-                    delta.links.push((*from, *to, relation));
-                }
-                WalEntry::ObjectUnlink { tx_id, from, to } => {
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
-                        births: vec![], deaths: vec![], freezes: vec![],
-                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
-                    });
-                    delta.unlinks.push((*from, *to));
-                }
-                WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence } => {
-                    let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                        tx_id: *tx_id, commit_version: 0, writes: vec![], scope_changes: vec![],
-                        births: vec![], deaths: vec![], freezes: vec![],
-                        links: vec![], unlinks: vec![], capability_grants: vec![], effects: vec![],
-                    });
-                    delta.capability_grants.push(PendingCapabilityGrant {
-                        capability_id: *capability_id,
-                        grant_sequence: *grant_sequence,
-                        cap_type: cap_type.clone(),
-                        grantor: *grantor,
-                        grantee: *grantee,
-                        resource: *resource,
-                    });
-                }
-                WalEntry::Commit { tx_id, version, writes, scope_changes, effects } => {
-                    if let Entry::Occupied(mut entry) = partial_deltas.entry(*tx_id) {
-                        let delta = entry.get_mut();
-                        delta.commit_version = *version;
-                        delta.writes = writes.iter().map(|(addr, val)| (*addr, val.clone())).collect();
-                        delta.scope_changes = scope_changes.iter().map(|c| (c.scope_id, c.change_type.clone(), c.state_id)).collect();
-                        delta.effects = effects.iter().map(|e| (e.idempotency_key.clone(), e.payload.clone())).collect();
-                        ordered_deltas.push(delta.clone());
-                        entry.remove();
-                    }
-                }
-                WalEntry::TransactionCommitted(delta) => {
-                    // Step 3: single atomic WAL entry contains complete Delta
-                    ordered_deltas.push(delta.clone());
-                    // remove any partial delta for this tx_id (should not exist)
-                    partial_deltas.remove(&delta.tx_id);
-                }
-                _ => {}
-            }
-        }
-        // 丢弃留在 partial_deltas 中的无 Commit marker 的事务
+        let ordered_deltas = crate::wal::build_ordered_deltas(&records);
 
         // Step 3/ObjectId: 从所有已提交事务中取 max(birth_id) 作为计数器起点
         let max_birth_id = ordered_deltas
@@ -423,6 +367,7 @@ impl VeritasEngine {
             scope_registry: ScopeRegistry::new(),
             commit_lock: Mutex::new(()),
             wal: WalWriter::open(&wal_path).expect("Failed to open WAL file"),
+            wal_path: wal_path.clone(),
             object_registry: Mutex::new(HashMap::new()),
             topology: Mutex::new(Vec::new()),
             capability_graph: Mutex::new(CapabilityGraph::new()),
@@ -1158,6 +1103,11 @@ impl VeritasEngine {
 
     pub fn get_global_version(&self) -> Version {
         self.global_version.load(Ordering::Acquire)
+    }
+
+    /// 返回 WAL 文件路径（用于 Replay 测试）
+    pub fn wal_path(&self) -> &str {
+        &self.wal_path
     }
 
     pub(crate) fn savepoint(
