@@ -8,7 +8,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{Address, ObjectId, PendingCapabilityGrant, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TransactionDelta, TxId, Version};
+use crate::types::{Address, ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TransactionDelta, TxId, Version};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {

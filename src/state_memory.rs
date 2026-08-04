@@ -23,6 +23,17 @@ pub struct StateMemory {
 }
 
 impl StateMemory {
+    pub fn snapshot_entries(&self) -> Vec<(crate::types::Address, Vec<u8>)> {
+        self.entries.iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    pub fn load_snapshot_entries(&mut self, entries: &[(crate::types::Address, Vec<u8>)]) {
+        self.entries.clear();
+        for (addr, bytes) in entries {
+            self.entries.insert(*addr, bytes.clone());
+        }
+    }
+
     pub fn new() -> Self { Self::default() }
 
     pub fn write(&mut self, addr: Address, payload: Vec<u8>) {

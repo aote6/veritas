@@ -3,7 +3,6 @@
 // Phase 1: Thin wrapper that delegates all calls to the real VeritasEngine.
 // Future phases will restrict access to TRAP-only kernel services.
 
-use crate::checkpoint::Checkpoint;
 use crate::engine::VeritasEngine;
 use crate::types::*;
 
@@ -280,12 +279,12 @@ impl Kernel {
         self.engine.record_history(ctx)
     }
 
-    pub fn create_checkpoint(&self) -> Checkpoint {
+    pub fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
     }
 
-    pub fn restore_checkpoint(&self, ck: &Checkpoint) -> bool {
-        self.engine.restore_checkpoint(ck)
+    pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+        self.engine.restore_checkpoint(snap)
     }
 
     pub fn apply_state_memory(&self, _ctx: &TransactionContext, write_set: &WriteSet) {

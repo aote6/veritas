@@ -12,6 +12,14 @@ pub struct ScopeRegistry {
 }
 
 impl ScopeRegistry {
+    pub fn load_snapshot(&self, scopes: &[(ScopeId, ScopeEntry)]) {
+        let mut map = self.scopes.write().unwrap();
+        map.clear();
+        for (id, entry) in scopes {
+            map.insert(*id, entry.clone());
+        }
+    }
+
     pub fn new() -> Self {
         ScopeRegistry {
             scopes: RwLock::new(HashMap::new()),
@@ -60,6 +68,21 @@ impl ScopeRegistry {
     pub fn all_scopes(&self) -> Vec<(ScopeId, ScopeEntry)> {
         let map = self.scopes.read().unwrap();
         map.iter().map(|(id, entry)| (*id, entry.clone())).collect()
+    }
+
+    /// PR2.1: 导出 Scope 稳定语义快照。不暴露 ScopeEntry。
+    pub fn snapshot_all_scopes(&self) -> Vec<crate::types::ScopeSnapshot> {
+        let map = self.scopes.read().unwrap();
+        let mut result: Vec<crate::types::ScopeSnapshot> = map
+            .iter()
+            .map(|(id, entry)| crate::types::ScopeSnapshot {
+                scope_id: *id,
+                members: entry.members.clone(),
+                owner: entry.owner as crate::types::ObjectId,
+            })
+            .collect();
+        result.sort_by_key(|s| s.scope_id);
+        result
     }
 
     /// 只在 commit 阶段调用，真正落地结构变更

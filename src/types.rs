@@ -521,6 +521,22 @@ pub struct TransactionDelta {
     pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
 }
 
+/// Capability 语义快照记录（进入 Commitment Domain）。
+/// 不含 CapabilityId——该 ID 由恢复时重新生成。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilitySemanticRecord {
+    pub granted_by: ObjectId,
+    pub holder: ObjectId,
+    pub resource: ObjectId,
+    pub capability_type: String,
+    pub active: bool,
+}
+
+/// WorldState 完整快照。
+/// Commitment Domain 部分进入 root_hash；
+/// Continuation Metadata 不进入 root_hash。
+
+
 /// TransactionReceipt: 一次 commit 的状态转移证明。
 ///
 /// 证明：给定 before_root 和 TransactionDelta，
@@ -717,3 +733,47 @@ impl TransactionDelta {
     }
 }
 
+
+
+/// WorldSnapshot 是 Stage 3.4b 规范的恢复协议（Serialization Contract）
+/// 仅保存稳定的纯语义数据，绝对不与子模块的内部数据结构绑定。
+
+/// WorldSnapshot 是 Stage 3.4b 规范的恢复协议（Serialization Contract）
+/// 仅保存稳定的纯语义数据，绝对不与子模块内部内存实现强绑定。
+/// 这是 Kernel 的持久化协议，不是运行时结构的镜像。
+#[derive(Debug, Clone)]
+pub struct WorldSnapshot {
+    pub commitment_hash: [u8; 32],
+    pub tx_id: u64,
+    pub state_entries: Vec<(Address, Vec<u8>)>,
+    pub capability_records: Vec<CapabilitySemanticRecord>,
+    pub objects: Vec<ObjectSnapshot>,
+    pub links: Vec<LinkSnapshot>,
+    pub scopes: Vec<ScopeSnapshot>,
+}
+
+/// Object 的稳定语义快照。不绑定 ObjectRecord 内部布局。
+#[derive(Debug, Clone)]
+pub struct ObjectSnapshot {
+    pub id: ObjectId,
+    pub object_type: ObjectType,
+    pub lifecycle_state: ObjectState,
+    pub metadata: Vec<u8>,
+    pub payload: Vec<u8>,
+}
+
+/// Link 的稳定语义快照。结构体形式支持未来扩展字段。
+#[derive(Debug, Clone)]
+pub struct LinkSnapshot {
+    pub from: ObjectId,
+    pub to: ObjectId,
+    pub link_type: LinkType,
+}
+
+/// Scope 的稳定语义快照。owner 使用 ObjectId，不暴露 ModuleId。
+#[derive(Debug, Clone)]
+pub struct ScopeSnapshot {
+    pub scope_id: ScopeId,
+    pub members: Vec<StateId>,
+    pub owner: ObjectId,
+}

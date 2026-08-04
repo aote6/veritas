@@ -87,6 +87,48 @@ pub struct CapabilityGraph {
 }
 
 impl CapabilityGraph {
+    pub fn snapshot_grants(&self) -> Vec<(CapabilityId, CapabilityInfo)> {
+        self.all_grants()
+    }
+
+    /// PR2.1: 导出 Capability 稳定语义快照。不暴露 CapabilityInfo。
+    pub fn snapshot_capabilities(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
+        let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.grants
+            .iter()
+            .map(|(_id, info)| crate::types::CapabilitySemanticRecord {
+                granted_by: info.granted_by,
+                holder: info.root_holder,
+                resource: info.resource,
+                capability_type: info.capability_type.clone(),
+                active: true,
+            })
+            .collect();
+        result.sort_by(|a, b| {
+            a.granted_by.cmp(&b.granted_by)
+                .then(a.holder.cmp(&b.holder))
+                .then(a.resource.cmp(&b.resource))
+                .then(a.capability_type.cmp(&b.capability_type))
+        });
+        result
+    }
+
+    pub fn load_snapshot_grants(&mut self, grants: &[(CapabilityId, CapabilityInfo)]) {
+        self.grants.clear();
+        self.holders.clear();
+        self.edges.clear();
+        self.children.clear();
+        for (cap_id, info) in grants {
+            self.restore_grant(
+                *cap_id,
+                info.capability_type.clone(),
+                info.granted_by,
+                info.root_holder,
+                info.resource,
+                self.grant_sequence,
+            );
+        }
+    }
+
     pub fn new() -> Self {
         CapabilityGraph {
             grants: HashMap::new(),

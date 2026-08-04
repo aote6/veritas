@@ -33,6 +33,11 @@ pub struct TransactionManager {
 }
 
 impl TransactionManager {
+    /// 获取当前 atomic 计数器的值（用于 WorldSnapshot 元数据）
+    pub fn current_tx_id(&self) -> u64 {
+        self.next_tx_id.load(std::sync::atomic::Ordering::Acquire)
+    }
+
     pub fn new() -> Self {
         Self::with_start_id(1)
     }

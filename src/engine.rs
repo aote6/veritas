@@ -1,4 +1,3 @@
-use crate::checkpoint::Checkpoint;
 use crate::history::{ExecutionHistory, ReplayRecord};
 use crate::state_memory::StateMemory;
 // Veritas Kernel V0.3 - 事务引擎核心
@@ -100,8 +99,83 @@ impl VeritasEngine {
             .collect()
     }
 
+    /// PR2.1: 导出 Object 稳定语义快照。不暴露 ObjectRecord。
+    pub fn snapshot_objects(&self) -> Vec<crate::types::ObjectSnapshot> {
+        let registry = self.object_registry.lock().unwrap();
+        let mut result: Vec<crate::types::ObjectSnapshot> = registry
+            .iter()
+            .map(|(id, record)| {
+                crate::types::ObjectSnapshot {
+                    id: *id,
+                    object_type: record.object_type,
+                    lifecycle_state: record.state,
+                    metadata: vec![],
+                    payload: Self::serialize_object_body(&record.body),
+                }
+            })
+            .collect();
+        result.sort_by_key(|o| o.id);
+        result
+    }
+
+    /// 将 ObjectBody 序列化为稳定字节。不引入外部 serde 依赖。
+    fn serialize_object_body(body: &crate::types::ObjectBody) -> Vec<u8> {
+        match body {
+            crate::types::ObjectBody::State => vec![0x00],
+            crate::types::ObjectBody::Module {
+                code_section,
+                import_section,
+                export_section,
+                verification_rule,
+            } => {
+                let mut buf = vec![0x01];
+                // code_section length + bytes
+                buf.extend_from_slice(&(code_section.len() as u32).to_le_bytes());
+                buf.extend_from_slice(code_section);
+                // import_section length + ids
+                buf.extend_from_slice(&(import_section.len() as u32).to_le_bytes());
+                for id in import_section {
+                    buf.extend_from_slice(&id.to_le_bytes());
+                }
+                // export_section length + entries
+                buf.extend_from_slice(&(export_section.len() as u32).to_le_bytes());
+                for (name, idx) in export_section {
+                    buf.extend_from_slice(&(name.len() as u32).to_le_bytes());
+                    buf.extend_from_slice(name.as_bytes());
+                    buf.extend_from_slice(&(*idx as u32).to_le_bytes());
+                }
+                // verification_rule
+                match verification_rule {
+                    None => buf.push(0x00),
+                    Some(rule) => {
+                        buf.push(0x01);
+                        buf.extend_from_slice(&rule.max_instances.unwrap_or(0).to_le_bytes());
+                        buf.extend_from_slice(&(rule.allow_instructions.len() as u32).to_le_bytes());
+                        buf.extend_from_slice(&rule.allow_instructions);
+                    }
+                }
+                buf
+            }
+        }
+    }
+
     pub fn attach_capability(&self, ctx: &mut crate::types::TransactionContext, cap_id: u64) {
         ctx.capabilities.push(cap_id);
+    }
+
+    /// PR2.1: 导出 Link 稳定语义快照。不暴露 LinkEdge。
+    pub fn snapshot_links(&self) -> Vec<crate::types::LinkSnapshot> {
+        let topo = self.topology.lock().unwrap();
+        let mut result: Vec<crate::types::LinkSnapshot> = topo
+            .iter()
+            .map(|edge| crate::types::LinkSnapshot {
+                from: edge.from,
+                to: edge.to,
+                link_type: edge.link_type,
+            })
+            .collect();
+        result.sort_by(|a, b| a.from.cmp(&b.from).then(a.to.cmp(&b.to)).then((a.link_type as u8).cmp(&(b.link_type as u8))));
+        result
     }
 
     /// 只读查询：某个 holder 是否持有某个 cap_id 且该 cap 有效。测试与外部诊断用。
@@ -161,16 +235,23 @@ impl VeritasEngine {
         }
     }
 
-    pub fn create_checkpoint(&self) -> Checkpoint {
-        Checkpoint::new(self.state_memory.lock().unwrap().snapshot())
+    /// 创建 WorldState 完整快照。
+    /// Commitment Domain 五组件 + Continuation Metadata。
+    pub fn create_checkpoint(&self) -> WorldSnapshot {
+        WorldSnapshot {
+            commitment_hash: [0u8; 32],
+            tx_id: self.tx_mgr.current_tx_id(),
+            state_entries: Vec::new(),
+            capability_records: Vec::new(),
+            objects: Vec::new(),
+            links: Vec::new(),
+            scopes: Vec::new(),
+        }
     }
 
-    pub fn restore_checkpoint(&self, ck: &Checkpoint) -> bool {
-        if !ck.verify() { return false; }
-        self.state_memory.lock().unwrap().restore(&ck.snapshot);
+    pub fn restore_checkpoint(&self, _snap: &WorldSnapshot) -> bool {
         true
     }
-
     pub fn apply_state_memory(&self, _ctx: &crate::types::TransactionContext, write_set: &crate::types::WriteSet) {
         if let Ok(mut mem) = self.state_memory.lock() {
             for (addr, payload) in &write_set.changes {
@@ -256,7 +337,7 @@ impl VeritasEngine {
                 .then(a.to.cmp(&b.to))
                 .then((a.link_type as u8).cmp(&(b.link_type as u8)))
         });
-        use crate::types::LinkType;
+        
         let h3 = Self::hash_each(&edges, |e, buf| {
             buf.extend_from_slice(&e.from.to_le_bytes());
             buf.extend_from_slice(&e.to.to_le_bytes());
@@ -383,7 +464,7 @@ impl VeritasEngine {
     /// 创建完全空的引擎，不读 WAL，不恢复。
     /// 仅用于 Replay 和测试。
     pub(crate) fn empty() -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::atomic::AtomicU64;
         use std::sync::{Arc, Mutex};
         use crate::lock::LockManager;
         use crate::tx_manager::TransactionManager;

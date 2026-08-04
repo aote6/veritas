@@ -63,6 +63,24 @@ impl StateStore {
     pub fn into_inner(self) -> HashMap<Address, StateEntry> {
         self.map.into_inner().unwrap()
     }
+
+    /// 导出纯字节快照。不暴露 StateEntry，供 WorldSnapshot 使用。
+    pub fn snapshot(&self) -> Vec<(Address, Vec<u8>)> {
+        let map = self.map.lock().unwrap();
+        map.iter().map(|(addr, entry)| (*addr, entry.value.clone())).collect()
+    }
+
+    /// 从纯字节快照加载，清空后重建。
+    pub fn load_snapshot(&self, entries: &[(Address, Vec<u8>)]) {
+        let mut map = self.map.lock().unwrap();
+        map.clear();
+        for (addr, bytes) in entries {
+            map.insert(*addr, StateEntry {
+                value: bytes.clone(),
+                version: 1,
+            });
+        }
+    }
 }
 
 impl Default for StateStore {
