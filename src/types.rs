@@ -69,7 +69,7 @@ impl ScopeEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeChangeType {
     Bind,
     Unbind,
@@ -219,7 +219,7 @@ pub struct Savepoint {
     pub pending_deaths_len: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingCapabilityGrant {
     pub capability_id: u64,
     pub grant_sequence: u64,
@@ -494,7 +494,7 @@ impl ObjectRecord {
 /// 所有字段都是"原始请求"，不含派生结果：
 /// - deaths 仅为用户显式请求死亡的对象，不含 OWNS 级联展开
 ///   （apply() 内部需自行调用 expand_owns_death_closure）
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionDelta {
     pub tx_id: TxId,
     pub commit_version: Version,
@@ -519,6 +519,19 @@ pub struct TransactionDelta {
 
     // Effects (待执行)
     pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
+}
+
+/// TransactionReceipt: 一次 commit 的状态转移证明。
+///
+/// 证明：给定 before_root 和 TransactionDelta，
+/// 经过 apply() 后必然得到 after_root。
+/// 验证者需要拥有 before WorldState 才能验证。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionReceipt {
+    pub tx_id: TxId,
+    pub before_root: u64,
+    pub delta: TransactionDelta,
+    pub after_root: u64,
 }
 
 impl TransactionDelta {

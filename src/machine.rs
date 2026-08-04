@@ -296,7 +296,7 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Commit => {
-                self.kernel.commit(&mut self.ctx)?;
+                let _receipt = self.kernel.commit(&mut self.ctx)?;
         self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }

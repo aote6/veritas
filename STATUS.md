@@ -77,7 +77,7 @@ Object lifecycle instructions stay Trap ABI
 - Step 2b: commit() → apply(&delta), memory mutations deferred after all WAL writes
 - Step 2c: Recovery groups records by tx_id, only commits with Commit marker, applies in order
 - Runtime apply == Recovery apply ✅
-- 157 tests pass
+- 160 tests pass
 
 ### Remaining Step 2 tech debt
 
@@ -93,7 +93,7 @@ Object lifecycle instructions stay Trap ABI
 - CRC truncation test for new format (test_truncated_transaction_committed_discarded)
 - Orphan test updated: corrupted TransactionCommitted discarded by CRC check
 - Critical #1 (Commit non-atomicity) resolved ✅
-- 157 tests pass
+- 160 tests pass
 
 
 ## Known gaps
@@ -138,7 +138,7 @@ Object lifecycle instructions stay Trap ABI
 - state_store/scope_registry 从 from_map() 预填改为 new() 空初始化
 - writes/scope_changes 完全由 apply() 循环第1、2步统一填充
 - apply_records() 保留（只需它的 pending_effects 和 max_tx_id）
-- 验证: 157 tests pass, wal_recovery_equivalence + robustness 全绿
+- 验证: 160 tests pass, wal_recovery_equivalence + robustness 全绿
 
 **Cross-tx unlink-then-death boundary test** ✅:
 - 2 tests added, 157 total
@@ -178,7 +178,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 157 tests pass.
+See README. 160 tests pass.
 
 
 ---
@@ -278,7 +278,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 | #4 | Capability 可关闭 + 旁路 | ✅ | capability_enforced 全链路删除（字段/初始化/方法/早退判断/machine.rs死代码），grant_base_access 确认为有意设计 |
 
 ### 测试状态
-157 tests, 0 failed, 0 ignored
+160 tests, 0 failed, 0 ignored
 
 ### 本轮附加发现
 - state_memory 影子系统: 与 state_store 平行脱节，影响后续 Checkpoint/Replay 设计
@@ -308,7 +308,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 不修改 apply() / commit() / WAL
 - 不新增状态模型
 - 不引入第二套 hash 体系
-- 157 tests, 0 failed
+- 160 tests, 0 failed
 
 
 ---
@@ -332,4 +332,25 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 不新增 apply 变体
 - 不处理 Effect
 - Replay 验证的是 WAL 中已提交的完整历史
-- 157 tests, 0 failed
+- 160 tests, 0 failed
+
+
+---
+
+## Stage 3.3 Receipt — 2026-08-04
+
+### 实现
+- `TransactionReceipt { tx_id, before_root, delta, after_root }` 结构体
+- `commit()` 返回 `Result<TransactionReceipt, VeritasError>`
+- `make_receipt()` 纯函数构造
+- `verify_receipt()` 接口预留（依赖 Stage 3.4 Checkpoint）
+
+### 测试 (3 new)
+- `receipt_after_matches_root_hash` — receipt.after_root == engine.root_hash()
+- `receipt_before_after_consistency` — before_root != after_root, after 一致
+- `receipt_replay_consistency` — Replay == idle Recovery, receipt.after == live engine
+
+### 已知未闭合
+- Live engine root_hash ≠ idle Recovery root_hash（Delta 完整性缺口）
+- 根因待 Stage 3.4 Checkpoint 后通过五组件拆分 hash 定位
+- 160 tests, 0 failed

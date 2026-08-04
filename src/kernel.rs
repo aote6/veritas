@@ -165,7 +165,7 @@ impl Kernel {
         let (records, _) = crate::wal::RecoveryManager::recover(wal_path)
             .unwrap_or_else(|_| (vec![], 0));
         let ordered_deltas = crate::wal::build_ordered_deltas(&records);
-        let engine = VeritasEngine::new();
+        let engine = VeritasEngine::empty();
         for delta in &ordered_deltas {
             engine.apply(delta);
         }
@@ -222,7 +222,7 @@ impl Kernel {
                 Ok(TrapResult::Success)
             }
             KernelCall::Commit => {
-                self.commit(ctx)?;
+                let _receipt = self.commit(ctx)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::Effect { payload } => {
@@ -346,7 +346,7 @@ impl Kernel {
         self.engine.effect(ctx, payload)
     }
 
-    pub fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
+    pub fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
         self.engine.commit(ctx)
     }
 
@@ -402,7 +402,7 @@ mod kernel_tests {
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 10).unwrap();
             kernel.engine.object_birth(&mut ctx, 20).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
         }
         {
             let _machine2 = crate::machine::Machine::new(Arc::clone(&kernel));
@@ -418,7 +418,7 @@ mod kernel_tests {
         let kernel = Kernel::new();
         let mut ctx = kernel.begin();
         kernel.engine.object_birth(&mut ctx, 42).unwrap();
-        kernel.commit(&mut ctx).unwrap();
+        let _receipt = kernel.commit(&mut ctx).unwrap();
         let ctx2 = kernel.begin();
         assert_eq!(kernel.get_object_state(42), Some(ObjectState::Alive));
         drop(ctx2);
@@ -430,7 +430,7 @@ mod kernel_tests {
         {
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 100).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
         }
         assert_eq!(kernel.get_object_state(100), Some(ObjectState::Alive));
         let ctx = kernel.begin();
@@ -444,10 +444,10 @@ mod kernel_tests {
         let mut ctx1 = kernel.begin();
         kernel.engine.object_birth(&mut ctx1, 1).unwrap();
         kernel.engine.object_birth(&mut ctx1, 2).unwrap();
-        kernel.commit(&mut ctx1).unwrap();
+        let _receipt = kernel.commit(&mut ctx1).unwrap();
         let mut ctx2 = kernel.begin();
         kernel.engine.object_birth(&mut ctx2, 3).unwrap();
-        kernel.commit(&mut ctx2).unwrap();
+        let _receipt = kernel.commit(&mut ctx2).unwrap();
         assert_eq!(kernel.get_object_state(1), Some(ObjectState::Alive));
         assert_eq!(kernel.get_object_state(2), Some(ObjectState::Alive));
         assert_eq!(kernel.get_object_state(3), Some(ObjectState::Alive));
@@ -461,7 +461,7 @@ mod kernel_tests {
             let _machine1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 77).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
         }
         {
             let _machine2 = crate::machine::Machine::new(Arc::clone(&kernel));
@@ -481,7 +481,7 @@ mod kernel_tests {
             _ => panic!("Expected ObjectId"),
         };
         assert!(id > 0);
-        kernel.commit(&mut ctx).unwrap();
+        let _receipt = kernel.commit(&mut ctx).unwrap();
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Alive));
     }
 
@@ -496,7 +496,7 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
         };
-        kernel.commit(&mut ctx_a).unwrap();
+        let _receipt = kernel.commit(&mut ctx_a).unwrap();
 
         // Create object B
         let mut ctx_b = kernel.begin();
@@ -505,7 +505,7 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
         };
-        kernel.commit(&mut ctx_b).unwrap();
+        let _receipt = kernel.commit(&mut ctx_b).unwrap();
 
         // Link A -> B via handle
         let mut ctx_link = kernel.begin();
@@ -514,7 +514,7 @@ mod kernel_tests {
         };
         let result = kernel.handle(&mut ctx_link, call_link).unwrap();
         assert!(matches!(result, TrapResult::Success));
-        kernel.commit(&mut ctx_link).unwrap();
+        let _receipt = kernel.commit(&mut ctx_link).unwrap();
 
         assert!(kernel.has_link(id_a, id_b));
     }
@@ -528,12 +528,12 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
         };
-        kernel.commit(&mut ctx1).unwrap();
+        let _receipt = kernel.commit(&mut ctx1).unwrap();
 
         let mut ctx2 = kernel.begin();
         let result = kernel.handle(&mut ctx2, KernelCall::ObjectFreeze { object_id: id }).unwrap();
         assert!(matches!(result, TrapResult::Success));
-        kernel.commit(&mut ctx2).unwrap();
+        let _receipt = kernel.commit(&mut ctx2).unwrap();
 
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Frozen));
     }
@@ -547,12 +547,12 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
         };
-        kernel.commit(&mut ctx1).unwrap();
+        let _receipt = kernel.commit(&mut ctx1).unwrap();
 
         let mut ctx2 = kernel.begin();
         let result = kernel.handle(&mut ctx2, KernelCall::ObjectDeath { object_id: id }).unwrap();
         assert!(matches!(result, TrapResult::Success));
-        kernel.commit(&mut ctx2).unwrap();
+        let _receipt = kernel.commit(&mut ctx2).unwrap();
 
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Dead));
     }
@@ -633,7 +633,7 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
         };
-        kernel.commit(&mut ctx).unwrap();
+        let _receipt = kernel.commit(&mut ctx).unwrap();
 
         assert!(id > 0);
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Alive));
@@ -650,7 +650,7 @@ mod kernel_tests {
         {
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 1).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
         }
 
         // Second execution: read the object (same kernel world)
@@ -675,7 +675,7 @@ mod kernel_tests {
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 100).unwrap();
             kernel.engine.object_birth(&mut ctx, 200).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
         }
 
         // Machine 2: sees all objects from Machine 1
@@ -700,11 +700,11 @@ mod kernel_tests {
             let _m1 = crate::machine::Machine::new(Arc::clone(&kernel));
             let mut ctx = kernel.begin();
             kernel.engine.object_birth(&mut ctx, 10).unwrap();
-            kernel.commit(&mut ctx).unwrap();
+            let _receipt = kernel.commit(&mut ctx).unwrap();
 
             let mut ctx2 = kernel.begin();
             kernel.engine.capability_grant(&mut ctx2, 10, "read", 10).unwrap();
-            kernel.commit(&mut ctx2).unwrap();
+            let _receipt = kernel.commit(&mut ctx2).unwrap();
         }
 
         // Machine 2: capability still valid
@@ -751,7 +751,7 @@ mod kernel_tests {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
         };
-        kernel.commit(&mut ctx).unwrap();
+        let _receipt = kernel.commit(&mut ctx).unwrap();
         assert_eq!(
             kernel.get_object_state(id),
             Some(ObjectState::Alive),
@@ -769,7 +769,7 @@ mod kernel_tests {
         let engine1 = crate::engine::VeritasEngine::with_wal_path(path.clone());
         let mut ctx = engine1.begin();
         engine1.object_birth(&mut ctx, 10).unwrap();
-        engine1.commit(&mut ctx).unwrap();
+        let _receipt = engine1.commit(&mut ctx).unwrap();
         drop(engine1);
 
         let engine2 = crate::engine::VeritasEngine::with_wal_path(path.clone());

@@ -287,6 +287,73 @@ impl VeritasEngine {
         Self::hash_u64s(&[h1, h2, h3, h4, h5])
     }
 
+    /// 调试用：返回五组件各自独立 hash，用于定位状态差异。
+    #[allow(dead_code)]
+    pub fn debug_root_components(&self) -> (u64, u64, u64, u64, u64) {
+        // 与 root_hash() 中完全相同的计算，但不合并
+        let mut entries = self.state_store.all_entries();
+        entries.sort_by_key(|(addr, _)| *addr);
+        let h1 = Self::hash_each(&entries, |(addr, entry), buf| {
+            buf.extend_from_slice(&addr.object_id.to_le_bytes());
+            buf.extend_from_slice(&addr.state_id.to_le_bytes());
+            buf.extend_from_slice(&entry.value);
+            buf.extend_from_slice(&entry.version.to_le_bytes());
+        });
+
+        let mut records: Vec<(ObjectId, crate::types::ObjectRecord)> = {
+            let reg = self.object_registry.lock().unwrap();
+            reg.iter().map(|(id, r)| (*id, r.clone())).collect()
+        };
+        records.sort_by_key(|(id, _)| *id);
+        let h2 = Self::hash_each(&records, |(id, r), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            buf.push(r.state as u8);
+            buf.push(r.object_type as u8);
+        });
+
+        let mut edges = {
+            let topo = self.topology.lock().unwrap();
+            topo.clone()
+        };
+        edges.sort_by(|a, b| {
+            a.from.cmp(&b.from)
+                .then(a.to.cmp(&b.to))
+                .then((a.link_type as u8).cmp(&(b.link_type as u8)))
+        });
+        let h3 = Self::hash_each(&edges, |e, buf| {
+            buf.extend_from_slice(&e.from.to_le_bytes());
+            buf.extend_from_slice(&e.to.to_le_bytes());
+            buf.push(e.link_type as u8);
+        });
+
+        let mut grants = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.all_grants()
+        };
+        grants.sort_by_key(|(id, _)| *id);
+        let h4 = Self::hash_each(&grants, |(id, info), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            buf.extend_from_slice(&info.granted_by.to_le_bytes());
+            buf.extend_from_slice(&info.root_holder.to_le_bytes());
+            buf.extend_from_slice(&info.resource.to_le_bytes());
+            buf.extend_from_slice(info.capability_type.as_bytes());
+        });
+
+        let mut scopes = self.scope_registry.all_scopes();
+        scopes.sort_by_key(|(id, _)| *id);
+        let h5 = Self::hash_each(&scopes, |(id, entry), buf| {
+            buf.extend_from_slice(&id.to_le_bytes());
+            let mut members = entry.members.clone();
+            members.sort();
+            for m in &members {
+                buf.extend_from_slice(&m.to_le_bytes());
+            }
+            buf.extend_from_slice(&entry.struct_version.to_le_bytes());
+        });
+
+        (h1, h2, h3, h4, h5)
+    }
+
     /// 创建完全空的引擎，不读 WAL，不恢复。
     /// 仅用于 Replay 和测试。
     pub(crate) fn empty() -> Self {
@@ -608,10 +675,13 @@ impl VeritasEngine {
         ctx.pending_deaths = queue;
     }
 
-    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<(), VeritasError> {
+    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
         self.controller.pre_commit_check(ctx)?;
 
         let _lock = self.commit_lock.lock().unwrap();
+
+        // Stage 3.3: 捕获 commit 前 WorldState 根哈希
+        let before_root = self.root_hash();
 
         self.detect_conflict(ctx)?;
         self.detect_scope_conflict(ctx)?;
@@ -673,7 +743,15 @@ impl VeritasEngine {
         self.controller.post_commit(ctx.tx_id());
         self.record_history(ctx);
 
-        Ok(())
+        let after_root = self.root_hash();
+        let receipt = TransactionReceipt {
+            tx_id: delta.tx_id,
+            before_root,
+            delta,
+            after_root,
+        };
+
+        Ok(receipt)
     }
 
     /// Step 1b: 从 TransactionContext 构建 TransactionDelta。
