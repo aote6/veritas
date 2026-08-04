@@ -351,6 +351,8 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - `receipt_replay_consistency` — Replay == idle Recovery, receipt.after == live engine
 
 ### 已知未闭合
-- Live engine root_hash ≠ idle Recovery root_hash（Delta 完整性缺口）
-- 根因待 Stage 3.4 Checkpoint 后通过五组件拆分 hash 定位
+- Live runtime root_hash ≠ Recovery reconstructed root_hash
+- 非 Delta 完整性问题（Replay == Recovery 已验证）
+- 根因：非 WAL 持久化的运行时元数据可能进入了 root_hash 计算
+- 需 Stage 3.4 明确 Commitment Domain（哪些组件进入承诺，哪些是运行时）
 - 160 tests, 0 failed
