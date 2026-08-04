@@ -359,3 +359,122 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 - 修复后 live == recovery 五组件全部一致
 - constitution/kernel.md §6.1 新增"自身对象访问豁免"条款
 - 162 tests, 0 failed
+
+---
+
+## Architecture Cleanup — 2026-08-04
+
+### 影子系统退役
+
+删除 6 个文件：
+
+| 文件 | 原因 |
+|------|------|
+| `src/state_memory.rs` | 第二套状态存储，与 StateStore 平行脱节。state_root() 已迁移到 StateStore::root_hash() |
+| `src/history.rs` | 旧 Replay 系统 ExecutionHistory/ReplayRecord，基于 state_memory |
+| `src/replay.rs` | 旧 ReplayEngine，基于 state_memory + history + checkpoint |
+| `src/replay_verify.rs` | 旧 Replay 验证逻辑 |
+| `src/checkpoint.rs` | 旧 Checkpoint（StateSnapshot），已被 WorldSnapshot 取代 |
+| `src/engine.rs.patch` | 临时补丁文件 |
+
+### 迁移内容
+
+- `state_root()` 从 `state_memory.root_hash()` → `self.root_hash()`（基于 StateStore 五组件确定性哈希）
+- `record_history()` 函数删除（engine.rs + kernel.rs 透传）
+- `engine.history` 字段删除
+- `apply_state_memory()` 删除（engine.rs + kernel.rs 透传）
+- `lib.rs` 移除 5 个旧模块声明
+- `src/graph/` 已在 P1b 阶段删除（1021 行死代码，engine.topology 是唯一拓扑存储）
+
+### 测试变化
+
+- 94 → 88 tests（减少 6 个旧模块自带的单元测试）
+- 0 failed
+
+---
+
+## PR1-PR4: Checkpoint 世界状态恢复 — 2026-08-04
+
+### PR1: WorldSnapshot 稳定语义协议
+
+定义在 `src/types.rs`，与内部实现（ObjectRecord/StateEntry/ScopeEntry）完全解耦：
+
+- `WorldSnapshot` — commitment_hash + tx_id + 五组件数据
+- `ObjectSnapshot` — id + object_type + lifecycle_state + metadata + payload
+- `LinkSnapshot` — from + to + link_type（结构体，支持未来扩展）
+- `ScopeSnapshot` — scope_id + members + owner（owner 用 ObjectId，不暴露 ModuleId）
+- `CapabilitySemanticRecord` — 已存在，不含 CapabilityId
+
+### PR2: 五组件 snapshot/restore 接口
+
+每个组件只导出自己的语义，不知道 WorldSnapshot 存在：
+
+| 组件 | Snapshot | Restore |
+|------|----------|---------|
+| StateStore | `snapshot() → Vec<(Address, Vec<u8>)>` | `restore_snapshot()` |
+| ObjectRegistry | `snapshot_objects() → Vec<ObjectSnapshot>` | `restore_objects()` + `deserialize_object_body()` |
+| Topology | `snapshot_links() → Vec<LinkSnapshot>` | `restore_links()` |
+| CapabilityGraph | `snapshot_capabilities() → Vec<CapabilitySemanticRecord>` | `restore_capabilities()` |
+| ScopeRegistry | `snapshot_all_scopes() → Vec<ScopeSnapshot>` | `restore_scopes()` |
+
+- `CapabilitySemanticRecord.active` 从 `HolderRecord.active` 真实读取，不再写死 true
+- `restore_capabilities()` 直接操作 grants + holders，保留 active 状态
+- 新增 8 个 roundtrip 单元测试（ObjectBody serde 3 + CapabilityGraph 2 + ScopeRegistry 2 + Topology 1）
+
+### PR3: Engine Checkpoint 接通
+
+- `create_checkpoint()` — 聚合五组件 snapshot → WorldSnapshot
+- `restore_checkpoint()` — 固定顺序恢复五组件（StateStore → ObjectRegistry → Topology → CapabilityGraph → ScopeRegistry）
+- Engine 不再直接操作任何子模块内部（无 HashMap::clear/insert/push）
+
+### PR4: Checkpoint 集成测试 (4 tests)
+
+1. **五组件 roundtrip** — restore(snapshot(world)) == world（Objects + Links + Capabilities + StateEntries）
+2. **恢复后可继续执行** — restore 后能开启新事务、创建 Object、Commit
+3. **多次 restore 幂等** — 连续 restore(snap) 不改变世界
+4. **快照幂等** — 连续 create_checkpoint() 输出一致（世界未变则快照不变）
+
+### 已知未进入 Checkpoint 的机器元数据
+
+| 状态 | 位置 | 影响 | 优先级 |
+|------|------|------|:---:|
+| global_version | engine.global_version | MVCC/冲突检测版本号可能回退 | **P0** |
+| next_object_id | engine.object_id_counter | ObjectId 可能重用 | **P0** |
+| grant_sequence | capability_graph.grant_sequence | CapabilityId 可能漂移/冲突 | **P0** |
+| next_tx_id | tx_mgr.next_tx_id | tx_id 回退（语义待定） | Pending |
+
+---
+
+## Architecture Inventory — 2026-08-04
+
+逐文件普查结果（详见 `ARCHITECTURE_INVENTORY.md`）：
+
+- **保留**: 25 个模块
+- **待迁移后删除**: 5 个（已于本次清理完成）
+- **直接删除**: 1 个（engine.rs.patch，已于本次清理完成）
+
+scope.rs 判定：ScopeExt trait，ScopeRegistry 的 API 扩展层，不持有状态，非第二实现，保留。
+
+---
+
+## 当前测试总计
+
+- 88 unit tests (lib)
+- 8 roundtrip tests (snapshot_restore_roundtrip)
+- 4 checkpoint integration tests (checkpoint_roundtrip)
+- 32 recovery tests (P29 pyramid)
+- 10+ capability/freeze/unlink recovery tests
+- 6 determinism/replay tests
+- 其他集成测试 (object lifecycle, transaction, receipt, root_hash, commitment_domain 等)
+
+总计约 160+ tests, 0 failed.
+
+---
+
+## 下一步优先级
+
+1. **P0: 机器元数据恢复** — global_version, next_object_id, grant_sequence 进入 WorldSnapshot
+2. **Deterministic World** — 基于新 Checkpoint + 统一 apply() 重建 Replay/Receipt（替代已删除的旧 Replay 系统）
+3. **Module 生命周期闭合** — ModuleObject/ModuleInstance 分离
+4. **engine.rs 拆分** — 1400+ 行按 Constitution 章节拆分
+5. **Savepoint 完整语义** — 按需推进
