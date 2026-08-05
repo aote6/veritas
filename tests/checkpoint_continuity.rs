@@ -1,0 +1,134 @@
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::*;
+
+fn birth(kernel: &Kernel, ctx: &mut TransactionContext) -> ObjectId {
+    match kernel.handle(ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap() {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    }
+}
+fn grant(kernel: &Kernel, ctx: &mut TransactionContext, grantee: ObjectId, resource: ObjectId, cap_type: &str) -> CapabilityId {
+    match kernel.handle(ctx, KernelCall::CapabilityGrant {
+        grantee, capability_type: cap_type.to_string(), resource,
+    }).unwrap() {
+        TrapResult::CapabilityId(id) => id,
+        _ => panic!("expected CapabilityId"),
+    }
+}
+
+#[test]
+fn checkpoint_restore_world_continuity() {
+    let k_cont = Kernel::new();
+    let mut ctx = k_cont.begin();
+    let o1 = birth(&k_cont, &mut ctx);
+    let cap1 = grant(&k_cont, &mut ctx, o1, o1, "read");
+    k_cont.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let mut ctxw = k_cont.begin_in_object(o1);
+    k_cont.write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
+    k_cont.handle(&mut ctxw, KernelCall::Commit).unwrap();
+    let root1 = k_cont.state_root();
+    let meta = k_cont.create_checkpoint();
+    let (gv1, oid1, gs1) = (meta.global_version, meta.object_id_counter, meta.grant_sequence);
+
+    let mut ctx2 = k_cont.begin();
+    let o2 = birth(&k_cont, &mut ctx2);
+    let cap2 = grant(&k_cont, &mut ctx2, o2, o2, "write");
+    k_cont.handle(&mut ctx2, KernelCall::Commit).unwrap();
+    let mut ctxw2 = k_cont.begin_in_object(o2);
+    k_cont.write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
+    k_cont.handle(&mut ctxw2, KernelCall::Commit).unwrap();
+    let root_final = k_cont.state_root();
+    let final_cont = k_cont.create_checkpoint();
+
+    let k_rest = Kernel::new();
+    let mut ctx = k_rest.begin();
+    let o1r = birth(&k_rest, &mut ctx);
+    let cap1r = grant(&k_rest, &mut ctx, o1r, o1r, "read");
+    k_rest.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let mut ctxw = k_rest.begin_in_object(o1r);
+    k_rest.write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
+    k_rest.handle(&mut ctxw, KernelCall::Commit).unwrap();
+    assert_eq!(o1r, o1);
+    assert_eq!(cap1r, cap1);
+    assert_eq!(k_rest.state_root(), root1);
+    let snap = k_rest.create_checkpoint();
+    assert_eq!(snap.global_version, gv1);
+    assert_eq!(snap.object_id_counter, oid1);
+    assert_eq!(snap.grant_sequence, gs1);
+    k_rest.restore_checkpoint(&snap);
+
+    let mut ctx2 = k_rest.begin();
+    let o2r = birth(&k_rest, &mut ctx2);
+    let cap2r = grant(&k_rest, &mut ctx2, o2r, o2r, "write");
+    k_rest.handle(&mut ctx2, KernelCall::Commit).unwrap();
+    let mut ctxw2 = k_rest.begin_in_object(o2r);
+    k_rest.write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
+    k_rest.handle(&mut ctxw2, KernelCall::Commit).unwrap();
+    assert_eq!(o2r, o2);
+    assert_eq!(cap2r, cap2);
+    assert_eq!(k_rest.state_root(), root_final);
+    let final_rest = k_rest.create_checkpoint();
+    assert_eq!(final_rest.global_version, final_cont.global_version);
+    assert_eq!(final_rest.object_id_counter, final_cont.object_id_counter);
+    assert_eq!(final_rest.grant_sequence, final_cont.grant_sequence);
+}
+
+#[test]
+fn capability_identity_survives_checkpoint_restore() {
+    let kernel = Kernel::new();
+    let mut ctx = kernel.begin();
+    let o1 = birth(&kernel, &mut ctx);
+    let o2 = birth(&kernel, &mut ctx);
+    let cap_a = grant(&kernel, &mut ctx, o1, o2, "read");
+    let cap_b = grant(&kernel, &mut ctx, o1, o2, "read");
+    assert_ne!(cap_a, cap_b);
+    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let snap = kernel.create_checkpoint();
+    let ids_before: Vec<_> = snap.capability_records.iter().map(|r| r.capability_id).collect();
+    assert!(ids_before.contains(&cap_a) && ids_before.contains(&cap_b));
+    kernel.restore_checkpoint(&snap);
+    let snap2 = kernel.create_checkpoint();
+    let ids_after: Vec<_> = snap2.capability_records.iter().map(|r| r.capability_id).collect();
+    assert_eq!(ids_before, ids_after);
+    assert!(kernel.holds_capability(cap_a, o1));
+    assert!(kernel.holds_capability(cap_b, o1));
+}
+
+#[test]
+fn object_death_no_ghost_state_after_checkpoint() {
+    let kernel = Kernel::new();
+    let mut ctx = kernel.begin();
+    let oid = birth(&kernel, &mut ctx);
+    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let mut ctx2 = kernel.begin_in_object(oid);
+    kernel.write(&mut ctx2, 7, b"ghost-bait".to_vec()).unwrap();
+    kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
+    let root_alive = kernel.state_root();
+    let mut ctx3 = kernel.begin_in_object(oid);
+    kernel.handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid }).unwrap();
+    kernel.handle(&mut ctx3, KernelCall::Commit).unwrap();
+    let snap_dead = kernel.create_checkpoint();
+    assert!(!snap_dead.state_entries.iter().any(|(a, _)| a.object_id == oid));
+    assert!(snap_dead.objects.iter().any(|o| o.id == oid && o.lifecycle_state == ObjectState::Dead));
+    let root_dead = kernel.state_root();
+    assert_ne!(root_alive, root_dead);
+    kernel.restore_checkpoint(&snap_dead);
+    assert!(!kernel.create_checkpoint().state_entries.iter().any(|(a, _)| a.object_id == oid));
+    assert_eq!(kernel.state_root(), root_dead);
+}
+
+#[test]
+fn checkpoint_preserves_state_entry_versions() {
+    let kernel = Kernel::new();
+    let mut ctx = kernel.begin();
+    let oid = birth(&kernel, &mut ctx);
+    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let mut ctx2 = kernel.begin_in_object(oid);
+    kernel.write(&mut ctx2, 1, b"v1".to_vec()).unwrap();
+    kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
+    let snap = kernel.create_checkpoint();
+    let v_before: Vec<_> = snap.state_entries.iter().map(|(a, e)| (*a, e.version)).collect();
+    kernel.restore_checkpoint(&snap);
+    let v_after: Vec<_> = kernel.create_checkpoint().state_entries.iter().map(|(a, e)| (*a, e.version)).collect();
+    assert_eq!(v_before, v_after);
+}

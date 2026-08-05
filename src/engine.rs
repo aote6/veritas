@@ -286,31 +286,52 @@ impl VeritasEngine {
         topo.iter().any(|edge| edge.from == from && edge.to == to)
     }
 
-    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
-        // 结构性豁免：对象访问自己当前所在的 object 是天然授权的。
-        // 语义上等价于 BaseAccess，但不再实例化为 cap_graph 中的记录，
-        // 避免污染 root_hash（Commitment Domain）与 cap_graph 账本无限增长。
-        // 详见 docs/constitution/kernel.md §6 "自身对象访问豁免"。
-
-        let cap_graph = self.capability_graph.lock().unwrap();
-
+    fn collect_access_intents(ctx: &crate::types::TransactionContext) -> Vec<crate::types::AccessIntent> {
+        let mut intents = Vec::new();
+        for addr in ctx.read_set.states.keys() {
+            intents.push(crate::types::AccessIntent::Read(addr.object_id));
+        }
         for (addr, _) in &ctx.write_set.changes {
-            if addr.object_id == ctx.current_object {
-                continue;
-            }
-            let has_valid_cap = ctx.capabilities.iter().any(|cap_id| {
-                cap_graph.is_capability_valid(*cap_id)
-                    && cap_graph
-                        .info(*cap_id)
-                        .map(|info| info.resource == addr.object_id)
-                        .unwrap_or(false)
-            });
+            intents.push(crate::types::AccessIntent::Write(addr.object_id));
+        }
+        for edge in &ctx.pending_links {
+            intents.push(crate::types::AccessIntent::Link(edge.from, edge.to));
+        }
+        for (from, to) in &ctx.pending_unlinks {
+            intents.push(crate::types::AccessIntent::Unlink(*from, *to));
+        }
+        for oid in &ctx.pending_deaths {
+            intents.push(crate::types::AccessIntent::Destroy(*oid));
+        }
+        for oid in &ctx.pending_freezes {
+            intents.push(crate::types::AccessIntent::Freeze(*oid));
+        }
+        intents
+    }
 
-            if !has_valid_cap {
-                return Err(crate::types::VeritasError::PermissionDenied);
+    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+        // 结构性豁免 + AccessIntent 全覆盖（Read/Write/Link/Unlink/Destroy/Freeze）
+        let cap_graph = self.capability_graph.lock().unwrap();
+        for intent in &Self::collect_access_intents(ctx) {
+            for target in intent.target_objects() {
+                if target == ctx.current_object || target == ctx.capability_context {
+                    continue;
+                }
+                let has_committed = ctx.capabilities.iter().any(|cap_id| {
+                    cap_graph.is_capability_valid(*cap_id)
+                        && cap_graph.info(*cap_id).map(|info| info.resource == target).unwrap_or(false)
+                });
+                let has_pending = ctx.pending_capabilities.iter().any(|g| {
+                    g.resource == target
+                        && (g.grantee == ctx.current_object
+                            || g.grantee == ctx.capability_context
+                            || ctx.capabilities.contains(&g.capability_id))
+                });
+                if !has_committed && !has_pending {
+                    return Err(crate::types::VeritasError::PermissionDenied);
+                }
             }
         }
-
         Ok(())
     }
 
@@ -349,31 +370,19 @@ impl VeritasEngine {
         }
     }
 
-    /// PR3: 从 WorldSnapshot 恢复五组件。固定恢复顺序，不做交叉依赖。
+    /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
     pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
-        // 1. StateStore
-        self.state_store.restore_snapshot(&snap.state_entries);
-        // 2. ObjectRegistry
-        self.restore_objects(&snap.objects);
-        // 3. Topology
-        self.restore_links(&snap.links);
-        // 4. CapabilityGraph
-        self.capability_graph.lock().unwrap().restore_capabilities(&snap.capability_records);
-        // 0. 恢复 grant_sequence（必须在 restore_capabilities 之前）
-        self.capability_graph.lock().unwrap().set_grant_sequence(snap.grant_sequence);
-        // 1. StateStore
-        self.state_store.restore_snapshot(&snap.state_entries);
-        // 2. ObjectRegistry
-        self.restore_objects(&snap.objects);
-        // 3. Topology
-        self.restore_links(&snap.links);
-        // 4. CapabilityGraph
-        self.capability_graph.lock().unwrap().restore_capabilities(&snap.capability_records);
-        // 5. ScopeRegistry
-        self.scope_registry.restore_scopes(&snap.scopes);
-        // 6. 恢复 global_version 和 object_id_counter
         self.global_version.store(snap.global_version, Ordering::SeqCst);
         self.object_id_counter.store(snap.object_id_counter, Ordering::SeqCst);
+        {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.set_grant_sequence(snap.grant_sequence);
+            cap_graph.restore_capabilities(&snap.capability_records);
+        }
+        self.state_store.restore_snapshot(&snap.state_entries);
+        self.restore_objects(&snap.objects);
+        self.restore_links(&snap.links);
+        self.scope_registry.restore_scopes(&snap.scopes);
         true
     }
 

@@ -522,14 +522,39 @@ pub struct TransactionDelta {
 }
 
 /// Capability 语义快照记录（进入 Commitment Domain）。
-/// 不含 CapabilityId——该 ID 由恢复时重新生成。
+/// capability_id 是稳定身份，必须随 snapshot 持久化，restore 时不得重新生成。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilitySemanticRecord {
+    pub capability_id: CapabilityId,
     pub granted_by: ObjectId,
     pub holder: ObjectId,
     pub resource: ObjectId,
     pub capability_type: String,
     pub active: bool,
+    pub parent: Option<ObjectId>,
+    pub cascade_on_revoke: bool,
+}
+
+/// AccessIntent — commit 前所有跨 Object side-effect 的统一访问意图。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccessIntent {
+    Read(ObjectId),
+    Write(ObjectId),
+    Link(ObjectId, ObjectId),
+    Unlink(ObjectId, ObjectId),
+    Destroy(ObjectId),
+    Freeze(ObjectId),
+}
+
+impl AccessIntent {
+    pub fn target_objects(&self) -> Vec<ObjectId> {
+        match self {
+            AccessIntent::Read(id) | AccessIntent::Write(id)
+            | AccessIntent::Destroy(id) | AccessIntent::Freeze(id) => vec![*id],
+            AccessIntent::Link(from, to) => vec![*from, *to],
+            AccessIntent::Unlink(from, _to) => vec![*from],
+        }
+    }
 }
 
 /// WorldState 完整快照。

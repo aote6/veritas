@@ -478,3 +478,42 @@ scope.rs 判定：ScopeExt trait，ScopeRegistry 的 API 扩展层，不持有�
 3. **Module 生命周期闭合** — ModuleObject/ModuleInstance 分离
 4. **engine.rs 拆分** — 1400+ 行按 Constitution 章节拆分
 5. **Savepoint 完整语义** — 按需推进
+
+---
+
+## Closure Fix — 2026-08-04 (Checkpoint Continuity + Capability Identity + AccessIntent)
+
+### 不变量闭合
+
+1. **Checkpoint 世界连续性**
+   - WorldSnapshot 已包含 global_version / object_id_counter / grant_sequence / StateEntry.version
+   - restore_checkpoint 顺序修正：先恢复计数器与 capability_id，再恢复五组件
+   - 恢复后 ObjectId / CapabilityId / version 序列与连续运行路径一致
+
+2. **Capability Identity**
+   - CapabilitySemanticRecord 新增 `capability_id`
+   - snapshot 持久化原始 ID；restore 直接恢复，不再 capability_id_of 重算
+
+3. **Capability 校验范围**
+   - 引入 AccessIntent（Read/Write/Link/Unlink/Destroy/Freeze）
+   - verify_capability 覆盖全部跨 Object side-effect，不再只看 write_set
+   - 同事务 pending_capabilities 在 apply 前亦具授权效力
+
+4. **Object Death / StateStore**
+   - apply 已 remove_object；checkpoint 后无幽灵状态（回归测试确认）
+
+5. **Kernel 边界**
+   - 既有 P1b：mutation 经 Kernel::handle；begin/commit/read/write 保留为事务/Memory ABI
+   - ABI 测试改为 begin_in_object + pending grant，符合 capability 校验
+
+### 新增测试
+- checkpoint_restore_world_continuity
+- capability_identity_survives_checkpoint_restore
+- object_death_no_ghost_state_after_checkpoint
+- checkpoint_preserves_state_entry_versions
+
+### 仍未完全闭合
+- Kernel begin/commit/read/write 仍为 pub（Memory ABI 待 TRAP 化）
+- Cross-object CALL 的 capability 校验依赖 Machine 路径，尚未单独 AccessIntent 化
+- ModuleObject/ModuleInstance 生命周期
+- Savepoint 完整语义

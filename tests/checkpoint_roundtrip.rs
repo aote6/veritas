@@ -6,11 +6,14 @@ fn build_world(kernel: &Kernel) {
     let mut ctx = kernel.begin();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    let mut ctx = kernel.begin_in_object(1);
+    kernel.handle(&mut ctx, KernelCall::CapabilityGrant {
+        grantee: 1, capability_type: "link".to_string(), resource: 2,
+    }).unwrap();
     kernel.handle(&mut ctx, KernelCall::ObjectLink { from: 1, to: 2, link_type: LinkType::Owns }).unwrap();
     kernel.handle(&mut ctx, KernelCall::CapabilityGrant {
-        grantee: 2,
-        capability_type: "read".to_string(),
-        resource: 100,
+        grantee: 2, capability_type: "read".to_string(), resource: 100,
     }).unwrap();
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
 }

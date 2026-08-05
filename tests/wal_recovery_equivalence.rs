@@ -105,19 +105,22 @@ fn commit_birth(kernel: &Kernel) -> u64 {
 }
 
 fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(from);
+    kernel.handle(&mut tx, KernelCall::CapabilityGrant {
+        grantee: from, capability_type: "link".to_string(), resource: to,
+    }).unwrap();
     kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn commit_death(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn commit_freeze(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
@@ -182,13 +185,9 @@ fn cross_tx_unlink_then_death_no_cascade() {
     let kernel = Kernel::with_wal_path(wal_path.clone());
     let a = commit_birth(&kernel); // A
     let b = commit_birth(&kernel); // B
+    commit_link(&kernel, a, b, LinkType::Owns);
     {
-        let mut tx = kernel.begin();
-        kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns }).unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
-    }
-    {
-        let mut tx = kernel.begin();
+        let mut tx = kernel.begin_in_object(a);
         kernel.handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
@@ -229,11 +228,7 @@ fn cross_tx_link_then_death_cascade() {
     let kernel = Kernel::with_wal_path(wal_path.clone());
     let a = commit_birth(&kernel); // A
     let b = commit_birth(&kernel); // B
-    {
-        let mut tx = kernel.begin();
-        kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns }).unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
-    }
+    commit_link(&kernel, a, b, LinkType::Owns);
     commit_death(&kernel, a); // kill A → cascade to B
     drop(kernel); // crash
 

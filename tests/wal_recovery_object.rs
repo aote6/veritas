@@ -61,7 +61,10 @@ fn object_link_survives_recovery() {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         obj_a = birth(&kernel);
         obj_b = birth(&kernel);
-        let mut tx = kernel.begin();
+        let mut tx = kernel.begin_in_object(obj_a);
+        kernel.handle(&mut tx, KernelCall::CapabilityGrant {
+            grantee: obj_a, capability_type: "link".to_string(), resource: obj_b,
+        }).unwrap();
         kernel.handle(&mut tx, KernelCall::ObjectLink { from: obj_a, to: obj_b, link_type: LinkType::Owns }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
         assert!(kernel.engine().has_link(obj_a, obj_b), "link should exist before crash");

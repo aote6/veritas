@@ -65,7 +65,10 @@ fn root_hash_changes_on_link() {
     let before = tk.kernel.engine().root_hash();
 
     // 建立 Link
-    let mut tx2 = tk.kernel.begin();
+    let mut tx2 = tk.kernel.begin_in_object(root);
+    tk.kernel.handle(&mut tx2, KernelCall::CapabilityGrant {
+        grantee: root, capability_type: "link".to_string(), resource: child,
+    }).unwrap();
     tk.kernel.handle(&mut tx2, KernelCall::ObjectLink {
         from: root,
         to: child,

@@ -80,7 +80,10 @@ fn object_ops_are_deterministic() {
         let kernel = Kernel::with_wal_path(path.clone());
         let a = birth(&kernel);
         let b = birth(&kernel);
-        let mut tx = kernel.begin();
+        let mut tx = kernel.begin_in_object(a);
+        kernel.handle(&mut tx, KernelCall::CapabilityGrant {
+            grantee: a, capability_type: "link".to_string(), resource: b,
+        }).unwrap();
         kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: veritas_kernel::types::LinkType::Owns }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
@@ -111,7 +114,10 @@ fn wal_contains_full_world() {
         let kernel = Kernel::with_wal_path(path.clone());
         a = birth(&kernel);
         b = birth(&kernel);
-        let mut tx = kernel.begin();
+        let mut tx = kernel.begin_in_object(a);
+        kernel.handle(&mut tx, KernelCall::CapabilityGrant {
+            grantee: a, capability_type: "link".to_string(), resource: b,
+        }).unwrap();
         kernel.handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: veritas_kernel::types::LinkType::Owns }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }

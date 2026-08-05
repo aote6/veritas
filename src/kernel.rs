@@ -500,8 +500,8 @@ mod kernel_tests {
         };
         let _receipt = kernel.commit(&mut ctx_b).unwrap();
 
-        // Link A -> B via handle
-        let mut ctx_link = kernel.begin();
+        let mut ctx_link = kernel.begin_in_object(id_a);
+        let _cap = kernel.engine.capability_grant(&mut ctx_link, id_a, "link", id_b).unwrap();
         let call_link = KernelCall::ObjectLink {
             from: id_a, to: id_b, link_type: LinkType::DependsOn,
         };
@@ -523,7 +523,7 @@ mod kernel_tests {
         };
         let _receipt = kernel.commit(&mut ctx1).unwrap();
 
-        let mut ctx2 = kernel.begin();
+        let mut ctx2 = kernel.begin_in_object(id);
         let result = kernel.handle(&mut ctx2, KernelCall::ObjectFreeze { object_id: id }).unwrap();
         assert!(matches!(result, TrapResult::Success));
         let _receipt = kernel.commit(&mut ctx2).unwrap();
@@ -542,7 +542,7 @@ mod kernel_tests {
         };
         let _receipt = kernel.commit(&mut ctx1).unwrap();
 
-        let mut ctx2 = kernel.begin();
+        let mut ctx2 = kernel.begin_in_object(id);
         let result = kernel.handle(&mut ctx2, KernelCall::ObjectDeath { object_id: id }).unwrap();
         assert!(matches!(result, TrapResult::Success));
         let _receipt = kernel.commit(&mut ctx2).unwrap();

@@ -14,25 +14,28 @@ fn birth(kernel: &Kernel) -> u64 {
 }
 
 fn freeze(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn death(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(from);
+    kernel.handle(&mut tx, KernelCall::CapabilityGrant {
+        grantee: from, capability_type: "link".to_string(), resource: to,
+    }).unwrap();
     kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn unlink(kernel: &Kernel, from: u64, to: u64) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.begin_in_object(from);
     kernel.handle(&mut tx, KernelCall::ObjectUnlink { from, to }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }

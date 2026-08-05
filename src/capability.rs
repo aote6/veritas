@@ -92,46 +92,78 @@ impl CapabilityGraph {
     }
 
     /// 从 CapabilitySemanticRecord 恢复，清空后重建。
+    /// 使用快照中持久化的 capability_id，绝不重新调用 capability_id_of。
     pub fn restore_capabilities(&mut self, records: &[crate::types::CapabilitySemanticRecord]) {
         self.grants.clear();
         self.holders.clear();
         self.edges.clear();
         self.children.clear();
+
+        // 先恢复所有 holders
         for rec in records {
-            let cap_id = capability_id_of(rec.granted_by, rec.holder, rec.resource, self.grant_sequence);
-            self.grants.insert(cap_id, CapabilityInfo {
-                capability_type: rec.capability_type.clone(),
-                granted_by: rec.granted_by,
-                root_holder: rec.holder,
-                resource: rec.resource,
-            });
+            let cap_id = rec.capability_id;
+            // 每个 cap_id 只在第一次遇到时创建 CapabilityInfo
+            // root_holder 取 parent.is_none() 的那个 holder
+            if !self.grants.contains_key(&cap_id) {
+                let root_holder = records.iter()
+                    .find(|r| r.capability_id == cap_id && r.parent.is_none())
+                    .map(|r| r.holder)
+                    .unwrap_or(rec.holder);
+                self.grants.insert(cap_id, CapabilityInfo {
+                    capability_type: rec.capability_type.clone(),
+                    granted_by: rec.granted_by,
+                    root_holder,
+                    resource: rec.resource,
+                });
+            }
             self.holders.insert((cap_id, rec.holder), HolderRecord {
                 active: rec.active,
-                parent: None,
+                parent: rec.parent,
             });
+        }
+
+        // 根据 parent 重建 children 索引和 edges
+        for rec in records {
+            if let Some(p) = rec.parent {
+                self.children
+                    .entry((rec.capability_id, p))
+                    .or_default()
+                    .insert(rec.holder);
+                self.edges.push(DelegationEdge {
+                    from: p,
+                    to: rec.holder,
+                    capability_id: rec.capability_id,
+                    cascade_on_revoke: rec.cascade_on_revoke,
+                });
+            }
         }
     }
 
-    /// PR2.1: 导出 Capability 稳定语义快照。不暴露 CapabilityInfo。
+    /// PR2.1: 导出 Capability 稳定语义快照（含 capability_id）。
     pub fn snapshot_capabilities(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
-        let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.grants
+        let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.holders
             .iter()
-            .map(|(cap_id, info)| {
-                let active = self.holders
-                    .get(&(*cap_id, info.root_holder))
-                    .map(|r| r.active)
-                    .unwrap_or(false);
-                crate::types::CapabilitySemanticRecord {
+            .filter_map(|((cap_id, holder), holder_record)| {
+                let info = self.grants.get(cap_id)?;
+                let cascade_on_revoke = self.edges.iter()
+                    .find(|e| e.capability_id == *cap_id && e.from == *holder)
+                    .map(|e| e.cascade_on_revoke)
+                    .unwrap_or(true);
+                Some(crate::types::CapabilitySemanticRecord {
+                    capability_id: *cap_id,
                     granted_by: info.granted_by,
-                    holder: info.root_holder,
+                    holder: *holder,
                     resource: info.resource,
                     capability_type: info.capability_type.clone(),
-                    active,
-                }
+                    active: holder_record.active,
+                    parent: holder_record.parent,
+                    cascade_on_revoke,
+                })
             })
             .collect();
         result.sort_by(|a, b| {
-            a.granted_by.cmp(&b.granted_by)
+            a.capability_id.cmp(&b.capability_id)
+                .then(a.granted_by.cmp(&b.granted_by))
                 .then(a.holder.cmp(&b.holder))
                 .then(a.resource.cmp(&b.resource))
                 .then(a.capability_type.cmp(&b.capability_type))
@@ -574,3 +606,70 @@ mod tests {
         assert_eq!(cap, expected);
     }
 }
+
+    #[test]
+    #[test]
+    fn test_delegate_survives_checkpoint_restore() {
+        let mut graph = CapabilityGraph::new();
+        let cap = graph.grant("read".to_string(), 1, 2, 100);
+        graph.delegate(cap, 2, 3, true).unwrap();
+        graph.delegate(cap, 3, 4, false).unwrap();
+
+        let snap = graph.snapshot_capabilities();
+
+        // 验证 snapshot 包含所有 holders（不只是 root）
+        let holders_in_snap: Vec<ObjectId> = snap.iter().map(|r| r.holder).collect();
+        assert!(holders_in_snap.contains(&2));
+        assert!(holders_in_snap.contains(&3));
+        assert!(holders_in_snap.contains(&4));
+
+        // 验证 parent 关系
+        let r2 = snap.iter().find(|r| r.holder == 2).unwrap();
+        let r3 = snap.iter().find(|r| r.holder == 3).unwrap();
+        let r4 = snap.iter().find(|r| r.holder == 4).unwrap();
+        assert_eq!(r2.parent, None);
+        assert_eq!(r3.parent, Some(2));
+        assert_eq!(r4.parent, Some(3));
+
+        // 验证 cascade_on_revoke 持久化
+        let r2_snap = snap.iter().find(|r| r.holder == 2).unwrap();
+        assert!(r2_snap.cascade_on_revoke);
+
+        let mut restored = CapabilityGraph::new();
+        restored.restore_capabilities(&snap);
+
+        // 验证恢复后 CapabilityInfo.root_holder 正确（找 parent=None 的）
+        let info = restored.grants.get(&cap).unwrap();
+        assert_eq!(info.root_holder, 2);
+
+        // 验证 holders 全部恢复
+        assert!(restored.holders.contains_key(&(cap, 2)));
+        assert!(restored.holders.contains_key(&(cap, 3)));
+        assert!(restored.holders.contains_key(&(cap, 4)));
+        assert_eq!(restored.holders.get(&(cap, 2)).unwrap().parent, None);
+        assert_eq!(restored.holders.get(&(cap, 3)).unwrap().parent, Some(2));
+        assert_eq!(restored.holders.get(&(cap, 4)).unwrap().parent, Some(3));
+
+        // 验证 children 重建
+        let kids2: Vec<_> = restored.children.get(&(cap, 2)).unwrap().iter().collect();
+        assert!(kids2.contains(&&3));
+        let kids3: Vec<_> = restored.children.get(&(cap, 3)).unwrap().iter().collect();
+        assert!(kids3.contains(&&4));
+
+        // 验证 edges 重建
+        assert!(restored.edges.iter().any(|e| e.from == 2 && e.to == 3));
+        let edge34_restored = restored.edges.iter()
+            .find(|e| e.from == 3 && e.to == 4).unwrap();
+        assert!(!edge34_restored.cascade_on_revoke);
+
+        // 验证 holds 语义一致
+        assert!(restored.holds(cap, 2));
+        assert!(restored.holds(cap, 3));
+        assert!(restored.holds(cap, 4));
+
+        // 验证 cascade revoke 行为与原始 graph 一致
+        restored.revoke(cap, 2, Some(true)).unwrap();
+        assert!(!restored.holds(cap, 2));
+        assert!(!restored.holds(cap, 3));
+        assert!(!restored.holds(cap, 4));
+    }
