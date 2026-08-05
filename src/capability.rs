@@ -145,8 +145,12 @@ impl CapabilityGraph {
             .iter()
             .filter_map(|((cap_id, holder), holder_record)| {
                 let info = self.grants.get(cap_id)?;
+                // cascade_on_revoke belongs to the *incoming* DelegationEdge
+                // that created this holder (edge.to == holder), not any
+                // outgoing edge. Root holders have no incoming edge; default
+                // true matches revoke()'s root behavior (safe-prefer cascade).
                 let cascade_on_revoke = self.edges.iter()
-                    .find(|e| e.capability_id == *cap_id && e.from == *holder)
+                    .find(|e| e.capability_id == *cap_id && e.to == *holder)
                     .map(|e| e.cascade_on_revoke)
                     .unwrap_or(true);
                 Some(crate::types::CapabilitySemanticRecord {
@@ -605,9 +609,7 @@ mod tests {
         let expected = capability_id_of(1, 2, 100, 6);
         assert_eq!(cap, expected);
     }
-}
 
-    #[test]
     #[test]
     fn test_delegate_survives_checkpoint_restore() {
         let mut graph = CapabilityGraph::new();
@@ -631,9 +633,11 @@ mod tests {
         assert_eq!(r3.parent, Some(2));
         assert_eq!(r4.parent, Some(3));
 
-        // 验证 cascade_on_revoke 持久化
-        let r2_snap = snap.iter().find(|r| r.holder == 2).unwrap();
-        assert!(r2_snap.cascade_on_revoke);
+        // cascade_on_revoke on a record = incoming edge property (parent→holder).
+        // Root has no incoming edge → default true (matches revoke root policy).
+        assert!(r2.cascade_on_revoke);
+        assert!(r3.cascade_on_revoke);   // edge 2→3 was cascade=true
+        assert!(!r4.cascade_on_revoke);  // edge 3→4 was cascade=false
 
         let mut restored = CapabilityGraph::new();
         restored.restore_capabilities(&snap);
@@ -656,8 +660,10 @@ mod tests {
         let kids3: Vec<_> = restored.children.get(&(cap, 3)).unwrap().iter().collect();
         assert!(kids3.contains(&&4));
 
-        // 验证 edges 重建
-        assert!(restored.edges.iter().any(|e| e.from == 2 && e.to == 3));
+        // 验证 edges 重建 + cascade 语义与原始一致
+        let edge23_restored = restored.edges.iter()
+            .find(|e| e.from == 2 && e.to == 3).unwrap();
+        assert!(edge23_restored.cascade_on_revoke);
         let edge34_restored = restored.edges.iter()
             .find(|e| e.from == 3 && e.to == 4).unwrap();
         assert!(!edge34_restored.cascade_on_revoke);
@@ -673,3 +679,4 @@ mod tests {
         assert!(!restored.holds(cap, 3));
         assert!(!restored.holds(cap, 4));
     }
+}
