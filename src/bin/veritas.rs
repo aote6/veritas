@@ -10,12 +10,10 @@ use std::sync::Arc;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: veritas <compile|run|info> [args...]");
+        eprintln!("Usage: veritas <compile|run|info|inspect> [args...]");
         process::exit(1);
     }
 
-    // Phase A: Kernel is created once and persists for all commands.
-    // Multiple 'run' commands share the same Object world.
     let kernel = Arc::new(Kernel::new());
     let result = run_command(&args, &kernel);
     if let Err(e) = result {
@@ -56,6 +54,37 @@ fn run_command(args: &[String], kernel: &Arc<Kernel>) -> Result<(), String> {
             println!("name: {}", m.name);
             println!("version: {}.{}.{}", m.version.major, m.version.minor, m.version.patch);
             println!("instructions: {}", m.program_image.instructions.len());
+        }
+        "inspect" => {
+            let sub = if args.len() > 2 { &args[2] } else { "list" };
+            match sub {
+                "list" => {
+                    let ids = kernel.list_object_ids();
+                    if ids.is_empty() {
+                        println!("(no objects)");
+                    } else {
+                        for id in &ids {
+                            let state = kernel.get_object_state(*id);
+                            let status = match state {
+                                Some(s) => format!("{:?}", s),
+                                None => "Unknown".into(),
+                            };
+                            println!("{} {}", id, status);
+                        }
+                    }
+                }
+                "object" => {
+                    if args.len() < 4 {
+                        return Err("Usage: veritas inspect object <id>".into());
+                    }
+                    let id: u64 = args[3].parse().map_err(|e| format!("invalid id: {}", e))?;
+                    match kernel.get_object_state(id) {
+                        Some(state) => println!("{} {:?}", id, state),
+                        None => println!("{} not found", id),
+                    }
+                }
+                _ => return Err(format!("unknown inspect subcommand: {}", sub)),
+            }
         }
         _ => return Err(format!("unknown command: {}", args[1])),
     }

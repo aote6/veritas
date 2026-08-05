@@ -312,6 +312,12 @@ impl Kernel {
         self.engine.has_link(from, to)
     }
 
+    /// Read-only topology snapshot for World API / system software.
+    pub fn list_links(&self) -> Vec<crate::types::LinkSnapshot> {
+        self.engine.snapshot_links()
+    }
+
+
 
     pub fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()

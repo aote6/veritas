@@ -25,6 +25,7 @@ pub mod capability;
 pub mod effect;
 pub mod store;
 pub mod extension;
+pub mod world_api;
 
 use types::*;
 // use engine::VeritasEngine;

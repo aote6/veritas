@@ -715,7 +715,7 @@ impl VeritasEngine {
         }
 
         if !records.is_empty() {
-            println!(
+            eprintln!(
                 "[恢复] 从WAL恢复 {} 条记录，当前版本号: {}，下一个事务ID: {}",
                 records.len(),
                 recovered_version,
@@ -724,7 +724,7 @@ impl VeritasEngine {
         }
 
         for pending in pending_effects {
-            println!(
+            eprintln!(
                 "[恢复][EFFECT重试] 执行 {}: payload长度={}",
                 pending.idempotency_key,
                 pending.payload.len()
@@ -975,7 +975,7 @@ impl VeritasEngine {
         drop(_lock);
 
         for pending in pending_effects {
-            println!(
+            eprintln!(
                 "[EFFECT] 执行 {}: payload长度={}",
                 pending.idempotency_key,
                 pending.payload.len()
@@ -1537,6 +1537,28 @@ impl VeritasEngine {
             grantee: object_id,
             resource: object_id,
         });
+
+        // Constitution kernel.md §6: "Object 创建时，创建者自动获得该 Object 的 AdminCap"
+        // If the creator is not the new object itself, grant the creator AdminCap too.
+        if ctx.current_object != object_id && ctx.current_object != 0 {
+            let (creator_cap_id, creator_seq) = {
+                let cap_graph = self.capability_graph.lock().unwrap();
+                let seq = cap_graph.current_sequence() + 1
+                    + ctx.pending_capabilities.len() as u64;
+                let id = crate::capability::capability_id_of(
+                    ctx.current_object, object_id, object_id, seq,
+                );
+                (id, seq)
+            };
+            ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
+                capability_id: creator_cap_id,
+                grant_sequence: creator_seq,
+                cap_type: "AdminCap".into(),
+                grantor: object_id,
+                grantee: ctx.current_object,
+                resource: object_id,
+            });
+        }
 
         Ok(())
     }
