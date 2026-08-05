@@ -461,8 +461,9 @@ impl CapabilityGraph {
     }
 
     pub fn deactivate_subtree(&mut self, cap_id: CapabilityId, node: ObjectId) {
-        // P8.4 fix: 删除 grants 和 holders
-        self.grants.remove(&cap_id);
+        // Cascade revoke only flips active flags down the subtree.
+        // grants 身份保留（与文件头注释一致：revoke 不物理删除 holder/grant 记录）。
+        // Death→revoke_holder 走 purge_subtree_strictly，那才是物理清理路径。
         if let Some(rec) = self.holders.get_mut(&(cap_id, node)) {
             rec.active = false;
         }

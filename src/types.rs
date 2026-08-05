@@ -217,6 +217,8 @@ pub struct Savepoint {
     pub pending_objects_len: usize,
     pub pending_links_len: usize,
     pub pending_deaths_len: usize,
+    pub pending_capabilities_len: usize,
+    pub pending_capability_revokes_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,6 +229,15 @@ pub struct PendingCapabilityGrant {
     pub grantor: ObjectId,
     pub grantee: ObjectId,
     pub resource: ObjectId,
+}
+
+/// Explicit CAPABILITY_REVOKE recorded in the transaction (distinct from Death→revoke_holder).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCapabilityRevoke {
+    pub capability_id: CapabilityId,
+    pub holder: ObjectId,
+    /// None → use the edge's cascade_on_revoke (root defaults to true).
+    pub cascade_override: Option<bool>,
 }
 
 pub struct TransactionContext {
@@ -245,6 +256,7 @@ pub struct TransactionContext {
     pub pending_deaths: Vec<ObjectId>,
     pub pending_objects: Vec<ObjectId>,
     pub pending_capabilities: Vec<PendingCapabilityGrant>,
+    pub pending_capability_revokes: Vec<PendingCapabilityRevoke>,
     pub aborted: bool,
     /// 当前执行上下文所属的Object。一切Read/Write在没有显式CALL切换的情况下，
     /// 隐式作用于这个Object的Memory Space——这是Memory宪法(memory.md)第4节
@@ -270,6 +282,7 @@ impl TransactionContext {
             savepoints: Vec::new(),
             pending_objects: Vec::new(),
             pending_capabilities: Vec::new(),
+            pending_capability_revokes: Vec::new(),
             pending_links: Vec::new(),
             pending_unlinks: Vec::new(),
             pending_freezes: Vec::new(),
@@ -516,6 +529,7 @@ pub struct TransactionDelta {
 
     // Capability
     pub capability_grants: Vec<PendingCapabilityGrant>,
+    pub capability_revokes: Vec<PendingCapabilityRevoke>,
 
     // Effects (待执行)
     pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
@@ -626,6 +640,17 @@ impl TransactionDelta {
                 grant.grantor, grant.grantee, grant.resource, grant.cap_type
             ));
         }
+        for rev in &self.capability_revokes {
+            let cas = match rev.cascade_override {
+                None => 2u8,
+                Some(true) => 1u8,
+                Some(false) => 0u8,
+            };
+            s.push_str(&format!(
+                " CAPREVOKE {} {} {}",
+                rev.capability_id, rev.holder, cas
+            ));
+        }
         for (key, payload) in &self.effects {
             s.push_str(&format!(" EFFECT {} {}", key, hex::encode(payload)));
         }
@@ -657,6 +682,7 @@ impl TransactionDelta {
         let mut links = Vec::new();
         let mut unlinks = Vec::new();
         let mut capability_grants = Vec::new();
+        let mut capability_revokes = Vec::new();
         let mut effects = Vec::new();
 
         let mut i = 0;
@@ -729,6 +755,22 @@ impl TransactionDelta {
                     });
                     i += 7;
                 }
+                "CAPREVOKE" if i + 3 < parts.len() => {
+                    let cap_id = parts[i+1].parse::<CapabilityId>().ok()?;
+                    let holder = parts[i+2].parse::<ObjectId>().ok()?;
+                    let cas = parts[i+3].parse::<u8>().ok()?;
+                    let cascade_override = match cas {
+                        0 => Some(false),
+                        1 => Some(true),
+                        _ => None,
+                    };
+                    capability_revokes.push(PendingCapabilityRevoke {
+                        capability_id: cap_id,
+                        holder,
+                        cascade_override,
+                    });
+                    i += 4;
+                }
                 "EFFECT" if i + 2 < parts.len() => {
                     let key = parts[i+1].to_string();
                     let payload = hex::decode(parts[i+2]).ok()?;
@@ -753,6 +795,7 @@ impl TransactionDelta {
             links,
             unlinks,
             capability_grants,
+            capability_revokes,
             effects,
         })
     }

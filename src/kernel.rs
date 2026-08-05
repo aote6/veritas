@@ -47,8 +47,14 @@ pub enum KernelCall {
         capability_type: String,
         resource: ObjectId,
     },
+    /// Revoke a holder's capability. Cascade follows the edge setting
+    /// unless cascade_override is Some(...). Constitution §3.6 is the
+    /// cascade=true case (full downstream revocation).
     CapabilityRevoke {
         capability_id: CapabilityId,
+        holder: ObjectId,
+        /// None → use DelegationEdge.cascade_on_revoke (root defaults true).
+        cascade_override: Option<bool>,
     },
     MemoryAlloc {
         object_id: ObjectId,
@@ -208,8 +214,17 @@ impl Kernel {
                 let cap_id = self.engine.capability_grant(ctx, grantee, &capability_type, resource)?;
                 Ok(TrapResult::CapabilityId(cap_id))
             }
-            KernelCall::CapabilityRevoke { .. } => {
-                // CapabilityRevoke not yet implemented in Engine
+            KernelCall::CapabilityRevoke {
+                capability_id,
+                holder,
+                cascade_override,
+            } => {
+                self.engine.capability_revoke(
+                    ctx,
+                    capability_id,
+                    holder,
+                    cascade_override,
+                )?;
                 Ok(TrapResult::Success)
             }
             KernelCall::MemoryAlloc { .. } => {

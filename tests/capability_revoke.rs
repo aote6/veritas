@@ -1,0 +1,214 @@
+//! P2: CapabilityRevoke Kernel → Engine → Graph → WAL/Checkpoint closure.
+
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::types::ObjectType;
+
+fn birth(kernel: &Kernel) -> u64 {
+    let mut tx = kernel.begin();
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
+fn grant(kernel: &Kernel, grantee: u64, cap_type: &str, resource: u64) -> u64 {
+    let mut tx = kernel.begin();
+    let cap_id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityGrant {
+                grantee,
+                capability_type: cap_type.to_string(),
+                resource,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::CapabilityId(id) => id,
+        _ => panic!("expected CapabilityId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    cap_id
+}
+
+/// Test 1: cascade revoke of intermediate holder removes downstream.
+#[test]
+fn kernel_capability_revoke_cascade_downstream() {
+    let wal = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_cascade_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal);
+    let kernel = Kernel::with_wal_path(wal);
+
+    let o1 = birth(&kernel);
+    let o2 = birth(&kernel);
+    let o3 = birth(&kernel);
+    let resource = birth(&kernel);
+
+    let cap = grant(&kernel, o1, "read", resource);
+    assert!(kernel.engine().holds_capability(cap, o1));
+
+    kernel.engine().capability_delegate(cap, o1, o2, true).unwrap();
+    kernel.engine().capability_delegate(cap, o2, o3, true).unwrap();
+    assert!(kernel.engine().holds_capability(cap, o2));
+    assert!(kernel.engine().holds_capability(cap, o3));
+
+    let mut tx = kernel.begin();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityRevoke {
+                capability_id: cap,
+                holder: o2,
+                cascade_override: Some(true),
+            },
+        )
+        .unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+
+    assert!(kernel.engine().holds_capability(cap, o1));
+    assert!(!kernel.engine().holds_capability(cap, o2));
+    assert!(!kernel.engine().holds_capability(cap, o3));
+}
+
+/// Test 2: non-cascade revoke keeps downstream active.
+#[test]
+fn kernel_capability_revoke_non_cascade_preserves_downstream() {
+    let wal = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_noncascade_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal);
+    let kernel = Kernel::with_wal_path(wal);
+
+    let o1 = birth(&kernel);
+    let o2 = birth(&kernel);
+    let o3 = birth(&kernel);
+    let resource = birth(&kernel);
+
+    let cap = grant(&kernel, o1, "read", resource);
+    kernel.engine().capability_delegate(cap, o1, o2, false).unwrap();
+    kernel.engine().capability_delegate(cap, o2, o3, true).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityRevoke {
+                capability_id: cap,
+                holder: o2,
+                cascade_override: None, // edge o1→o2 was cascade=false
+            },
+        )
+        .unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+
+    assert!(kernel.engine().holds_capability(cap, o1));
+    assert!(!kernel.engine().holds_capability(cap, o2));
+    assert!(
+        kernel.engine().holds_capability(cap, o3),
+        "non-cascade must preserve downstream holder"
+    );
+}
+
+/// Test 3: revoke result is visible in checkpoint restore.
+#[test]
+fn kernel_capability_revoke_survives_checkpoint() {
+    let wal = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_ckpt_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal);
+    let kernel = Kernel::with_wal_path(wal);
+
+    let o1 = birth(&kernel);
+    let o2 = birth(&kernel);
+    let resource = birth(&kernel);
+    let cap = grant(&kernel, o1, "read", resource);
+    kernel.engine().capability_delegate(cap, o1, o2, true).unwrap();
+
+    let mut tx = kernel.begin();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityRevoke {
+                capability_id: cap,
+                holder: o1,
+                cascade_override: Some(true),
+            },
+        )
+        .unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+
+    assert!(!kernel.engine().holds_capability(cap, o1));
+    assert!(!kernel.engine().holds_capability(cap, o2));
+
+    let snap = kernel.create_checkpoint();
+    let wal2 = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_ckpt2_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal2);
+    let kernel2 = Kernel::with_wal_path(wal2);
+    assert!(kernel2.restore_checkpoint(&snap));
+
+    assert!(!kernel2.engine().holds_capability(cap, o1));
+    assert!(!kernel2.engine().holds_capability(cap, o2));
+}
+
+/// Test 4: WAL recovery re-applies CapabilityRevoke (root grant only, WAL-recorded).
+#[test]
+fn kernel_capability_revoke_wal_replay() {
+    let wal = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_wal_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal);
+    let kernel = Kernel::with_wal_path(wal.clone());
+
+    let o1 = birth(&kernel);
+    let resource = birth(&kernel);
+    let cap = grant(&kernel, o1, "read", resource);
+    assert!(kernel.engine().holds_capability(cap, o1));
+
+    let mut tx = kernel.begin();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityRevoke {
+                capability_id: cap,
+                holder: o1,
+                cascade_override: Some(true),
+            },
+        )
+        .unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    assert!(!kernel.engine().holds_capability(cap, o1));
+
+    // Fresh engine recovers WAL (grants then revokes)
+    let kernel2 = Kernel::with_wal_path(wal);
+    assert!(
+        !kernel2.engine().holds_capability(cap, o1),
+        "CapabilityRevoke must be durable across WAL recovery"
+    );
+}
+
+/// Revoke of non-holder fails before commit.
+#[test]
+fn kernel_capability_revoke_not_holder_errors() {
+    let wal = format!("/data/data/com.termux/files/usr/tmp/test_cap_revoke_err_{}.wal", std::process::id());
+    let _ = std::fs::remove_file(&wal);
+    let kernel = Kernel::with_wal_path(wal);
+
+    let o1 = birth(&kernel);
+    let o2 = birth(&kernel);
+    let resource = birth(&kernel);
+    let cap = grant(&kernel, o1, "read", resource);
+
+    let mut tx = kernel.begin();
+    let err = kernel.handle(
+        &mut tx,
+        KernelCall::CapabilityRevoke {
+            capability_id: cap,
+            holder: o2,
+            cascade_override: None,
+        },
+    );
+    assert!(err.is_err());
+}
