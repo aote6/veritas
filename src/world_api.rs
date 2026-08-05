@@ -370,6 +370,39 @@ mod tests {
     }
 
     #[test]
+
+    /// Regression: creator must hold AdminCap on child after ObjectBirth.
+    /// Without this, link(creator, child, "owns") fails at commit with PermissionDenied.
+    fn creator_holds_admin_cap_after_birth() {
+        let kernel = Arc::new(Kernel::new());
+        let world = WorldService::new(Arc::clone(&kernel));
+
+        // Bootstrap: Forge gets its identity Object (id = 1).
+        let creator = world.attach_identity(None).unwrap();
+
+        // Forge creates a child Object inside a session.
+        let sid = world.tx_begin(Some(creator)).unwrap();
+        let child = world.tx_create_object(sid).unwrap();
+
+        // Creator links itself to child — this exercises the AdminCap granted at birth.
+        world.tx_link(sid, creator, child, "owns").unwrap();
+
+        // Commit must succeed. Before the fix this failed with PermissionDenied.
+        let receipt = world.tx_commit(sid).unwrap();
+        assert!(receipt.after_root != receipt.before_root);
+
+        // Post-conditions
+        assert_eq!(kernel.get_object_state(child), Some(ObjectState::Alive));
+        assert!(kernel.has_link(creator, child));
+
+        // Creator can open another session and create more objects.
+        let sid2 = world.tx_begin(Some(creator)).unwrap();
+        let child2 = world.tx_create_object(sid2).unwrap();
+        world.tx_link(sid2, creator, child2, "depends_on").unwrap();
+        world.tx_commit(sid2).unwrap();
+        assert_eq!(kernel.get_object_state(child2), Some(ObjectState::Alive));
+    }
+
     fn session_abort_discards() {
         let kernel = Arc::new(Kernel::new());
         let world = WorldService::new(kernel);
