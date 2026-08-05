@@ -219,6 +219,7 @@ pub struct Savepoint {
     pub pending_deaths_len: usize,
     pub pending_capabilities_len: usize,
     pub pending_capability_revokes_len: usize,
+    pub pending_calls_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,6 +258,8 @@ pub struct TransactionContext {
     pub pending_objects: Vec<ObjectId>,
     pub pending_capabilities: Vec<PendingCapabilityGrant>,
     pub pending_capability_revokes: Vec<PendingCapabilityRevoke>,
+    /// Cross-object CALL targets attempted in this transaction (AccessIntent::Call).
+    pub pending_calls: Vec<ObjectId>,
     pub aborted: bool,
     /// 当前执行上下文所属的Object。一切Read/Write在没有显式CALL切换的情况下，
     /// 隐式作用于这个Object的Memory Space——这是Memory宪法(memory.md)第4节
@@ -283,6 +286,7 @@ impl TransactionContext {
             pending_objects: Vec::new(),
             pending_capabilities: Vec::new(),
             pending_capability_revokes: Vec::new(),
+            pending_calls: Vec::new(),
             pending_links: Vec::new(),
             pending_unlinks: Vec::new(),
             pending_freezes: Vec::new(),
@@ -558,13 +562,16 @@ pub enum AccessIntent {
     Unlink(ObjectId, ObjectId),
     Destroy(ObjectId),
     Freeze(ObjectId),
+    /// Cross-object CALL: enter another Object's execution context.
+    Call(ObjectId),
 }
 
 impl AccessIntent {
     pub fn target_objects(&self) -> Vec<ObjectId> {
         match self {
             AccessIntent::Read(id) | AccessIntent::Write(id)
-            | AccessIntent::Destroy(id) | AccessIntent::Freeze(id) => vec![*id],
+            | AccessIntent::Destroy(id) | AccessIntent::Freeze(id)
+            | AccessIntent::Call(id) => vec![*id],
             AccessIntent::Link(from, to) => vec![*from, *to],
             AccessIntent::Unlink(from, _to) => vec![*from],
         }

@@ -132,6 +132,12 @@ impl Machine {
     }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
     pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
+    /// Set the execution identity for subsequent instructions (CALL/Read/Write).
+    /// Used by tests and by future TRAP-based context switch paths.
+    pub fn set_execution_object(&mut self, object_id: ObjectId) {
+        self.ctx.enter_object(object_id);
+        self.ctx.capability_context = object_id;
+    }
     pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
 
     pub fn new(kernel: Arc<crate::kernel::Kernel>) -> Self {
@@ -383,6 +389,27 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Call { object_id, entry_pc } => {
+                // P3: CALL enters AccessIntent path — same authorize entry as
+                // Read/Write/Link/... (commit-time verify_capability).
+                let intent = crate::types::AccessIntent::Call(object_id);
+                if let Err(_) = self.kernel.engine().authorize_intent(&self.ctx, &intent) {
+                    let reason = crate::types::TrapReason::AccessDenied { pc: self.pc };
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
+                // Record for commit-time AccessIntent coverage (self-call is
+                // exempt inside authorize_intent but still harmless to record).
+                if object_id != self.ctx.current_object
+                    && object_id != self.ctx.capability_context
+                {
+                    self.ctx.pending_calls.push(object_id);
+                }
+
                 let return_pc = self.pc + consumed;
                 let saved_object = self.ctx.current_object;
                 self.call_stack.push(CallFrame {

@@ -306,31 +306,66 @@ impl VeritasEngine {
         for oid in &ctx.pending_freezes {
             intents.push(crate::types::AccessIntent::Freeze(*oid));
         }
+        for oid in &ctx.pending_calls {
+            intents.push(crate::types::AccessIntent::Call(*oid));
+        }
         intents
     }
 
-    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
-        // 结构性豁免 + AccessIntent 全覆盖（Read/Write/Link/Unlink/Destroy/Freeze）
+    /// Single-intent authorization used by Machine CALL and by commit-time verify.
+    /// Self-access (current_object / capability_context) is exempt.
+    pub fn authorize_intent(
+        &self,
+        ctx: &crate::types::TransactionContext,
+        intent: &crate::types::AccessIntent,
+    ) -> Result<(), crate::types::VeritasError> {
         let cap_graph = self.capability_graph.lock().unwrap();
-        for intent in &Self::collect_access_intents(ctx) {
-            for target in intent.target_objects() {
-                if target == ctx.current_object || target == ctx.capability_context {
-                    continue;
-                }
-                let has_committed = ctx.capabilities.iter().any(|cap_id| {
-                    cap_graph.is_capability_valid(*cap_id)
-                        && cap_graph.info(*cap_id).map(|info| info.resource == target).unwrap_or(false)
-                });
-                let has_pending = ctx.pending_capabilities.iter().any(|g| {
-                    g.resource == target
-                        && (g.grantee == ctx.current_object
-                            || g.grantee == ctx.capability_context
-                            || ctx.capabilities.contains(&g.capability_id))
-                });
-                if !has_committed && !has_pending {
-                    return Err(crate::types::VeritasError::PermissionDenied);
-                }
+        for target in intent.target_objects() {
+            if target == ctx.current_object || target == ctx.capability_context {
+                continue;
             }
+            // Attached caps must still be actively held (respects revoke).
+            let has_committed = ctx.capabilities.iter().any(|cap_id| {
+                let resource_ok = cap_graph
+                    .info(*cap_id)
+                    .map(|info| info.resource == target)
+                    .unwrap_or(false);
+                if !resource_ok {
+                    return false;
+                }
+                cap_graph.holds(*cap_id, ctx.current_object)
+                    || cap_graph.holds(*cap_id, ctx.capability_context)
+            });
+            let has_pending = ctx.pending_capabilities.iter().any(|g| {
+                g.resource == target
+                    && (g.grantee == ctx.current_object
+                        || g.grantee == ctx.capability_context
+                        || ctx.capabilities.contains(&g.capability_id))
+            });
+            // Live graph: holder actively holds any capability on target resource.
+            // Enables CALL after GRANT/Delegate without requiring attach_capability.
+            let has_graph = [ctx.current_object, ctx.capability_context]
+                .into_iter()
+                .any(|holder| {
+                    cap_graph.caps_for_holder(holder).iter().any(|cid| {
+                        cap_graph.holds(*cid, holder)
+                            && cap_graph
+                                .info(*cid)
+                                .map(|info| info.resource == target)
+                                .unwrap_or(false)
+                    })
+                });
+            if !has_committed && !has_pending && !has_graph {
+                return Err(crate::types::VeritasError::PermissionDenied);
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+        // 结构性豁免 + AccessIntent 全覆盖（Read/Write/Link/Unlink/Destroy/Freeze/Call）
+        for intent in &Self::collect_access_intents(ctx) {
+            self.authorize_intent(ctx, intent)?;
         }
         Ok(())
     }
@@ -1494,6 +1529,7 @@ impl VeritasEngine {
             pending_deaths_len: ctx.pending_deaths.len(),
             pending_capabilities_len: ctx.pending_capabilities.len(),
             pending_capability_revokes_len: ctx.pending_capability_revokes.len(),
+            pending_calls_len: ctx.pending_calls.len(),
         });
 
         Ok(())
@@ -1526,6 +1562,7 @@ impl VeritasEngine {
         ctx.pending_deaths.truncate(sp.pending_deaths_len);
         ctx.pending_capabilities.truncate(sp.pending_capabilities_len);
         ctx.pending_capability_revokes.truncate(sp.pending_capability_revokes_len);
+        ctx.pending_calls.truncate(sp.pending_calls_len);
 
         ctx.savepoints.truncate(index + 1);
 
