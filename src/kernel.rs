@@ -56,6 +56,13 @@ pub enum KernelCall {
         /// None → use DelegationEdge.cascade_on_revoke (root defaults true).
         cascade_override: Option<bool>,
     },
+    /// Add a holder edge under an existing capability (no new CapabilityId).
+    CapabilityDelegate {
+        capability_id: CapabilityId,
+        from: ObjectId,
+        to: ObjectId,
+        cascade_on_revoke: bool,
+    },
     MemoryAlloc {
         object_id: ObjectId,
         size_hint: u64,
@@ -224,6 +231,21 @@ impl Kernel {
                     capability_id,
                     holder,
                     cascade_override,
+                )?;
+                Ok(TrapResult::Success)
+            }
+            KernelCall::CapabilityDelegate {
+                capability_id,
+                from,
+                to,
+                cascade_on_revoke,
+            } => {
+                self.engine.capability_delegate(
+                    ctx,
+                    capability_id,
+                    from,
+                    to,
+                    cascade_on_revoke,
                 )?;
                 Ok(TrapResult::Success)
             }

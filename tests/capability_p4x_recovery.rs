@@ -17,7 +17,7 @@ fn birth(kernel: &Kernel) -> u64 {
 /// P4.x: Object 创建时授予的 AdminCap 必须在 commit 后正确写入
 #[test]
 fn capability_grant_visible_after_commit() {
-    let wal_path = format!("target/test_cap_visible_{}.wal", std::process::id());
+    let wal_path = format!("{}/test_cap_visible_{}.wal", std::env::temp_dir().display(), std::process::id());
     let _ = std::fs::remove_file(&wal_path);
     let kernel = Kernel::with_wal_path(wal_path.clone());
 
@@ -36,7 +36,7 @@ fn capability_grant_visible_after_commit() {
 /// P4.x: AdminCap 必须在 crash + restart 后仍然存在
 #[test]
 fn capability_survives_recovery() {
-    let wal_path = format!("target/test_cap_recovery_{}.wal", std::process::id());
+    let wal_path = format!("{}/test_cap_recovery_{}.wal", std::env::temp_dir().display(), std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
     let target: u64;
@@ -66,7 +66,7 @@ fn capability_survives_recovery() {
 /// P4.x: abort 后 AdminCap 不能残留
 #[test]
 fn capability_grant_no_leak_on_abort() {
-    let wal_path = format!("target/test_cap_no_leak_{}.wal", std::process::id());
+    let wal_path = format!("{}/test_cap_no_leak_{}.wal", std::env::temp_dir().display(), std::process::id());
     let _ = std::fs::remove_file(&wal_path);
     let kernel = Kernel::with_wal_path(wal_path.clone());
 

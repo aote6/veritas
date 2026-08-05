@@ -219,6 +219,7 @@ pub struct Savepoint {
     pub pending_deaths_len: usize,
     pub pending_capabilities_len: usize,
     pub pending_capability_revokes_len: usize,
+    pub pending_delegates_len: usize,
     pub pending_calls_len: usize,
 }
 
@@ -241,6 +242,16 @@ pub struct PendingCapabilityRevoke {
     pub cascade_override: Option<bool>,
 }
 
+/// CAPABILITY_DELEGATE recorded in the transaction: add a holder edge under an existing capability.
+/// Does not create a new CapabilityId or advance grant_sequence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCapabilityDelegate {
+    pub capability_id: CapabilityId,
+    pub from: ObjectId,
+    pub to: ObjectId,
+    pub cascade_on_revoke: bool,
+}
+
 pub struct TransactionContext {
     pub capabilities: Vec<u64>,
     pub program_hash: Option<u64>,
@@ -258,6 +269,7 @@ pub struct TransactionContext {
     pub pending_objects: Vec<ObjectId>,
     pub pending_capabilities: Vec<PendingCapabilityGrant>,
     pub pending_capability_revokes: Vec<PendingCapabilityRevoke>,
+    pub pending_delegates: Vec<PendingCapabilityDelegate>,
     /// Cross-object CALL targets attempted in this transaction (AccessIntent::Call).
     pub pending_calls: Vec<ObjectId>,
     pub aborted: bool,
@@ -286,6 +298,7 @@ impl TransactionContext {
             pending_objects: Vec::new(),
             pending_capabilities: Vec::new(),
             pending_capability_revokes: Vec::new(),
+            pending_delegates: Vec::new(),
             pending_calls: Vec::new(),
             pending_links: Vec::new(),
             pending_unlinks: Vec::new(),
@@ -533,6 +546,7 @@ pub struct TransactionDelta {
 
     // Capability
     pub capability_grants: Vec<PendingCapabilityGrant>,
+    pub capability_delegates: Vec<PendingCapabilityDelegate>,
     pub capability_revokes: Vec<PendingCapabilityRevoke>,
 
     // Effects (待执行)
@@ -647,6 +661,12 @@ impl TransactionDelta {
                 grant.grantor, grant.grantee, grant.resource, grant.cap_type
             ));
         }
+        for d in &self.capability_delegates {
+            s.push_str(&format!(
+                " CAPDELEGATE {} {} {} {}",
+                d.capability_id, d.from, d.to, if d.cascade_on_revoke { 1u8 } else { 0u8 }
+            ));
+        }
         for rev in &self.capability_revokes {
             let cas = match rev.cascade_override {
                 None => 2u8,
@@ -689,6 +709,7 @@ impl TransactionDelta {
         let mut links = Vec::new();
         let mut unlinks = Vec::new();
         let mut capability_grants = Vec::new();
+        let mut capability_delegates = Vec::new();
         let mut capability_revokes = Vec::new();
         let mut effects = Vec::new();
 
@@ -762,6 +783,19 @@ impl TransactionDelta {
                     });
                     i += 7;
                 }
+                "CAPDELEGATE" if i + 4 < parts.len() => {
+                    let cap_id = parts[i+1].parse::<CapabilityId>().ok()?;
+                    let from = parts[i+2].parse::<ObjectId>().ok()?;
+                    let to = parts[i+3].parse::<ObjectId>().ok()?;
+                    let cas = parts[i+4].parse::<u8>().ok()?;
+                    capability_delegates.push(PendingCapabilityDelegate {
+                        capability_id: cap_id,
+                        from,
+                        to,
+                        cascade_on_revoke: cas != 0,
+                    });
+                    i += 5;
+                }
                 "CAPREVOKE" if i + 3 < parts.len() => {
                     let cap_id = parts[i+1].parse::<CapabilityId>().ok()?;
                     let holder = parts[i+2].parse::<ObjectId>().ok()?;
@@ -802,6 +836,7 @@ impl TransactionDelta {
             links,
             unlinks,
             capability_grants,
+            capability_delegates,
             capability_revokes,
             effects,
         })

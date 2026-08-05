@@ -961,6 +961,7 @@ impl VeritasEngine {
 
         // drain pending collections (already cloned by build_delta)
         let _ = ctx.pending_capabilities.drain(..).collect::<Vec<_>>();
+        let _ = ctx.pending_delegates.drain(..).collect::<Vec<_>>();
         let _ = ctx.pending_capability_revokes.drain(..).collect::<Vec<_>>();
         let _ = ctx.pending_freezes.drain(..).collect::<Vec<_>>();
         let wal_entry = WalEntry::TransactionCommitted(delta.clone());
@@ -1049,6 +1050,7 @@ impl VeritasEngine {
             links,
             unlinks,
             capability_grants: ctx.pending_capabilities.clone(),
+            capability_delegates: ctx.pending_delegates.clone(),
             capability_revokes: ctx.pending_capability_revokes.clone(),
             effects,
         }
@@ -1106,7 +1108,16 @@ impl VeritasEngine {
             }
         }
 
-        // 4b. Capability revokes (after grants so same-tx grant→revoke is ordered)
+        // 4a. Capability delegates (after grants so same-tx grant→delegate is ordered)
+        {
+            let mut cap_graph = self.capability_graph.lock().unwrap();
+            for d in &delta.capability_delegates {
+                // Ignore errors on replay edge cases; commit path validates.
+                let _ = cap_graph.delegate(d.capability_id, d.from, d.to, d.cascade_on_revoke);
+            }
+        }
+
+        // 4b. Capability revokes (after grants/delegates so same-tx order is preserved)
         {
             let mut cap_graph = self.capability_graph.lock().unwrap();
             for rev in &delta.capability_revokes {
@@ -1271,6 +1282,9 @@ impl VeritasEngine {
             .position(|g| g.capability_id == capability_id && g.grantee == holder);
         if let Some(i) = pending_idx {
             ctx.pending_capabilities.remove(i);
+            // Drop pending delegates that targeted the removed grant.
+            ctx.pending_delegates
+                .retain(|d| d.capability_id != capability_id);
             // Also drop any pending revokes that targeted the removed grant edge.
             return Ok(());
         }
@@ -1294,20 +1308,79 @@ impl VeritasEngine {
         Ok(())
     }
 
-    /// Test/engine helper: live delegate on the committed graph (not WAL-recorded).
-    /// Used to build delegate trees for revoke integration tests until
-    /// KernelCall::CapabilityDelegate exists.
-    pub fn capability_delegate(
+    /// CAPABILITY_DELEGATE: record a pending holder edge; applied on commit via apply().
+    /// Does not create a new CapabilityId or advance grant_sequence.
+    pub(crate) fn capability_delegate(
         &self,
+        ctx: &mut TransactionContext,
         capability_id: CapabilityId,
         from: ObjectId,
         to: ObjectId,
         cascade_on_revoke: bool,
     ) -> Result<(), VeritasError> {
-        let mut cap_graph = self.capability_graph.lock().unwrap();
-        cap_graph
-            .delegate(capability_id, from, to, cascade_on_revoke)
-            .map_err(|e| VeritasError::EngineError(format!("delegate failed: {:?}", e)))
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+        if from == to {
+            return Err(VeritasError::EngineError(
+                "CapabilityDelegate: self-delegation rejected".into(),
+            ));
+        }
+
+        // from must hold: either committed graph or same-tx pending grant (root) / pending delegate.
+        let from_holds = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.holds(capability_id, from)
+        } || ctx.pending_capabilities.iter().any(|g| {
+            g.capability_id == capability_id && g.grantee == from
+        }) || ctx.pending_delegates.iter().any(|d| {
+            d.capability_id == capability_id && d.to == from
+        });
+        if !from_holds {
+            return Err(VeritasError::EngineError(format!(
+                "CapabilityDelegate: from {} does not hold capability {}",
+                from, capability_id
+            )));
+        }
+
+        // Forest constraint: to must not already be in the tree for this cap_id.
+        let to_in_tree = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            cap_graph.caps_for_holder(to).contains(&capability_id)
+                || cap_graph.holds(capability_id, to)
+        } || ctx.pending_capabilities.iter().any(|g| {
+            g.capability_id == capability_id && g.grantee == to
+        }) || ctx.pending_delegates.iter().any(|d| {
+            d.capability_id == capability_id && d.to == to
+        });
+        // holders.contains is the authoritative forest check; holds only covers active.
+        // Use a direct graph probe for any prior holder record:
+        let to_already = {
+            let cap_graph = self.capability_graph.lock().unwrap();
+            // is_capability_valid + any holder record: approximate via holds or inactive presence
+            // CapabilityGraph does not expose contains_holder; use caps_for_holder + holds false path
+            // by attempting semantic: if restore would hit AlreadyInTree.
+            // We check holders via a side channel: snapshot records.
+            cap_graph
+                .snapshot_capabilities()
+                .iter()
+                .any(|r| r.capability_id == capability_id && r.holder == to)
+        } || to_in_tree;
+        if to_already {
+            return Err(VeritasError::EngineError(format!(
+                "CapabilityDelegate: {} already in tree for capability {}",
+                to, capability_id
+            )));
+        }
+
+        ctx.pending_delegates
+            .push(crate::types::PendingCapabilityDelegate {
+                capability_id,
+                from,
+                to,
+                cascade_on_revoke,
+            });
+        Ok(())
     }
 
     /// P26: OBJECT_FREEZE - 冻结Object，使其变为只读
@@ -1529,6 +1602,7 @@ impl VeritasEngine {
             pending_deaths_len: ctx.pending_deaths.len(),
             pending_capabilities_len: ctx.pending_capabilities.len(),
             pending_capability_revokes_len: ctx.pending_capability_revokes.len(),
+            pending_delegates_len: ctx.pending_delegates.len(),
             pending_calls_len: ctx.pending_calls.len(),
         });
 
@@ -1562,6 +1636,7 @@ impl VeritasEngine {
         ctx.pending_deaths.truncate(sp.pending_deaths_len);
         ctx.pending_capabilities.truncate(sp.pending_capabilities_len);
         ctx.pending_capability_revokes.truncate(sp.pending_capability_revokes_len);
+        ctx.pending_delegates.truncate(sp.pending_delegates_len);
         ctx.pending_calls.truncate(sp.pending_calls_len);
 
         ctx.savepoints.truncate(index + 1);

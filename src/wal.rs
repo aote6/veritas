@@ -659,7 +659,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.births.push(*object_id);
             }
@@ -669,7 +669,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.deaths.push(*object_id);
             }
@@ -679,7 +679,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.freezes.push(*object_id);
             }
@@ -695,7 +695,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.links.push((*from, *to, relation));
             }
@@ -705,7 +705,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.unlinks.push((*from, *to));
             }
@@ -715,7 +715,7 @@ pub(crate) fn build_ordered_deltas(
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_revokes: vec![], effects: vec![],
+                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
                 });
                 delta.capability_grants.push(PendingCapabilityGrant {
                     capability_id: *capability_id,
@@ -883,6 +883,7 @@ mod tests {
                     resource: 3,
                 },
             ],
+            capability_delegates: vec![],
             capability_revokes: vec![],
             effects: vec![
                 ("key-1".to_string(), vec![7, 8, 9]),
@@ -932,6 +933,7 @@ mod tests {
             links: vec![],
             unlinks: vec![],
             capability_grants: vec![],
+            capability_delegates: vec![],
             capability_revokes: vec![],
             effects: vec![],
         };

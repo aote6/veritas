@@ -135,10 +135,21 @@ fn call_after_delegate_succeeds() {
     let delegatee = birth(&kernel);
     let callee = birth(&kernel);
     let cap = grant(&kernel, root, callee);
-    kernel
-        .engine()
-        .capability_delegate(cap, root, delegatee, true)
-        .unwrap();
+    {
+        let mut tx = kernel.begin();
+        kernel
+            .handle(
+                &mut tx,
+                KernelCall::CapabilityDelegate {
+                    capability_id: cap,
+                    from: root,
+                    to: delegatee,
+                    cascade_on_revoke: true,
+                },
+            )
+            .unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    }
 
     let mut machine = Machine::new(Arc::new(kernel));
     machine.set_execution_object(delegatee);
