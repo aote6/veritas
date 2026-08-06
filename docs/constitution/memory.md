@@ -68,7 +68,7 @@ WRITE:
 
 ## 8. 与 Object 的关系
 
-- 每个 StateObject 和 ModuleObject 拥有一个 Memory Space
+- 每个 StateObject 拥有一个 MemorySpace。ModuleObject 是只读代码模板，不拥有 MemorySpace
 - Memory Space 的生命周期与 Object 绑定
 - Object 死亡时，其 Memory Space 被回收
 - Object 冻结时，其 Memory Space 变为只读

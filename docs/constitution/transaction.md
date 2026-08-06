@@ -168,7 +168,7 @@ SAVEPOINT 和 ROLLBACK_TO:
 ## 13. 确定性
 
 - 同样的初始状态 + 同样的指令序列 = 同样的 Transaction 结果
-- TransactionId 确定性生成（基于 tx_id_counter，不是随机数）
+- TransactionId 是 WAL 与 Receipt 的标识符，不属于 Machine State。其确定性不依赖全局计数器，具体生成方式由实现定义
 - COMMIT 后的状态完全可重现
 - 这是 Replay 和 Receipt 验证的基础
 

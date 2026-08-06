@@ -96,7 +96,20 @@ RETURN 指令返回用户态。
 - Transaction 中止时，内核服务的副作用回滚
 - 包括: Object 创建回滚、Capability 授予回滚、Link 建立回滚
 
-## 5. Host Call 边界
+## 5. Kernel Service 与 Host Call 的分层
+
+Kernel Service 是 Machine **内部**能力（内核态），属于 Constitution。
+Host Call 是 Machine **外部**能力（环境提供），未来应独立为 `host.md`。
+
+| 维度 | Kernel Service | Host Call |
+|------|---------------|-----------|
+| 提供者 | Machine 内核态 | 外部环境 |
+| 调用方式 | TRAP | TRAP (不同 service_id 范围) |
+| 确定性 | 是 | 否（时间、随机数等） |
+| 进入 World State | 是 | 否 |
+| 宪法地位 | Constitution | 接口规范（非宪法） |
+
+## 6. Host Call 边界
 
 某些能力 Veritas Machine 自身无法提供，需要外部环境支持。
 这些通过 Host Call 接口暴露。
@@ -118,7 +131,7 @@ Host Call 列表:
 调用方式: TRAP <host_call_id>
 Host Call 执行时 Machine 暂停，等待外部环境返回结果。
 
-## 6. Capability 模型
+## 7. Capability 模型
 
 Capability 是 Kernel 管理的资源，不是 Object。
 
@@ -136,7 +149,7 @@ Capability 树:
 - 撤销上游边时，下游级联撤销
 - Object 死亡时，所有以它为 resource 的 Capability 自动失效（lazy validation）
 
-### 6.1 自身对象访问豁免（Self-Access Exemption）
+### 7.1 自身对象访问豁免（Self-Access Exemption）
 
 当前执行上下文对自身所在 Object 的 MemorySpace 访问是**结构性豁免**，
 不经过 Capability 图查询。
@@ -160,7 +173,7 @@ Capability 树:
   永久记录，导致 root_hash 随对象访问频率漂移，破坏 live/recovery
   状态一致性。
 
-## 7. 当前实现映射
+## 8. 当前实现映射
 
 | 规范定义 | 当前代码 | 未来方向 |
 |---|---|---|
@@ -170,7 +183,7 @@ Capability 树:
 | Capability 树 | capability.rs | 改为 Kernel Resource |
 | Host Call | 散落各处 | 统一接口 |
 
-## 8. 实现要求
+## 9. 实现要求
 
 1. Kernel 不是 Object，是 Machine 内核态
 2. 所有内核服务通过 TRAP 调用

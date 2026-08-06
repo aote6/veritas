@@ -64,7 +64,7 @@ ModuleInstance 和 ModuleObject 的生命周期是独立的:
 - 删除 ModuleObject: 所有基于它的 ModuleInstance 收到 TRAP，
   可以选择保存状态后自行销毁
 - 一个 ModuleObject 可以有零个、一个或多个 ModuleInstance
-- ModuleInstance 可以存活超过创建它的 ModuleInstance
+- ModuleInstance 可以存活超过创建它的 ModuleObject
 
 ## 6. Module 之间的调用
 
