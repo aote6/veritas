@@ -287,6 +287,7 @@ fn t7_old_wal_without_capdelegate_compatible() {
     let delta = TransactionDelta {
         tx_id: 1,
         commit_version: 1,
+        actor_id: 0,
         writes: vec![],
         scope_changes: vec![],
         births: vec![],

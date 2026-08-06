@@ -1042,6 +1042,7 @@ impl VeritasEngine {
         TransactionDelta {
             tx_id: ctx.tx_id(),
             commit_version,
+            actor_id: ctx.current_object,
             writes,
             scope_changes,
             births: ctx.pending_objects.clone(),

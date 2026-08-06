@@ -29,18 +29,28 @@ fn link_type_str(lt: veritas_kernel::types::LinkType) -> &'static str {
 
 fn receipt_json(r: &ReceiptView) -> Value {
     let delta = &r.delta;
+    let memory: Vec<Value> = delta.memory_written.iter().map(|w| {
+        json!({
+            "object_id": w.object_id,
+            "state_id": w.state_id,
+            "value_hex": w.value_hex,
+        })
+    }).collect();
     json!({
         "tx_id": r.tx_id,
         "before_root": r.before_root,
         "after_root": r.after_root,
         "version": r.version,
         "delta": {
+            "actor_id": delta.actor_id,
             "objects_created": delta.objects_created,
             "objects_deleted": delta.objects_deleted,
             "objects_frozen": delta.objects_frozen,
             "links_added": delta.links_added,
             "links_removed": delta.links_removed,
-            "memory_written": delta.memory_written,
+            "memory_written": memory,
+            "capability_events": delta.capability_events,
+            "effects": delta.effects,
         }
     })
 }

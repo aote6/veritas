@@ -45,24 +45,34 @@ pub struct ReceiptView {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct MemoryWriteView {
+    pub object_id: u64,
+    pub state_id: u64,
+    pub value_hex: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TransactionDeltaView {
+    pub actor_id: u64,
     pub objects_created: Vec<u64>,
     pub objects_deleted: Vec<u64>,
     pub objects_frozen: Vec<u64>,
     pub links_added: Vec<(u64, u64, String)>,
     pub links_removed: Vec<(u64, u64)>,
-    pub memory_written: std::collections::BTreeMap<u64, Vec<(u64, String)>>,
+    pub memory_written: Vec<MemoryWriteView>,
+    pub capability_events: Vec<String>,
+    pub effects: Vec<(String, String)>,
 }
 
 impl From<&TransactionReceipt> for ReceiptView {
     fn from(r: &TransactionReceipt) -> Self {
-        let mut memory_written: std::collections::BTreeMap<u64, Vec<(u64, String)>> = std::collections::BTreeMap::new();
-        for (addr, bytes) in &r.delta.writes {
-            let obj_id = addr.object_id;
-            let state_id = addr.state_id;
-            let value = String::from_utf8_lossy(bytes).to_string();
-            memory_written.entry(obj_id).or_default().push((state_id, value));
-        }
+        let memory_written: Vec<MemoryWriteView> = r.delta.writes.iter().map(|(addr, bytes)| {
+            MemoryWriteView {
+                object_id: addr.object_id,
+                state_id: addr.state_id,
+                value_hex: hex::encode(bytes),
+            }
+        }).collect();
 
         let links_added: Vec<_> = r.delta.links.iter().map(|(f, t, lt)| {
             let lt_str = match lt {
@@ -73,18 +83,25 @@ impl From<&TransactionReceipt> for ReceiptView {
             (*f, *t, lt_str.to_string())
         }).collect();
 
+        let effects: Vec<_> = r.delta.effects.iter().map(|(key, payload)| {
+            (key.clone(), hex::encode(payload))
+        }).collect();
+
         ReceiptView {
             tx_id: r.tx_id,
             before_root: r.before_root,
             after_root: r.after_root,
             version: r.delta.commit_version,
             delta: TransactionDeltaView {
+                actor_id: r.delta.actor_id,
                 objects_created: r.delta.births.clone(),
                 objects_deleted: r.delta.deaths.clone(),
                 objects_frozen: r.delta.freezes.clone(),
                 links_added,
                 links_removed: r.delta.unlinks.clone(),
                 memory_written,
+                capability_events: vec![],
+                effects,
             },
         }
     }

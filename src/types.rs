@@ -528,6 +528,7 @@ impl ObjectRecord {
 pub struct TransactionDelta {
     pub tx_id: TxId,
     pub commit_version: Version,
+    pub actor_id: u64,
 
     // State
     pub writes: Vec<(Address, Vec<u8>)>,
@@ -828,6 +829,7 @@ impl TransactionDelta {
         Some(TransactionDelta {
             tx_id,
             commit_version,
+            actor_id: 0,
             writes,
             scope_changes,
             births,

@@ -655,7 +655,8 @@ pub(crate) fn build_ordered_deltas(
         match record {
             WalEntry::ObjectBirth { tx_id, object_id } => {
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -665,7 +666,8 @@ pub(crate) fn build_ordered_deltas(
             }
             WalEntry::ObjectDeath { tx_id, object_id } => {
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -675,7 +677,8 @@ pub(crate) fn build_ordered_deltas(
             }
             WalEntry::ObjectFreeze { tx_id, object_id } => {
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -691,7 +694,8 @@ pub(crate) fn build_ordered_deltas(
                     _ => continue,
                 };
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -701,7 +705,8 @@ pub(crate) fn build_ordered_deltas(
             }
             WalEntry::ObjectUnlink { tx_id, from, to } => {
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -711,7 +716,8 @@ pub(crate) fn build_ordered_deltas(
             }
             WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence } => {
                 let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    tx_id: *tx_id, commit_version: 0,
+                    actor_id: 0,
+                tx_id: *tx_id, commit_version: 0,
                     writes: vec![], scope_changes: vec![],
                     births: vec![], deaths: vec![], freezes: vec![],
                     links: vec![], unlinks: vec![],
@@ -855,7 +861,8 @@ mod tests {
         use crate::types::{Address, LinkType, PendingCapabilityGrant, ScopeChangeType, TransactionDelta};
 
         let delta = TransactionDelta {
-            tx_id: 42,
+            actor_id: 0,
+                tx_id: 42,
             commit_version: 3,
             writes: vec![
                 (Address::new(10, 100), vec![1, 2, 3]),
@@ -923,7 +930,8 @@ mod tests {
         // 1. Write a complete TransactionCommitted
         let writer = WalWriter::open(path).unwrap();
         let delta = TransactionDelta {
-            tx_id: 1,
+            actor_id: 0,
+                tx_id: 1,
             commit_version: 1,
             writes: vec![],
             scope_changes: vec![],
