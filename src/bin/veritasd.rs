@@ -28,11 +28,20 @@ fn link_type_str(lt: veritas_kernel::types::LinkType) -> &'static str {
 }
 
 fn receipt_json(r: &ReceiptView) -> Value {
+    let delta = &r.delta;
     json!({
         "tx_id": r.tx_id,
         "before_root": r.before_root,
         "after_root": r.after_root,
         "version": r.version,
+        "delta": {
+            "objects_created": delta.objects_created,
+            "objects_deleted": delta.objects_deleted,
+            "objects_frozen": delta.objects_frozen,
+            "links_added": delta.links_added,
+            "links_removed": delta.links_removed,
+            "memory_written": delta.memory_written,
+        }
     })
 }
 

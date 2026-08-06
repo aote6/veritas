@@ -41,15 +41,51 @@ pub struct ReceiptView {
     pub before_root: u64,
     pub after_root: u64,
     pub version: Version,
+    pub delta: TransactionDeltaView,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TransactionDeltaView {
+    pub objects_created: Vec<u64>,
+    pub objects_deleted: Vec<u64>,
+    pub objects_frozen: Vec<u64>,
+    pub links_added: Vec<(u64, u64, String)>,
+    pub links_removed: Vec<(u64, u64)>,
+    pub memory_written: std::collections::BTreeMap<u64, Vec<(u64, String)>>,
 }
 
 impl From<&TransactionReceipt> for ReceiptView {
     fn from(r: &TransactionReceipt) -> Self {
+        let mut memory_written: std::collections::BTreeMap<u64, Vec<(u64, String)>> = std::collections::BTreeMap::new();
+        for (addr, bytes) in &r.delta.writes {
+            let obj_id = addr.object_id;
+            let state_id = addr.state_id;
+            let value = String::from_utf8_lossy(bytes).to_string();
+            memory_written.entry(obj_id).or_default().push((state_id, value));
+        }
+
+        let links_added: Vec<_> = r.delta.links.iter().map(|(f, t, lt)| {
+            let lt_str = match lt {
+                crate::types::LinkType::Owns => "owns",
+                crate::types::LinkType::DependsOn => "depends_on",
+                crate::types::LinkType::References => "references",
+            };
+            (*f, *t, lt_str.to_string())
+        }).collect();
+
         ReceiptView {
             tx_id: r.tx_id,
             before_root: r.before_root,
             after_root: r.after_root,
             version: r.delta.commit_version,
+            delta: TransactionDeltaView {
+                objects_created: r.delta.births.clone(),
+                objects_deleted: r.delta.deaths.clone(),
+                objects_frozen: r.delta.freezes.clone(),
+                links_added,
+                links_removed: r.delta.unlinks.clone(),
+                memory_written,
+            },
         }
     }
 }
