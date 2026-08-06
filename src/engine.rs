@@ -836,12 +836,15 @@ impl VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
 
-        // Object Protection: 目标写入对象必须已在 object_registry 中存在且未被冻结/死亡
+        // Object Protection: target must be Alive in registry, or born in this tx (pending).
+        // Pending births are not yet in object_registry; they are still writable in-tx.
         {
             let reg = self.object_registry.lock().unwrap();
             match reg.get(&ctx.current_object) {
                 None => {
-                    return Err(VeritasError::PermissionDenied);
+                    if !ctx.pending_objects.contains(&ctx.current_object) {
+                        return Err(VeritasError::PermissionDenied);
+                    }
                 }
                 Some(r) if r.is_frozen() || r.is_dead() => {
                     return Err(VeritasError::PermissionDenied);

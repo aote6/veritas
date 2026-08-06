@@ -284,7 +284,15 @@ impl WorldService {
                 },
             )?;
             match result {
-                TrapResult::ObjectId(id) => Ok(id),
+                TrapResult::ObjectId(id) => {
+                    // If the session had no acting object (current_object == 0),
+                    // switch into the newly created object so subsequent writes succeed.
+                    // When an actor is already set, keep it so creator can link/admin the child.
+                    if state.ctx.current_object == 0 {
+                        state.ctx.enter_object(id);
+                    }
+                    Ok(id)
+                }
                 _ => Err(WorldError::Msg("ObjectBirth did not return ObjectId".into())),
             }
         })
@@ -501,5 +509,42 @@ mod tests {
         let id = world.tx_create_object(sid).unwrap();
         world.tx_abort(sid).unwrap();
         assert!(world.get_object(id).is_none());
+    }
+
+    /// Regression: tx_commit receipt.delta.memory_written must reflect in-tx writes
+    /// after begin → create_object → write → write → commit.
+    #[test]
+    fn tx_commit_receipt_delta_memory_written() {
+        let kernel = Arc::new(Kernel::new());
+        let world = WorldService::new(Arc::clone(&kernel));
+
+        let sid = world.tx_begin(None).unwrap();
+        let obj = world.tx_create_object(sid).unwrap();
+        world
+            .tx_write(sid, 0, b"/tmp/test.txt".to_vec())
+            .expect("write state_id=0 must succeed on newly created object");
+        world
+            .tx_write(sid, 1, b"hello".to_vec())
+            .expect("write state_id=1 must succeed on newly created object");
+        let receipt = world.tx_commit(sid).unwrap();
+
+        assert!(
+            !receipt.delta.memory_written.is_empty(),
+            "receipt.delta.memory_written must be non-empty after writes"
+        );
+        assert_eq!(receipt.delta.objects_created, vec![obj]);
+        assert_eq!(receipt.delta.memory_written.len(), 2);
+        assert_eq!(receipt.delta.memory_written[0].object_id, obj);
+        assert_eq!(receipt.delta.memory_written[0].state_id, 0);
+        assert_eq!(
+            receipt.delta.memory_written[0].value_hex,
+            hex::encode(b"/tmp/test.txt")
+        );
+        assert_eq!(receipt.delta.memory_written[1].object_id, obj);
+        assert_eq!(receipt.delta.memory_written[1].state_id, 1);
+        assert_eq!(
+            receipt.delta.memory_written[1].value_hex,
+            hex::encode(b"hello")
+        );
     }
 }
