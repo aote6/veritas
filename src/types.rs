@@ -626,7 +626,7 @@ impl TransactionDelta {
     ///     EFFECT <key> <hex_payload>
     ///     END
     pub fn serialize(&self) -> String {
-        let mut s = format!("TXCOMMIT TX={} VERSION={}", self.tx_id, self.commit_version);
+        let mut s = format!("TXCOMMIT TX={} VERSION={} ACTOR={}", self.tx_id, self.commit_version, self.actor_id);
         for (addr, val) in &self.writes {
             s.push_str(&format!(
                 " WRITE {} {} {}",
@@ -701,6 +701,11 @@ impl TransactionDelta {
             .find(|p| p.starts_with("VERSION="))?
             .strip_prefix("VERSION=")?
             .parse::<Version>().ok()?;
+        let actor_id = parts.iter()
+            .find(|p| p.starts_with("ACTOR="))
+            .and_then(|p| p.strip_prefix("ACTOR="))
+            .and_then(|p| p.parse::<u64>().ok())
+            .unwrap_or(0);
 
         let mut writes = Vec::new();
         let mut scope_changes = Vec::new();
@@ -819,7 +824,7 @@ impl TransactionDelta {
                     effects.push((key, payload));
                     i += 3;
                 }
-                "TXCOMMIT" | "END" | _ if parts[i].starts_with("TX=") | parts[i].starts_with("VERSION=") => {
+                "TXCOMMIT" | "END" | _ if parts[i].starts_with("TX=") | parts[i].starts_with("VERSION=") | parts[i].starts_with("ACTOR=") => {
                     i += 1;
                 }
                 _ => i += 1,
@@ -829,7 +834,7 @@ impl TransactionDelta {
         Some(TransactionDelta {
             tx_id,
             commit_version,
-            actor_id: 0,
+            actor_id,
             writes,
             scope_changes,
             births,
