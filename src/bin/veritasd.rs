@@ -265,18 +265,33 @@ fn handle(world: &WorldService, req: &Value) -> Value {
             }
         }
 
+        "receipts_since" => {
+            let version = req.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
+            let limit = req.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+            let receipts: Vec<Value> = world
+                .receipts_since(version, limit)
+                .iter()
+                .map(|r| receipt_json(r))
+                .collect();
+            json!({"ok": true, "receipts": receipts})
+        }
         "" => json!({"ok": false, "error": "missing cmd"}),
         other => json!({"ok": false, "error": format!("unknown cmd: {}", other)}),
     }
 }
 
 fn main() {
-    let kernel = if let Ok(path) = std::env::var("VERITAS_WAL") {
-        Arc::new(Kernel::with_wal_path(path))
+    let wal_path = std::env::var("VERITAS_WAL").ok();
+    let kernel = if let Some(ref path) = wal_path {
+        Arc::new(Kernel::with_wal_path(path.clone()))
     } else {
         Arc::new(Kernel::new())
     };
-    let world = WorldService::new(kernel);
+    let world = if let Some(path) = wal_path {
+        WorldService::with_wal(kernel, path)
+    } else {
+        WorldService::new(kernel)
+    };
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();

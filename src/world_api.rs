@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use crate::kernel::{Kernel, KernelCall, TrapResult};
 use crate::types::{
     AbortReason, LinkSnapshot, LinkType, ObjectId, ObjectState, ObjectType, TransactionContext,
-    TransactionReceipt, VeritasError, Version,
+    TransactionDelta, TransactionReceipt, VeritasError, Version,
 };
 
 pub type SessionId = u64;
@@ -64,17 +64,16 @@ pub struct TransactionDeltaView {
     pub effects: Vec<(String, String)>,
 }
 
-impl From<&TransactionReceipt> for ReceiptView {
-    fn from(r: &TransactionReceipt) -> Self {
-        let memory_written: Vec<MemoryWriteView> = r.delta.writes.iter().map(|(addr, bytes)| {
+impl TransactionDeltaView {
+    pub fn from_delta(d: &TransactionDelta) -> Self {
+        let memory_written: Vec<MemoryWriteView> = d.writes.iter().map(|(addr, bytes)| {
             MemoryWriteView {
                 object_id: addr.object_id,
                 state_id: addr.state_id,
                 value_hex: hex::encode(bytes),
             }
         }).collect();
-
-        let links_added: Vec<_> = r.delta.links.iter().map(|(f, t, lt)| {
+        let links_added: Vec<_> = d.links.iter().map(|(f, t, lt)| {
             let lt_str = match lt {
                 crate::types::LinkType::Owns => "owns",
                 crate::types::LinkType::DependsOn => "depends_on",
@@ -82,27 +81,31 @@ impl From<&TransactionReceipt> for ReceiptView {
             };
             (*f, *t, lt_str.to_string())
         }).collect();
-
-        let effects: Vec<_> = r.delta.effects.iter().map(|(key, payload)| {
+        let effects: Vec<_> = d.effects.iter().map(|(key, payload)| {
             (key.clone(), hex::encode(payload))
         }).collect();
+        TransactionDeltaView {
+            actor_id: d.actor_id,
+            objects_created: d.births.clone(),
+            objects_deleted: d.deaths.clone(),
+            objects_frozen: d.freezes.clone(),
+            links_added,
+            links_removed: d.unlinks.clone(),
+            memory_written,
+            capability_events: vec![],
+            effects,
+        }
+    }
+}
 
+impl From<&TransactionReceipt> for ReceiptView {
+    fn from(r: &TransactionReceipt) -> Self {
         ReceiptView {
             tx_id: r.tx_id,
             before_root: r.before_root,
             after_root: r.after_root,
             version: r.delta.commit_version,
-            delta: TransactionDeltaView {
-                actor_id: r.delta.actor_id,
-                objects_created: r.delta.births.clone(),
-                objects_deleted: r.delta.deaths.clone(),
-                objects_frozen: r.delta.freezes.clone(),
-                links_added,
-                links_removed: r.delta.unlinks.clone(),
-                memory_written,
-                capability_events: vec![],
-                effects,
-            },
+            delta: TransactionDeltaView::from_delta(&r.delta),
         }
     }
 }
@@ -149,8 +152,8 @@ pub struct WorldService {
     kernel: Arc<Kernel>,
     sessions: Mutex<HashMap<SessionId, SessionState>>,
     next_session: AtomicU64,
-    /// Attached system-software identity (Forge ObjectId), if any.
     identity: Mutex<Option<ObjectId>>,
+    wal_path: Option<String>,
 }
 
 impl WorldService {
@@ -160,6 +163,17 @@ impl WorldService {
             sessions: Mutex::new(HashMap::new()),
             next_session: AtomicU64::new(1),
             identity: Mutex::new(None),
+            wal_path: None,
+        }
+    }
+
+    pub fn with_wal(kernel: Arc<Kernel>, wal_path: String) -> Self {
+        WorldService {
+            kernel,
+            sessions: Mutex::new(HashMap::new()),
+            next_session: AtomicU64::new(1),
+            identity: Mutex::new(None),
+            wal_path: Some(wal_path),
         }
     }
 
@@ -372,6 +386,30 @@ impl WorldService {
             },
         );
         Ok(())
+    }
+
+    pub fn receipts_since(&self, since_version: Version, limit: Option<usize>) -> Vec<ReceiptView> {
+        let wal_path = match &self.wal_path {
+            Some(p) => p.clone(),
+            None => return vec![],
+        };
+        let (records, _) = crate::wal::RecoveryManager::recover(&wal_path).unwrap_or_default();
+        let deltas = crate::wal::build_ordered_deltas(&records);
+        let mut results: Vec<ReceiptView> = deltas
+            .into_iter()
+            .filter(|d| d.commit_version > since_version)
+            .map(|d| ReceiptView {
+                tx_id: d.tx_id,
+                before_root: 0,
+                after_root: 0,
+                version: d.commit_version,
+                delta: TransactionDeltaView::from_delta(&d),
+            })
+            .collect();
+        if let Some(limit) = limit {
+            results.truncate(limit);
+        }
+        results
     }
 
     fn with_session_mut<F, T>(&self, session_id: SessionId, f: F) -> Result<T, WorldError>
