@@ -1,6 +1,7 @@
 //! P3: CALL → AccessIntent unification tests.
 
 use std::sync::Arc;
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::instruction::Instruction;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::machine::{Machine, MachineStatus};
@@ -14,7 +15,7 @@ fn temp_wal(name: &str) -> String {
 }
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel
         .handle(
             &mut tx,
@@ -32,7 +33,7 @@ fn birth(kernel: &Kernel) -> u64 {
 }
 
 fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let cap = match kernel
         .handle(
             &mut tx,
@@ -136,7 +137,7 @@ fn call_after_delegate_succeeds() {
     let callee = birth(&kernel);
     let cap = grant(&kernel, root, callee);
     {
-        let mut tx = kernel.begin();
+        let mut tx = kernel.test_begin();
         kernel
             .handle(
                 &mut tx,
@@ -180,7 +181,7 @@ fn call_after_revoke_fails() {
     let callee = birth(&kernel);
     let cap = grant(&kernel, caller, callee);
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -226,10 +227,10 @@ fn call_permission_survives_checkpoint() {
     assert!(kernel2.restore_checkpoint(&snap));
 
     // authorize_intent via engine (same path CALL uses)
-    let mut ctx = kernel2.begin_in_object(caller);
+    let mut ctx = kernel2.test_begin_in_object(caller);
     let intent = AccessIntent::Call(callee);
     assert!(
-        kernel2.engine().authorize_intent(&ctx, &intent).is_ok(),
+        kernel2.test_authorize_intent(&ctx, &intent).is_ok(),
         "CALL must remain authorized after checkpoint restore"
     );
 
@@ -240,7 +241,7 @@ fn call_permission_survives_checkpoint() {
     };
     let intent_bad = AccessIntent::Call(stranger);
     // Self-access only for current; stranger is cross-object without cap
-    assert!(kernel2.engine().authorize_intent(&ctx, &intent_bad).is_err());
+    assert!(kernel2.test_authorize_intent(&ctx, &intent_bad).is_err());
     let _ = &mut ctx;
 }
 
@@ -254,10 +255,9 @@ fn call_permission_survives_wal_replay() {
     let _cap = grant(&kernel, caller, callee);
 
     let kernel2 = Kernel::with_wal_path(wal);
-    let ctx = kernel2.begin_in_object(caller);
+    let ctx = kernel2.test_begin_in_object(caller);
     assert!(kernel2
-        .engine()
-        .authorize_intent(&ctx, &AccessIntent::Call(callee))
+        .test_authorize_intent(&ctx, &AccessIntent::Call(callee))
         .is_ok());
 }
 
@@ -268,7 +268,7 @@ fn call_intent_collected_in_verify_path() {
     let caller = birth(&kernel);
     let callee = birth(&kernel);
     // No grant — pending Call should fail verify_capability at commit if recorded
-    let mut ctx = kernel.begin_in_object(caller);
+    let mut ctx = kernel.test_begin_in_object(caller);
     ctx.pending_calls.push(callee);
     // commit goes through verify_capability
     let res = kernel.handle(&mut ctx, KernelCall::Commit);
@@ -280,9 +280,8 @@ fn call_intent_collected_in_verify_path() {
 fn call_self_is_exempt() {
     let kernel = Kernel::with_wal_path(temp_wal("call_self"));
     let obj = birth(&kernel);
-    let ctx = kernel.begin_in_object(obj);
+    let ctx = kernel.test_begin_in_object(obj);
     assert!(kernel
-        .engine()
-        .authorize_intent(&ctx, &AccessIntent::Call(obj))
+        .test_authorize_intent(&ctx, &AccessIntent::Call(obj))
         .is_ok());
 }

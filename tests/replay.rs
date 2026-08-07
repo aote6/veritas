@@ -1,3 +1,4 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
@@ -9,7 +10,7 @@ fn replay_empty_wal_returns_nonzero() {
 
     // 创建空 WAL
     let k = Kernel::with_wal_path(wal_path.clone());
-    let idle_hash = k.engine().root_hash();
+    let idle_hash = k.test_engine().root_hash();
     drop(k);
 
     let replay_hash = Kernel::replay(&wal_path);
@@ -26,7 +27,7 @@ fn replay_equals_recovery_idle() {
     // 写操作到 WAL
     let k1 = Kernel::with_wal_path(wal_path.clone());
     let root = {
-        let mut tx = k1.begin();
+        let mut tx = k1.test_begin();
         let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -34,17 +35,17 @@ fn replay_equals_recovery_idle() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k1.commit(&mut tx).unwrap();
+        k1.test_commit(&mut tx).unwrap();
         id
     };
-    let mut tx = k1.begin_in_object(root);
-    k1.write(&mut tx, 0, vec![42]).unwrap();
-    k1.commit(&mut tx).unwrap();
+    let mut tx = k1.test_begin_in_object(root);
+    k1.test_write(&mut tx, 0, vec![42]).unwrap();
+    k1.test_commit(&mut tx).unwrap();
     drop(k1);
 
     // Recovery — 不操作
     let k2 = Kernel::with_wal_path(wal_path.clone());
-    let recovery_hash = k2.engine().root_hash();
+    let recovery_hash = k2.test_engine().root_hash();
     drop(k2);
 
     // Replay
@@ -60,7 +61,7 @@ fn replay_is_deterministic() {
 
     let k = Kernel::with_wal_path(wal_path.clone());
     let root = {
-        let mut tx = k.begin();
+        let mut tx = k.test_begin();
         let result = k.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -68,12 +69,12 @@ fn replay_is_deterministic() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k.commit(&mut tx).unwrap();
+        k.test_commit(&mut tx).unwrap();
         id
     };
-    let mut tx = k.begin_in_object(root);
-    k.write(&mut tx, 0, vec![99]).unwrap();
-    k.commit(&mut tx).unwrap();
+    let mut tx = k.test_begin_in_object(root);
+    k.test_write(&mut tx, 0, vec![99]).unwrap();
+    k.test_commit(&mut tx).unwrap();
     drop(k);
 
     let h1 = Kernel::replay(&wal_path);
@@ -91,7 +92,7 @@ fn replay_different_ops_different_hash() {
     // WAL1: write [1]
     let k1 = Kernel::with_wal_path(wal1.clone());
     let root1 = {
-        let mut tx = k1.begin();
+        let mut tx = k1.test_begin();
         let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -99,18 +100,18 @@ fn replay_different_ops_different_hash() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k1.commit(&mut tx).unwrap();
+        k1.test_commit(&mut tx).unwrap();
         id
     };
-    let mut tx = k1.begin_in_object(root1);
-    k1.write(&mut tx, 0, vec![1]).unwrap();
-    k1.commit(&mut tx).unwrap();
+    let mut tx = k1.test_begin_in_object(root1);
+    k1.test_write(&mut tx, 0, vec![1]).unwrap();
+    k1.test_commit(&mut tx).unwrap();
     drop(k1);
 
     // WAL2: write [2]
     let k2 = Kernel::with_wal_path(wal2.clone());
     let root2 = {
-        let mut tx = k2.begin();
+        let mut tx = k2.test_begin();
         let result = k2.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -118,12 +119,12 @@ fn replay_different_ops_different_hash() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k2.commit(&mut tx).unwrap();
+        k2.test_commit(&mut tx).unwrap();
         id
     };
-    let mut tx = k2.begin_in_object(root2);
-    k2.write(&mut tx, 0, vec![2]).unwrap();
-    k2.commit(&mut tx).unwrap();
+    let mut tx = k2.test_begin_in_object(root2);
+    k2.test_write(&mut tx, 0, vec![2]).unwrap();
+    k2.test_commit(&mut tx).unwrap();
     drop(k2);
 
     let h1 = Kernel::replay(&wal1);

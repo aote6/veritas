@@ -314,7 +314,7 @@ impl VeritasEngine {
 
     /// Single-intent authorization used by Machine CALL and by commit-time verify.
     /// Self-access (current_object / capability_context) is exempt.
-    pub fn authorize_intent(
+    pub(crate) fn authorize_intent(
         &self,
         ctx: &crate::types::TransactionContext,
         intent: &crate::types::AccessIntent,
@@ -656,7 +656,7 @@ impl VeritasEngine {
         }
     }
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -665,14 +665,14 @@ impl VeritasEngine {
         Self::with_wal_path(path)
     }
 
-    pub fn with_wal_path(wal_path: String) -> Self {
+    pub(crate) fn with_wal_path(wal_path: String) -> Self {
         let (records, recovered_version) = RecoveryManager::recover(&wal_path)
             .unwrap_or_else(|e| {
                 eprintln!("[WARN] WAL recovery failed: {}, starting fresh", e);
                 (Vec::new(), 0)
             });
 
-        let (_, _, pending_effects, max_tx_id) =
+        let (pending_effects, max_tx_id) =
             RecoveryManager::apply_records(&records);
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
@@ -741,14 +741,19 @@ impl VeritasEngine {
         engine
     }
 
-    pub fn scope_registry(&self) -> &ScopeRegistry {
+    pub(crate) fn scope_registry(&self) -> &ScopeRegistry {
         &self.scope_registry
     }
 
-    /// 注：当前所有非事务上下文的直接状态操作，临时统一归属内核Object(0)。
-    /// 待Object生命周期（OBJECT_BIRTH流程）接管后，此处应改为要求调用方
-    /// 显式提供object_id。这是过渡期的合理默认，非最终语义。
-    pub fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
+    /// Bootstrap-only: allowed only when the world is empty (no objects, version 0).
+    /// Runtime state writes must go through Transaction → Commit → Apply.
+    pub(crate) fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
+        let version = self.global_version.load(std::sync::atomic::Ordering::Acquire);
+        let object_count = self.object_registry.lock().unwrap().len();
+        assert!(
+            version == 0 && object_count == 0,
+            "init_state is bootstrap-only: world must be empty (version=0, no objects)"
+        );
         self.state_store.insert(
             crate::types::Address::new(0, state_id),
             StateEntry {
@@ -758,11 +763,11 @@ impl VeritasEngine {
         );
     }
 
-    pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
+    pub(crate) fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
         self.state_store.read(crate::types::Address::new(0, state_id))
     }
 
-    pub fn init_state_in_tx(
+    pub(crate) fn init_state_in_tx(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
@@ -1009,7 +1014,7 @@ impl VeritasEngine {
     ///
     /// 只提取原始事实，不做任何派生计算。
     /// deaths 使用 OWNS 展开**之前**的原始请求集合。
-    pub fn build_delta(
+    pub(crate) fn build_delta(
         &self,
         ctx: &TransactionContext,
         requested_deaths: Vec<ObjectId>,
@@ -1065,7 +1070,7 @@ impl VeritasEngine {
     /// 这是 Runtime commit 和 Recovery replay 的唯一入口。
     /// 步骤顺序不可变更：links/unlinks 必须先于 OWNS 闭包展开，
     /// 否则闭包会漏算本事务内新增的 OWNS 边。
-    pub fn apply(&self, delta: &TransactionDelta) {
+    pub(crate) fn apply(&self, delta: &TransactionDelta) {
         // 1. State writes
         for (addr, value) in &delta.writes {
             self.state_store.insert(
@@ -1671,3 +1676,19 @@ impl VeritasEngine {
     }
 }
 
+
+
+#[cfg(test)]
+mod bootstrap_tests {
+    use super::*;
+    #[test]
+    #[should_panic(expected = "init_state is bootstrap-only")]
+    fn init_state_rejects_non_empty_world() {
+        let engine = VeritasEngine::new();
+        let mut ctx = engine.begin();
+        let id = engine.next_object_id();
+        engine.object_birth(&mut ctx, id).unwrap();
+        engine.commit(&mut ctx).unwrap();
+        engine.init_state(0, vec![1, 2, 3]);
+    }
+}

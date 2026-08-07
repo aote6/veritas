@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
@@ -64,12 +65,12 @@ fn assert_recovery_equivalence(operations: &[&dyn Fn(&Kernel)]) {
         for op in operations {
             op(&kernel);
         }
-        snapshot_before = EngineSnapshot::capture(kernel.engine());
+        snapshot_before = EngineSnapshot::capture(kernel.test_engine());
     } // crash
 
     {
         let recovered = Kernel::with_wal_path(wal_path.clone());
-        let snapshot_after = EngineSnapshot::capture(recovered.engine());
+        let snapshot_after = EngineSnapshot::capture(recovered.test_engine());
 
         assert_eq!(
             snapshot_after.object_ids, snapshot_before.object_ids,
@@ -93,7 +94,7 @@ fn assert_recovery_equivalence(operations: &[&dyn Fn(&Kernel)]) {
 }
 
 fn commit_birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -105,7 +106,7 @@ fn commit_birth(kernel: &Kernel) -> u64 {
 }
 
 fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
-    let mut tx = kernel.begin_in_object(from);
+    let mut tx = kernel.test_begin_in_object(from);
     kernel.handle(&mut tx, KernelCall::CapabilityGrant {
         grantee: from, capability_type: "link".to_string(), resource: to,
     }).unwrap();
@@ -114,13 +115,13 @@ fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
 }
 
 fn commit_death(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin_in_object(id);
+    let mut tx = kernel.test_begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn commit_freeze(kernel: &Kernel, id: u64) {
-    let mut tx = kernel.begin_in_object(id);
+    let mut tx = kernel.test_begin_in_object(id);
     kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
@@ -187,7 +188,7 @@ fn cross_tx_unlink_then_death_no_cascade() {
     let b = commit_birth(&kernel); // B
     commit_link(&kernel, a, b, LinkType::Owns);
     {
-        let mut tx = kernel.begin_in_object(a);
+        let mut tx = kernel.test_begin_in_object(a);
         kernel.handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
@@ -197,15 +198,15 @@ fn cross_tx_unlink_then_death_no_cascade() {
     // Recovery
     let recovered = Kernel::with_wal_path(wal_path.clone());
     assert!(
-        recovered.engine().is_object_dead(a),
+        recovered.test_engine().is_object_dead(a),
         "A should be dead after recovery"
     );
     assert!(
-        !recovered.engine().is_object_dead(b),
+        !recovered.test_engine().is_object_dead(b),
         "B must survive: unlinked before A's death"
     );
     assert!(
-        !recovered.engine().has_link(a, b),
+        !recovered.test_engine().has_link(a, b),
         "A->B link must be gone after unlink + death cleanup"
     );
     let _ = std::fs::remove_file(&wal_path);
@@ -234,13 +235,13 @@ fn cross_tx_link_then_death_cascade() {
 
     // Recovery
     let recovered = Kernel::with_wal_path(wal_path.clone());
-    assert!(recovered.engine().is_object_dead(a), "A should be dead");
+    assert!(recovered.test_engine().is_object_dead(a), "A should be dead");
     assert!(
-        recovered.engine().is_object_dead(b),
+        recovered.test_engine().is_object_dead(b),
         "B must be dead: linked when A died, cascade applies"
     );
     assert!(
-        !recovered.engine().has_link(a, b),
+        !recovered.test_engine().has_link(a, b),
         "A->B link must be gone after cascade cleanup"
     );
     let _ = std::fs::remove_file(&wal_path);

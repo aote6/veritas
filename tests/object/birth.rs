@@ -1,4 +1,5 @@
 use crate::common::new_kernel;
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 
@@ -7,7 +8,7 @@ fn o1_object_birth_creates_isolated_entity() {
     let tk = new_kernel();
     let root = tk.root_object;
 
-    let mut tx = tk.kernel.begin_in_object(root);
+    let mut tx = tk.kernel.test_begin_in_object(root);
     let child = match tk.kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {

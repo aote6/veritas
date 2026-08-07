@@ -2,7 +2,7 @@ use crate::types::CapabilityId;
 // Veritas Kernel V0.3 - WAL 模块
 // P1: Scope 结构变更持久化 + Effect 幂等确认与重试
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};  // HashMap used by build_ordered_deltas
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
@@ -530,16 +530,14 @@ impl RecoveryManager {
         Ok((records, max_version))
     }
 
+    /// Extract recovery metadata only (max_tx_id + pending effects).
+    /// World state is rebuilt exclusively via build_ordered_deltas() + engine.apply().
     pub fn apply_records(
         records: &[WalEntry],
     ) -> (
-        HashMap<Address, StateEntry>,
-        HashMap<ScopeId, ScopeEntry>,
         Vec<PendingRecoveryEffect>,
         TxId,
     ) {
-        let mut state_map: HashMap<Address, StateEntry> = HashMap::new();
-        let mut scope_map: HashMap<ScopeId, ScopeEntry> = HashMap::new();
         let mut committed_effects: Vec<PendingRecoveryEffect> = Vec::new();
         let mut acked_keys: HashSet<String> = HashSet::new();
         let mut max_tx_id: TxId = 0;
@@ -548,41 +546,17 @@ impl RecoveryManager {
             match record {
                 WalEntry::Commit {
                     tx_id,
-                    version,
-                    writes,
-                    scope_changes,
                     effects,
+                    ..
                 } => {
                     if *tx_id > max_tx_id {
                         max_tx_id = *tx_id;
                     }
-                    for (addr, value) in writes {
-                        state_map.insert(
-                            *addr,
-                            StateEntry {
-                                value: value.clone(),
-                                version: *version,
-                            },
-                        );
-                    }
-                    for change in scope_changes {
-                        let entry = scope_map
-                            .entry(change.scope_id)
-                            .or_insert_with(ScopeEntry::new);
-                        match change.change_type {
-                            ScopeChangeType::Bind => {
-                                entry.bind(change.state_id);
-                            }
-                            ScopeChangeType::Unbind => {
-                                entry.unbind(change.state_id);
-                            }
-                        }
-                    }
-                    for effect in effects {
+                    for eff in effects {
                         committed_effects.push(PendingRecoveryEffect {
                             tx_id: *tx_id,
-                            idempotency_key: effect.idempotency_key.clone(),
-                            payload: effect.payload.clone(),
+                            idempotency_key: eff.idempotency_key.clone(),
+                            payload: eff.payload.clone(),
                         });
                     }
                 }
@@ -591,34 +565,9 @@ impl RecoveryManager {
                 } => {
                     acked_keys.insert(idempotency_key.clone());
                 }
-                WalEntry::Checkpoint { .. } => {}
-                WalEntry::ObjectBirth { .. } => {}
-                WalEntry::ObjectLink { .. } => {}
-                WalEntry::ObjectDeath { .. } => {}
-                WalEntry::CapabilityGrant { .. } => {}
-                WalEntry::ObjectFreeze { .. } => {}
-                WalEntry::ObjectUnlink { .. } => {}
                 WalEntry::TransactionCommitted(delta) => {
                     if delta.tx_id > max_tx_id {
                         max_tx_id = delta.tx_id;
-                    }
-                    for (addr, value) in &delta.writes {
-                        state_map.insert(
-                            *addr,
-                            StateEntry {
-                                value: value.clone(),
-                                version: delta.commit_version,
-                            },
-                        );
-                    }
-                    for (scope_id, change_type, state_id) in &delta.scope_changes {
-                        let entry = scope_map
-                            .entry(*scope_id)
-                            .or_insert_with(ScopeEntry::new);
-                        match change_type {
-                            ScopeChangeType::Bind => { entry.bind(*state_id); }
-                            ScopeChangeType::Unbind => { entry.unbind(*state_id); }
-                        }
                     }
                     for (key, payload) in &delta.effects {
                         committed_effects.push(PendingRecoveryEffect {
@@ -628,6 +577,7 @@ impl RecoveryManager {
                         });
                     }
                 }
+                _ => {}
             }
         }
 
@@ -636,7 +586,7 @@ impl RecoveryManager {
             .filter(|e| !acked_keys.contains(&e.idempotency_key))
             .collect();
 
-        (state_map, scope_map, pending, max_tx_id)
+        (pending, max_tx_id)
     }
 }
 /// 从 WAL records 按 tx_id 分组构建 TransactionDelta 列表。
@@ -1064,7 +1014,7 @@ mod tests {
         writer.append_and_sync(&commit).unwrap();
 
         let (records, _) = RecoveryManager::recover(path).unwrap();
-        let (_, _, pending, max_tx_id) = RecoveryManager::apply_records(&records);
+        let (pending, max_tx_id) = RecoveryManager::apply_records(&records);
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].idempotency_key, "1-0");
         assert_eq!(max_tx_id, 1);
@@ -1094,39 +1044,40 @@ mod tests {
             .unwrap();
 
         let (records, _) = RecoveryManager::recover(path).unwrap();
-        let (_, _, pending, _) = RecoveryManager::apply_records(&records);
+        let (pending, _) = RecoveryManager::apply_records(&records);
         assert!(pending.is_empty());
     }
 
     #[test]
-    fn test_scope_changes_replayed_into_scope_map() {
+    fn test_scope_changes_via_ordered_deltas() {
+        // Scope changes travel through TransactionCommitted + apply, not apply_records.
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path();
         let writer = WalWriter::open(path).unwrap();
-        let commit = WalEntry::Commit {
+        let delta = crate::types::TransactionDelta {
             tx_id: 1,
-            version: 1,
+            commit_version: 1,
+            actor_id: 0,
             writes: vec![],
             scope_changes: vec![
-                WalScopeChange {
-                    scope_id: 100,
-                    change_type: ScopeChangeType::Bind,
-                    state_id: 1,
-                },
-                WalScopeChange {
-                    scope_id: 100,
-                    change_type: ScopeChangeType::Bind,
-                    state_id: 2,
-                },
+                (100, ScopeChangeType::Bind, 1),
+                (100, ScopeChangeType::Bind, 2),
             ],
             effects: vec![],
+            births: vec![],
+            deaths: vec![],
+            freezes: vec![],
+            links: vec![],
+            unlinks: vec![],
+            capability_grants: vec![],
+            capability_delegates: vec![],
+            capability_revokes: vec![],
         };
-        writer.append_and_sync(&commit).unwrap();
+        writer.append_and_sync(&WalEntry::TransactionCommitted(delta)).unwrap();
 
         let (records, _) = RecoveryManager::recover(path).unwrap();
-        let (_, scope_map, _, _) = RecoveryManager::apply_records(&records);
-        let entry = scope_map.get(&100).unwrap();
-        assert_eq!(entry.struct_version, 2);
-        assert_eq!(entry.members.len(), 2);
+        let deltas = build_ordered_deltas(&records);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].scope_changes.len(), 2);
     }
 }

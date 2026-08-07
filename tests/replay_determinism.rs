@@ -1,3 +1,4 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -5,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -37,8 +38,8 @@ fn same_wal_same_state() {
 
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        assert_eq!(kernel.engine().get_object_state(a), Some(veritas_kernel::types::ObjectState::Alive));
-        assert_eq!(kernel.engine().get_object_state(b), Some(veritas_kernel::types::ObjectState::Alive));
+        assert_eq!(kernel.test_engine().get_object_state(a), Some(veritas_kernel::types::ObjectState::Alive));
+        assert_eq!(kernel.test_engine().get_object_state(b), Some(veritas_kernel::types::ObjectState::Alive));
     }
 
     let _ = std::fs::remove_file(&path);
@@ -60,11 +61,11 @@ fn replay_is_deterministic() {
     let ids2: Vec<u64>;
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        ids1 = { let mut ids = kernel.engine().list_object_ids(); ids.sort(); ids };
+        ids1 = { let mut ids = kernel.test_engine().list_object_ids(); ids.sort(); ids };
     }
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        ids2 = { let mut ids = kernel.engine().list_object_ids(); ids.sort(); ids };
+        ids2 = { let mut ids = kernel.test_engine().list_object_ids(); ids.sort(); ids };
     }
 
     assert_eq!(ids1, ids2, "same WAL must produce identical object lists");
@@ -80,7 +81,7 @@ fn object_ops_are_deterministic() {
         let kernel = Kernel::with_wal_path(path.clone());
         let a = birth(&kernel);
         let b = birth(&kernel);
-        let mut tx = kernel.begin_in_object(a);
+        let mut tx = kernel.test_begin_in_object(a);
         kernel.handle(&mut tx, KernelCall::CapabilityGrant {
             grantee: a, capability_type: "link".to_string(), resource: b,
         }).unwrap();
@@ -92,11 +93,11 @@ fn object_ops_are_deterministic() {
     let state2;
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        state1 = kernel.engine().state_root();
+        state1 = kernel.test_engine().state_root();
     }
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        state2 = kernel.engine().state_root();
+        state2 = kernel.test_engine().state_root();
     }
 
     assert_eq!(state1, state2, "same WAL must produce identical state_root");
@@ -114,7 +115,7 @@ fn wal_contains_full_world() {
         let kernel = Kernel::with_wal_path(path.clone());
         a = birth(&kernel);
         b = birth(&kernel);
-        let mut tx = kernel.begin_in_object(a);
+        let mut tx = kernel.test_begin_in_object(a);
         kernel.handle(&mut tx, KernelCall::CapabilityGrant {
             grantee: a, capability_type: "link".to_string(), resource: b,
         }).unwrap();
@@ -124,9 +125,9 @@ fn wal_contains_full_world() {
 
     {
         let kernel = Kernel::with_wal_path(path.clone());
-        assert!(kernel.engine().has_link(a, b), "link must survive recovery");
-        assert_eq!(kernel.engine().get_object_state(a), Some(veritas_kernel::types::ObjectState::Alive));
-        assert_eq!(kernel.engine().get_object_state(b), Some(veritas_kernel::types::ObjectState::Alive));
+        assert!(kernel.test_engine().has_link(a, b), "link must survive recovery");
+        assert_eq!(kernel.test_engine().get_object_state(a), Some(veritas_kernel::types::ObjectState::Alive));
+        assert_eq!(kernel.test_engine().get_object_state(b), Some(veritas_kernel::types::ObjectState::Alive));
     }
 
     let _ = std::fs::remove_file(&path);

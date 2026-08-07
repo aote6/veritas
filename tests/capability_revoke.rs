@@ -1,10 +1,11 @@
 //! P2: CapabilityRevoke Kernel → Engine → Graph → WAL/Checkpoint closure.
 
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel
         .handle(
             &mut tx,
@@ -23,7 +24,7 @@ fn birth(kernel: &Kernel) -> u64 {
 
 
 fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -39,7 +40,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
 }
 
 fn grant(kernel: &Kernel, grantee: u64, cap_type: &str, resource: u64) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let cap_id = match kernel
         .handle(
             &mut tx,
@@ -71,14 +72,14 @@ fn kernel_capability_revoke_cascade_downstream() {
     let resource = birth(&kernel);
 
     let cap = grant(&kernel, o1, "read", resource);
-    assert!(kernel.engine().holds_capability(cap, o1));
+    assert!(kernel.test_engine().holds_capability(cap, o1));
 
     delegate(&kernel, cap, o1, o2, true);
     delegate(&kernel, cap, o2, o3, true);
-    assert!(kernel.engine().holds_capability(cap, o2));
-    assert!(kernel.engine().holds_capability(cap, o3));
+    assert!(kernel.test_engine().holds_capability(cap, o2));
+    assert!(kernel.test_engine().holds_capability(cap, o3));
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -91,9 +92,9 @@ fn kernel_capability_revoke_cascade_downstream() {
         .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 
-    assert!(kernel.engine().holds_capability(cap, o1));
-    assert!(!kernel.engine().holds_capability(cap, o2));
-    assert!(!kernel.engine().holds_capability(cap, o3));
+    assert!(kernel.test_engine().holds_capability(cap, o1));
+    assert!(!kernel.test_engine().holds_capability(cap, o2));
+    assert!(!kernel.test_engine().holds_capability(cap, o3));
 }
 
 /// Test 2: non-cascade revoke keeps downstream active.
@@ -112,7 +113,7 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
     delegate(&kernel, cap, o1, o2, false);
     delegate(&kernel, cap, o2, o3, true);
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -125,10 +126,10 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
         .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 
-    assert!(kernel.engine().holds_capability(cap, o1));
-    assert!(!kernel.engine().holds_capability(cap, o2));
+    assert!(kernel.test_engine().holds_capability(cap, o1));
+    assert!(!kernel.test_engine().holds_capability(cap, o2));
     assert!(
-        kernel.engine().holds_capability(cap, o3),
+        kernel.test_engine().holds_capability(cap, o3),
         "non-cascade must preserve downstream holder"
     );
 }
@@ -146,7 +147,7 @@ fn kernel_capability_revoke_survives_checkpoint() {
     let cap = grant(&kernel, o1, "read", resource);
     delegate(&kernel, cap, o1, o2, true);
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -159,8 +160,8 @@ fn kernel_capability_revoke_survives_checkpoint() {
         .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 
-    assert!(!kernel.engine().holds_capability(cap, o1));
-    assert!(!kernel.engine().holds_capability(cap, o2));
+    assert!(!kernel.test_engine().holds_capability(cap, o1));
+    assert!(!kernel.test_engine().holds_capability(cap, o2));
 
     let snap = kernel.create_checkpoint();
     let wal2 = format!("{}/test_cap_revoke_ckpt2_{}.wal", std::env::temp_dir().display(), std::process::id());
@@ -168,8 +169,8 @@ fn kernel_capability_revoke_survives_checkpoint() {
     let kernel2 = Kernel::with_wal_path(wal2);
     assert!(kernel2.restore_checkpoint(&snap));
 
-    assert!(!kernel2.engine().holds_capability(cap, o1));
-    assert!(!kernel2.engine().holds_capability(cap, o2));
+    assert!(!kernel2.test_engine().holds_capability(cap, o1));
+    assert!(!kernel2.test_engine().holds_capability(cap, o2));
 }
 
 /// Test 4: WAL recovery re-applies CapabilityRevoke (root grant only, WAL-recorded).
@@ -182,9 +183,9 @@ fn kernel_capability_revoke_wal_replay() {
     let o1 = birth(&kernel);
     let resource = birth(&kernel);
     let cap = grant(&kernel, o1, "read", resource);
-    assert!(kernel.engine().holds_capability(cap, o1));
+    assert!(kernel.test_engine().holds_capability(cap, o1));
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -196,12 +197,12 @@ fn kernel_capability_revoke_wal_replay() {
         )
         .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
-    assert!(!kernel.engine().holds_capability(cap, o1));
+    assert!(!kernel.test_engine().holds_capability(cap, o1));
 
     // Fresh engine recovers WAL (grants then revokes)
     let kernel2 = Kernel::with_wal_path(wal);
     assert!(
-        !kernel2.engine().holds_capability(cap, o1),
+        !kernel2.test_engine().holds_capability(cap, o1),
         "CapabilityRevoke must be durable across WAL recovery"
     );
 }
@@ -218,7 +219,7 @@ fn kernel_capability_revoke_not_holder_errors() {
     let resource = birth(&kernel);
     let cap = grant(&kernel, o1, "read", resource);
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let err = kernel.handle(
         &mut tx,
         KernelCall::CapabilityRevoke {

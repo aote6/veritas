@@ -1,9 +1,10 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::capability::capability_id_of;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -21,12 +22,12 @@ fn capability_grant_visible_after_commit() {
     let _ = std::fs::remove_file(&wal_path);
     let kernel = Kernel::with_wal_path(wal_path.clone());
 
-    let seq_before = kernel.engine().capability_sequence();
+    let seq_before = kernel.test_engine().capability_sequence();
     let target = birth(&kernel);
 
     let expected_cap_id = capability_id_of(target, target, target, seq_before + 1);
     assert!(
-        kernel.engine().holds_capability(expected_cap_id, target),
+        kernel.test_engine().holds_capability(expected_cap_id, target),
         "AdminCap should be held by object after commit"
     );
 
@@ -44,19 +45,19 @@ fn capability_survives_recovery() {
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        let seq_before = kernel.engine().capability_sequence();
+        let seq_before = kernel.test_engine().capability_sequence();
         target = birth(&kernel);
         expected_cap_id = capability_id_of(target, target, target, seq_before + 1);
 
         assert!(
-            kernel.engine().holds_capability(expected_cap_id, target),
+            kernel.test_engine().holds_capability(expected_cap_id, target),
             "sanity check before restart failed"
         );
     }
 
     let recovered = Kernel::with_wal_path(wal_path.clone());
     assert!(
-        recovered.engine().holds_capability(expected_cap_id, target),
+        recovered.test_engine().holds_capability(expected_cap_id, target),
         "AdminCap must survive engine restart via WAL recovery"
     );
 
@@ -70,9 +71,9 @@ fn capability_grant_no_leak_on_abort() {
     let _ = std::fs::remove_file(&wal_path);
     let kernel = Kernel::with_wal_path(wal_path.clone());
 
-    let seq_before = kernel.engine().capability_sequence();
+    let seq_before = kernel.test_engine().capability_sequence();
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let target = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -85,7 +86,7 @@ fn capability_grant_no_leak_on_abort() {
 
     let would_be_cap_id = capability_id_of(target, target, target, seq_before + 1);
     assert!(
-        !kernel.engine().holds_capability(would_be_cap_id, target),
+        !kernel.test_engine().holds_capability(would_be_cap_id, target),
         "AdminCap must not leak into capability_graph after abort"
     );
 

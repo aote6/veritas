@@ -1,13 +1,14 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
 use veritas_kernel::kernel::{Kernel, KernelCall};
 
 /// 构建一个包含四组件的小世界
 fn build_world(kernel: &Kernel) {
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let mut ctx = kernel.begin_in_object(1);
+    let mut ctx = kernel.test_begin_in_object(1);
     kernel.handle(&mut ctx, KernelCall::CapabilityGrant {
         grantee: 1, capability_type: "link".to_string(), resource: 2,
     }).unwrap();
@@ -25,7 +26,7 @@ fn checkpoint_full_roundtrip_all_five_components() {
     let kernel = Kernel::new();
     build_world(&kernel);
 
-    let engine = kernel.engine();
+    let engine = kernel.test_engine();
     let snap1 = engine.create_checkpoint();
     engine.restore_checkpoint(&snap1);
     let snap2 = engine.create_checkpoint();
@@ -43,14 +44,14 @@ fn checkpoint_restore_then_continue_execution() {
     let kernel = Kernel::new();
     build_world(&kernel);
 
-    let engine = kernel.engine();
+    let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();
 
     // restore
     engine.restore_checkpoint(&snap);
 
     // 继续执行：创建第三个 Object
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
 
@@ -66,7 +67,7 @@ fn checkpoint_restore_idempotent() {
     let kernel = Kernel::new();
     build_world(&kernel);
 
-    let engine = kernel.engine();
+    let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();
 
     engine.restore_checkpoint(&snap);
@@ -87,7 +88,7 @@ fn checkpoint_root_hash_consistent() {
     let kernel = Kernel::new();
     build_world(&kernel);
 
-    let engine = kernel.engine();
+    let engine = kernel.test_engine();
     let root_before = engine.state_root();
     let snap = engine.create_checkpoint();
 
@@ -108,7 +109,7 @@ fn checkpoint_counter_roundtrip() {
     let kernel = Kernel::new();
     build_world(&kernel);
 
-    let engine = kernel.engine();
+    let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();
 
     // 验证快照包含计数器
@@ -124,7 +125,7 @@ fn checkpoint_counter_roundtrip() {
     assert_eq!(snap.grant_sequence, snap2.grant_sequence, "grant_sequence should survive roundtrip");
 
     // restore 后继续执行：ObjectId 不会重用
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     kernel.handle(&mut ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap();
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
     let snap3 = engine.create_checkpoint();

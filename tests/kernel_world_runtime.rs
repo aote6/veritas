@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::instruction::Instruction;
 use veritas_kernel::kernel::{Kernel, KernelCall};
 use veritas_kernel::module::{ModuleImage, ModuleVersion};
@@ -35,7 +36,7 @@ fn module_a_object_visible_to_module_b_through_runtime_execute() {
     );
 
     // Freeze requires acting as the target (AccessIntent::Freeze self-access)
-    let mut ctx = kernel.begin_in_object(object_id);
+    let mut ctx = kernel.test_begin_in_object(object_id);
     kernel
         .handle(&mut ctx, KernelCall::ObjectFreeze { object_id })
         .expect("freeze as self must succeed");

@@ -1,5 +1,6 @@
 //! P4: CapabilityDelegate WAL Closure — topology recovery equivalence.
 
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 
@@ -11,7 +12,7 @@ fn temp_wal(name: &str) -> String {
 }
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel
         .handle(
             &mut tx,
@@ -29,7 +30,7 @@ fn birth(kernel: &Kernel) -> u64 {
 }
 
 fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let cap_id = match kernel
         .handle(
             &mut tx,
@@ -49,7 +50,7 @@ fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
 }
 
 fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -65,7 +66,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
 }
 
 fn revoke(kernel: &Kernel, cap: u64, holder: u64, cascade_override: Option<bool>) {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -90,15 +91,15 @@ fn t1_delegate_survives_checkpoint() {
     let cap = grant(&kernel, a, res);
     delegate(&kernel, cap, a, b, true);
 
-    assert!(kernel.engine().holds_capability(cap, a));
-    assert!(kernel.engine().holds_capability(cap, b));
+    assert!(kernel.test_engine().holds_capability(cap, a));
+    assert!(kernel.test_engine().holds_capability(cap, b));
 
     let snap = kernel.create_checkpoint();
     let wal2 = temp_wal("t1b");
     let k2 = Kernel::with_wal_path(wal2);
     assert!(k2.restore_checkpoint(&snap));
-    assert!(k2.engine().holds_capability(cap, a));
-    assert!(k2.engine().holds_capability(cap, b));
+    assert!(k2.test_engine().holds_capability(cap, a));
+    assert!(k2.test_engine().holds_capability(cap, b));
 }
 
 /// T2: multi-level A→B→C→D tree.
@@ -116,7 +117,7 @@ fn t2_multilevel_delegate_tree() {
     delegate(&kernel, cap, c, d, false);
 
     for h in [a, b, c, d] {
-        assert!(kernel.engine().holds_capability(cap, h), "holder {}", h);
+        assert!(kernel.test_engine().holds_capability(cap, h), "holder {}", h);
     }
 
     let snap = kernel.create_checkpoint();
@@ -152,9 +153,9 @@ fn t3_cascade_revoke() {
     delegate(&kernel, cap, b, c, true);
     revoke(&kernel, cap, b, Some(true));
 
-    assert!(kernel.engine().holds_capability(cap, a));
-    assert!(!kernel.engine().holds_capability(cap, b));
-    assert!(!kernel.engine().holds_capability(cap, c));
+    assert!(kernel.test_engine().holds_capability(cap, a));
+    assert!(!kernel.test_engine().holds_capability(cap, b));
+    assert!(!kernel.test_engine().holds_capability(cap, c));
 }
 
 /// T4: non-cascade revoke preserves downstream.
@@ -170,10 +171,10 @@ fn t4_non_cascade_revoke() {
     delegate(&kernel, cap, b, c, true);
     revoke(&kernel, cap, b, None);
 
-    assert!(kernel.engine().holds_capability(cap, a));
-    assert!(!kernel.engine().holds_capability(cap, b));
+    assert!(kernel.test_engine().holds_capability(cap, a));
+    assert!(!kernel.test_engine().holds_capability(cap, b));
     assert!(
-        kernel.engine().holds_capability(cap, c),
+        kernel.test_engine().holds_capability(cap, c),
         "non-cascade must keep C"
     );
 }
@@ -191,11 +192,11 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
     delegate(&kernel, cap, a, b, true);
     delegate(&kernel, cap, b, c, false);
 
-    let live_hash = kernel.engine().root_hash();
+    let live_hash = kernel.test_engine().root_hash();
     let live_holds = (
-        kernel.engine().holds_capability(cap, a),
-        kernel.engine().holds_capability(cap, b),
-        kernel.engine().holds_capability(cap, c),
+        kernel.test_engine().holds_capability(cap, a),
+        kernel.test_engine().holds_capability(cap, b),
+        kernel.test_engine().holds_capability(cap, c),
     );
     assert_eq!(live_holds, (true, true, true));
 
@@ -205,9 +206,9 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
     assert!(k_ckpt.restore_checkpoint(&snap));
     assert_eq!(
         (
-            k_ckpt.engine().holds_capability(cap, a),
-            k_ckpt.engine().holds_capability(cap, b),
-            k_ckpt.engine().holds_capability(cap, c),
+            k_ckpt.test_engine().holds_capability(cap, a),
+            k_ckpt.test_engine().holds_capability(cap, b),
+            k_ckpt.test_engine().holds_capability(cap, c),
         ),
         live_holds
     );
@@ -216,15 +217,15 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
     let k_wal = Kernel::with_wal_path(wal.clone());
     assert_eq!(
         (
-            k_wal.engine().holds_capability(cap, a),
-            k_wal.engine().holds_capability(cap, b),
-            k_wal.engine().holds_capability(cap, c),
+            k_wal.test_engine().holds_capability(cap, a),
+            k_wal.test_engine().holds_capability(cap, b),
+            k_wal.test_engine().holds_capability(cap, c),
         ),
         live_holds,
         "WAL recovery must restore full delegate topology"
     );
     assert_eq!(
-        k_wal.engine().root_hash(),
+        k_wal.test_engine().root_hash(),
         live_hash,
         "WAL replay root_hash must match live"
     );
@@ -239,7 +240,7 @@ fn t6_rollback_drops_pending_delegate() {
     let res = birth(&kernel);
     let cap = grant(&kernel, a, res);
 
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     kernel
         .handle(
             &mut tx,
@@ -274,8 +275,8 @@ fn t6_rollback_drops_pending_delegate() {
     );
     // Commit empty residual — graph must not gain holder b
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
-    assert!(!kernel.engine().holds_capability(cap, b));
-    assert!(kernel.engine().holds_capability(cap, a));
+    assert!(!kernel.test_engine().holds_capability(cap, b));
+    assert!(kernel.test_engine().holds_capability(cap, a));
 }
 
 /// T7: old WAL without CAPDELEGATE still deserializes (empty delegates).

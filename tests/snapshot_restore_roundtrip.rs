@@ -96,7 +96,7 @@ fn scope_roundtrip_with_data() {
 
 #[test]
 fn topology_roundtrip_empty() {
-    let engine = veritas_kernel::engine::VeritasEngine::new();
+    let engine = veritas_kernel::test_api::empty_engine();
     let a = engine.snapshot_links();
     engine.restore_links(&a);
     let b = engine.snapshot_links();

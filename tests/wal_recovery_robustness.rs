@@ -1,10 +1,11 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
 
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -45,7 +46,7 @@ fn test_truncated_wal(truncate_bytes: usize) {
     // Phase 3: attempt recovery — must not panic
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        let _state = kernel.engine().get_object_state(obj_id);
+        let _state = kernel.test_engine().get_object_state(obj_id);
         // If we got here without panicking, the test passes.
     }
 
@@ -78,7 +79,7 @@ fn test_corrupted_wal(corrupt_offset: usize, corrupt_byte: u8) {
 
     // Recovery must not panic
     {
-        let _engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let _engine = veritas_kernel::test_api::recover_engine(&wal_path);
     }
 
     let _ = std::fs::remove_file(&wal_path);
@@ -105,8 +106,8 @@ fn recovery_is_idempotent() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         state_after_first = (
-            kernel.engine().get_object_state(obj_a),
-            kernel.engine().get_object_state(obj_b),
+            kernel.test_engine().get_object_state(obj_a),
+            kernel.test_engine().get_object_state(obj_b),
         );
     }
 
@@ -114,8 +115,8 @@ fn recovery_is_idempotent() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         let state_after_second = (
-            kernel.engine().get_object_state(obj_a),
-            kernel.engine().get_object_state(obj_b),
+            kernel.test_engine().get_object_state(obj_a),
+            kernel.test_engine().get_object_state(obj_b),
         );
         assert_eq!(
             state_after_second, state_after_first,
@@ -127,8 +128,8 @@ fn recovery_is_idempotent() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         let state_after_third = (
-            kernel.engine().get_object_state(obj_a),
-            kernel.engine().get_object_state(obj_b),
+            kernel.test_engine().get_object_state(obj_a),
+            kernel.test_engine().get_object_state(obj_b),
         );
         assert_eq!(
             state_after_third, state_after_first,
@@ -149,7 +150,7 @@ fn empty_wal_recovery_succeeds() {
     std::fs::write(&wal_path, b"").unwrap();
 
     {
-        let engine = VeritasEngine::with_wal_path(wal_path.clone());
+        let engine = veritas_kernel::test_api::recover_engine(&wal_path);
         let ids = engine.list_object_ids();
         assert!(ids.is_empty(), "empty WAL recovery should yield no objects");
     }

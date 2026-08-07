@@ -1,3 +1,4 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::*;
 
@@ -19,34 +20,34 @@ fn grant(kernel: &Kernel, ctx: &mut TransactionContext, grantee: ObjectId, resou
 #[test]
 fn checkpoint_restore_world_continuity() {
     let k_cont = Kernel::new();
-    let mut ctx = k_cont.begin();
+    let mut ctx = k_cont.test_begin();
     let o1 = birth(&k_cont, &mut ctx);
     let cap1 = grant(&k_cont, &mut ctx, o1, o1, "read");
     k_cont.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let mut ctxw = k_cont.begin_in_object(o1);
-    k_cont.write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
+    let mut ctxw = k_cont.test_begin_in_object(o1);
+    k_cont.test_write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
     k_cont.handle(&mut ctxw, KernelCall::Commit).unwrap();
     let root1 = k_cont.state_root();
     let meta = k_cont.create_checkpoint();
     let (gv1, oid1, gs1) = (meta.global_version, meta.object_id_counter, meta.grant_sequence);
 
-    let mut ctx2 = k_cont.begin();
+    let mut ctx2 = k_cont.test_begin();
     let o2 = birth(&k_cont, &mut ctx2);
     let cap2 = grant(&k_cont, &mut ctx2, o2, o2, "write");
     k_cont.handle(&mut ctx2, KernelCall::Commit).unwrap();
-    let mut ctxw2 = k_cont.begin_in_object(o2);
-    k_cont.write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
+    let mut ctxw2 = k_cont.test_begin_in_object(o2);
+    k_cont.test_write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
     k_cont.handle(&mut ctxw2, KernelCall::Commit).unwrap();
     let root_final = k_cont.state_root();
     let final_cont = k_cont.create_checkpoint();
 
     let k_rest = Kernel::new();
-    let mut ctx = k_rest.begin();
+    let mut ctx = k_rest.test_begin();
     let o1r = birth(&k_rest, &mut ctx);
     let cap1r = grant(&k_rest, &mut ctx, o1r, o1r, "read");
     k_rest.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let mut ctxw = k_rest.begin_in_object(o1r);
-    k_rest.write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
+    let mut ctxw = k_rest.test_begin_in_object(o1r);
+    k_rest.test_write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
     k_rest.handle(&mut ctxw, KernelCall::Commit).unwrap();
     assert_eq!(o1r, o1);
     assert_eq!(cap1r, cap1);
@@ -57,12 +58,12 @@ fn checkpoint_restore_world_continuity() {
     assert_eq!(snap.grant_sequence, gs1);
     k_rest.restore_checkpoint(&snap);
 
-    let mut ctx2 = k_rest.begin();
+    let mut ctx2 = k_rest.test_begin();
     let o2r = birth(&k_rest, &mut ctx2);
     let cap2r = grant(&k_rest, &mut ctx2, o2r, o2r, "write");
     k_rest.handle(&mut ctx2, KernelCall::Commit).unwrap();
-    let mut ctxw2 = k_rest.begin_in_object(o2r);
-    k_rest.write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
+    let mut ctxw2 = k_rest.test_begin_in_object(o2r);
+    k_rest.test_write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
     k_rest.handle(&mut ctxw2, KernelCall::Commit).unwrap();
     assert_eq!(o2r, o2);
     assert_eq!(cap2r, cap2);
@@ -76,7 +77,7 @@ fn checkpoint_restore_world_continuity() {
 #[test]
 fn capability_identity_survives_checkpoint_restore() {
     let kernel = Kernel::new();
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     let o1 = birth(&kernel, &mut ctx);
     let o2 = birth(&kernel, &mut ctx);
     let cap_a = grant(&kernel, &mut ctx, o1, o2, "read");
@@ -97,14 +98,14 @@ fn capability_identity_survives_checkpoint_restore() {
 #[test]
 fn object_death_no_ghost_state_after_checkpoint() {
     let kernel = Kernel::new();
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     let oid = birth(&kernel, &mut ctx);
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let mut ctx2 = kernel.begin_in_object(oid);
-    kernel.write(&mut ctx2, 7, b"ghost-bait".to_vec()).unwrap();
+    let mut ctx2 = kernel.test_begin_in_object(oid);
+    kernel.test_write(&mut ctx2, 7, b"ghost-bait".to_vec()).unwrap();
     kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
     let root_alive = kernel.state_root();
-    let mut ctx3 = kernel.begin_in_object(oid);
+    let mut ctx3 = kernel.test_begin_in_object(oid);
     kernel.handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid }).unwrap();
     kernel.handle(&mut ctx3, KernelCall::Commit).unwrap();
     let snap_dead = kernel.create_checkpoint();
@@ -120,11 +121,11 @@ fn object_death_no_ghost_state_after_checkpoint() {
 #[test]
 fn checkpoint_preserves_state_entry_versions() {
     let kernel = Kernel::new();
-    let mut ctx = kernel.begin();
+    let mut ctx = kernel.test_begin();
     let oid = birth(&kernel, &mut ctx);
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let mut ctx2 = kernel.begin_in_object(oid);
-    kernel.write(&mut ctx2, 1, b"v1".to_vec()).unwrap();
+    let mut ctx2 = kernel.test_begin_in_object(oid);
+    kernel.test_write(&mut ctx2, 1, b"v1".to_vec()).unwrap();
     kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
     let snap = kernel.create_checkpoint();
     let v_before: Vec<_> = snap.state_entries.iter().map(|(a, e)| (*a, e.version)).collect();

@@ -1,3 +1,4 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
@@ -5,7 +6,7 @@ use veritas_kernel::types::{ObjectState, LinkType};
 
 
 fn birth(kernel: &Kernel) -> u64 {
-    let mut tx = kernel.begin();
+    let mut tx = kernel.test_begin();
     let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
         object_type: ObjectType::StateObject,
     }).unwrap() {
@@ -29,7 +30,7 @@ fn object_birth_survives_recovery() {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         object_id = birth(&kernel);
         assert_eq!(
-            kernel.engine().get_object_state(object_id),
+            kernel.test_engine().get_object_state(object_id),
             Some(ObjectState::Alive),
             "object should be alive after commit"
         );
@@ -38,7 +39,7 @@ fn object_birth_survives_recovery() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         assert_eq!(
-            kernel.engine().get_object_state(object_id),
+            kernel.test_engine().get_object_state(object_id),
             Some(ObjectState::Alive),
             "object must survive WAL recovery"
         );
@@ -61,20 +62,20 @@ fn object_link_survives_recovery() {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         obj_a = birth(&kernel);
         obj_b = birth(&kernel);
-        let mut tx = kernel.begin_in_object(obj_a);
+        let mut tx = kernel.test_begin_in_object(obj_a);
         kernel.handle(&mut tx, KernelCall::CapabilityGrant {
             grantee: obj_a, capability_type: "link".to_string(), resource: obj_b,
         }).unwrap();
         kernel.handle(&mut tx, KernelCall::ObjectLink { from: obj_a, to: obj_b, link_type: LinkType::Owns }).unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
-        assert!(kernel.engine().has_link(obj_a, obj_b), "link should exist before crash");
+        assert!(kernel.test_engine().has_link(obj_a, obj_b), "link should exist before crash");
     }
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        assert_eq!(kernel.engine().get_object_state(obj_a), Some(ObjectState::Alive));
-        assert_eq!(kernel.engine().get_object_state(obj_b), Some(ObjectState::Alive));
-        assert!(kernel.engine().has_link(obj_a, obj_b), "link must survive WAL recovery");
+        assert_eq!(kernel.test_engine().get_object_state(obj_a), Some(ObjectState::Alive));
+        assert_eq!(kernel.test_engine().get_object_state(obj_b), Some(ObjectState::Alive));
+        assert!(kernel.test_engine().has_link(obj_a, obj_b), "link must survive WAL recovery");
     }
 
     let _ = std::fs::remove_file(&wal_path);
@@ -90,7 +91,7 @@ fn aborted_object_not_recovered() {
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        let mut tx = kernel.begin();
+        let mut tx = kernel.test_begin();
         let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap() {
@@ -106,7 +107,7 @@ fn aborted_object_not_recovered() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         assert_eq!(
-            kernel.engine().get_object_state(object_id),
+            kernel.test_engine().get_object_state(object_id),
             None,
             "aborted object must not appear after recovery"
         );

@@ -164,9 +164,9 @@ impl Kernel {
         }
     }
 
-    /// 返回内部 Engine 的只读引用。
-    /// 仅用于测试/工具读取世界状态，不可绕过 Kernel 修改世界。
-    pub fn engine(&self) -> &VeritasEngine {
+    /// Internal engine access for same-crate runtime (Machine / WorldService).
+    /// Production external callers must not use this; use handle() or WorldService.
+    pub(crate) fn engine(&self) -> &VeritasEngine {
         &self.engine
     }
 
@@ -296,7 +296,7 @@ impl Kernel {
         self.engine.list_object_ids()
     }
 
-    pub fn attach_capability(&self, ctx: &mut TransactionContext, cap_id: u64) {
+    pub(crate) fn attach_capability(&self, ctx: &mut TransactionContext, cap_id: u64) {
         self.engine.attach_capability(ctx, cap_id)
     }
 
@@ -332,32 +332,27 @@ impl Kernel {
         self.engine.state_root()
     }
 
-    pub fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
-        self.engine.init_state(state_id, initial_value)
-    }
-
     pub fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
         self.engine.peek_state(state_id)
     }
 
-    pub fn init_state_in_tx(
-        &self,
-        ctx: &mut TransactionContext,
-        state_id: StateId,
-        initial_value: Vec<u8>,
-    ) {
-        self.engine.init_state_in_tx(ctx, state_id, initial_value)
+    pub fn get_global_version(&self) -> Version {
+        self.engine.get_global_version()
     }
 
-    pub fn begin(&self) -> TransactionContext {
+    // ----- Runtime-internal mutation surface (Machine / WorldService only) -----
+    // External production code must use handle() or WorldService.
+    // Integration tests use crate::test_api::KernelTestExt.
+
+    pub(crate) fn begin(&self) -> TransactionContext {
         self.engine.begin()
     }
 
-    pub fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
+    pub(crate) fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
         self.engine.begin_in_object(object_id)
     }
 
-    pub fn read(
+    pub(crate) fn read(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
@@ -365,7 +360,7 @@ impl Kernel {
         self.engine.read(ctx, state_id)
     }
 
-    pub fn write(
+    pub(crate) fn write(
         &self,
         ctx: &mut TransactionContext,
         state_id: StateId,
@@ -374,7 +369,7 @@ impl Kernel {
         self.engine.write(ctx, state_id, payload)
     }
 
-    pub fn effect(
+    pub(crate) fn effect(
         &self,
         ctx: &mut TransactionContext,
         payload: Vec<u8>,
@@ -382,22 +377,20 @@ impl Kernel {
         self.engine.effect(ctx, payload)
     }
 
-    pub fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
+    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
         self.engine.commit(ctx)
     }
 
-
-
-
-
-
-
-
-    pub fn get_global_version(&self) -> Version {
-        self.engine.get_global_version()
+    pub(crate) fn init_state_in_tx(
+        &self,
+        ctx: &mut TransactionContext,
+        state_id: StateId,
+        initial_value: Vec<u8>,
+    ) {
+        self.engine.init_state_in_tx(ctx, state_id, initial_value)
     }
 
-    pub fn savepoint(
+    pub(crate) fn savepoint(
         &self,
         ctx: &mut TransactionContext,
         name: &str,
@@ -405,7 +398,7 @@ impl Kernel {
         self.engine.savepoint(ctx, name)
     }
 
-    pub fn rollback_to(
+    pub(crate) fn rollback_to(
         &self,
         ctx: &mut TransactionContext,
         name: &str,

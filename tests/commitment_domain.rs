@@ -1,3 +1,4 @@
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
@@ -9,7 +10,7 @@ fn diagnose_live_vs_recovery_components() {
 
     let k1 = Kernel::with_wal_path(wal_path.clone());
     let root = {
-        let mut tx = k1.begin();
+        let mut tx = k1.test_begin();
         let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -17,16 +18,16 @@ fn diagnose_live_vs_recovery_components() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k1.commit(&mut tx).unwrap();
+        k1.test_commit(&mut tx).unwrap();
         id
     };
-    let mut tx = k1.begin_in_object(root);
-    k1.write(&mut tx, 0, vec![99]).unwrap();
-    k1.commit(&mut tx).unwrap();
+    let mut tx = k1.test_begin_in_object(root);
+    k1.test_write(&mut tx, 0, vec![99]).unwrap();
+    k1.test_commit(&mut tx).unwrap();
 
-    let live = k1.engine().debug_root_components();
+    let live = k1.test_engine().debug_root_components();
     let k2 = Kernel::with_wal_path(wal_path);
-    let recovery = k2.engine().debug_root_components();
+    let recovery = k2.test_engine().debug_root_components();
 
     println!("LIVE      s={} o={} t={} c={} sc={}", live.0, live.1, live.2, live.3, live.4);
     println!("RECOVERY  s={} o={} t={} c={} sc={}", recovery.0, recovery.1, recovery.2, recovery.3, recovery.4);
@@ -41,7 +42,7 @@ fn self_access_does_not_grow_capability_graph() {
 
     let k = Kernel::with_wal_path(wal_path);
     let root = {
-        let mut tx = k.begin();
+        let mut tx = k.test_begin();
         let result = k.handle(&mut tx, KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         }).unwrap();
@@ -49,19 +50,19 @@ fn self_access_does_not_grow_capability_graph() {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
         };
-        k.commit(&mut tx).unwrap();
+        k.test_commit(&mut tx).unwrap();
         id
     };
 
-    let before = k.engine().capability_sequence();
+    let before = k.test_engine().capability_sequence();
 
     for i in 0..5 {
-        let mut tx = k.begin_in_object(root);
-        k.write(&mut tx, 0, vec![i as u8]).unwrap();
-        k.commit(&mut tx).unwrap();
+        let mut tx = k.test_begin_in_object(root);
+        k.test_write(&mut tx, 0, vec![i as u8]).unwrap();
+        k.test_commit(&mut tx).unwrap();
     }
 
-    let after = k.engine().capability_sequence();
+    let after = k.test_engine().capability_sequence();
     assert_eq!(before, after,
         "self-access must not create CapabilityGraph records");
 }

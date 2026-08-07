@@ -177,7 +177,7 @@ impl WorldService {
         }
     }
 
-    pub fn kernel(&self) -> &Arc<Kernel> {
+    pub(crate) fn kernel(&self) -> &Arc<Kernel> {
         &self.kernel
     }
 
