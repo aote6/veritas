@@ -243,6 +243,26 @@ fn handle(world: &WorldService, req: &Value) -> Value {
             }
         }
 
+        "tx_read" => {
+            let sid = match req.get("session_id").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing session_id"}),
+            };
+            let state_id = match req.get("state_id").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing state_id"}),
+            };
+            match world.tx_read(sid, state_id) {
+                Ok(bytes) => json!({
+                    "ok": true,
+                    "object_id": req.get("object_id"),
+                    "state_id": state_id,
+                    "value_hex": hex::encode(&bytes),
+                }),
+                Err(e) => json!({"ok": false, "error": e.to_string()}),
+            }
+        }
+
         "tx_commit" => {
             let sid = match req.get("session_id").and_then(|v| v.as_u64()) {
                 Some(s) => s,

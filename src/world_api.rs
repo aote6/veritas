@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::kernel::{Kernel, KernelCall, TrapResult};
 use crate::types::{
-    AbortReason, LinkSnapshot, LinkType, ObjectId, ObjectState, ObjectType, TransactionContext,
-    TransactionDelta, TransactionReceipt, VeritasError, Version,
+    AbortReason, LinkSnapshot, LinkType, ObjectId, ObjectState, ObjectType, StateId,
+    TransactionContext, TransactionDelta, TransactionReceipt, VeritasError, Version,
 };
 
 pub type SessionId = u64;
@@ -370,6 +370,17 @@ impl WorldService {
         self.with_session_mut(session_id, |kernel, state| {
             kernel.write(&mut state.ctx, state_id, payload)?;
             Ok(())
+        })
+    }
+
+    pub fn tx_read(
+        &self,
+        session_id: SessionId,
+        state_id: StateId,
+    ) -> Result<Vec<u8>, WorldError> {
+        self.with_session_mut(session_id, |kernel, state| {
+            kernel.read(&mut state.ctx, state_id)
+                .map_err(|e| WorldError::Kernel(e))
         })
     }
 
