@@ -2,13 +2,13 @@ use crate::types::CapabilityId;
 // Veritas Kernel V0.3 - WAL 模块
 // P1: Scope 结构变更持久化 + Effect 幂等确认与重试
 
-use std::collections::{HashMap, HashSet};  // HashMap used by build_ordered_deltas
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{Address, ObjectId, ScopeChangeType, ScopeEntry, ScopeId, StateEntry, StateId, TransactionDelta, TxId, Version};
+use crate::types::{Address, ObjectId, ScopeChangeType, ScopeId, StateId, TransactionDelta, TxId, Version};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {
