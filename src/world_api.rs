@@ -366,8 +366,14 @@ impl WorldService {
         session_id: SessionId,
         state_id: u64,
         payload: Vec<u8>,
+        object_id: Option<ObjectId>,
     ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
+            if let Some(oid) = object_id {
+                if state.ctx.current_object != oid {
+                    state.ctx.enter_object(oid);
+                }
+            }
             kernel.write(&mut state.ctx, state_id, payload)?;
             Ok(())
         })

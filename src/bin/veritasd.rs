@@ -237,7 +237,8 @@ fn handle(world: &WorldService, req: &Value) -> Value {
             } else {
                 return json!({"ok": false, "error": "missing hex or value"});
             };
-            match world.tx_write(sid, state_id, payload) {
+            let object_id = req.get("object_id").and_then(|v| v.as_u64());
+            match world.tx_write(sid, state_id, payload, object_id) {
                 Ok(()) => json!({"ok": true}),
                 Err(e) => json!({"ok": false, "error": e.to_string()}),
             }
