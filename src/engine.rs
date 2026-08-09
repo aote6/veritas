@@ -931,9 +931,10 @@ impl VeritasEngine {
     }
 
     pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
-        self.controller.pre_commit_check(ctx)?;
-
         let _lock = self.commit_lock.lock().unwrap();
+
+        // F-007: 事务生命周期准入检查必须在 commit serialization 临界区内
+        self.controller.pre_commit_check(ctx)?;
 
         // Stage 3.3: 捕获 commit 前 WorldState 根哈希
         let before_root = self.root_hash();
@@ -959,7 +960,6 @@ impl VeritasEngine {
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
 
-        let pending_effects = ctx.effect_queue.drain();
 
         // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
         self.expand_owns_death_closure(ctx);
@@ -980,24 +980,28 @@ impl VeritasEngine {
         // Step 2b/Step 3: apply after WAL is durable
         self.apply(&delta);
 
+        // F-007: 事务生命周期必须在释放 commit_lock 前完成 Active -> Committed
+        self.controller.post_commit(ctx.tx_id());
+
         drop(_lock);
 
-        for pending in pending_effects {
+        // Effect 生命周期：以 committed delta 为唯一事实来源
+        // 当前没有真正的 Effect executor，仅保留 pending 状态
+        // Recovery 必须识别未 Ack 的 Effect 并保持 pending，不得伪造 Ack
+        for (key, payload) in &delta.effects {
             eprintln!(
-                "[EFFECT] 执行 {}: payload长度={}",
-                pending.idempotency_key,
-                pending.payload.len()
+                "[EFFECT] committed effect key={} payload_len={}",
+                key,
+                payload.len()
             );
             let ack = WalEntry::EffectAck {
                 tx_id: ctx.tx_id(),
-                idempotency_key: pending.idempotency_key.clone(),
+                idempotency_key: key.clone(),
             };
             if let Err(e) = self.wal.append_and_sync(&ack) {
                 eprintln!("[WARN] 写入 EffectAck 失败: {}", e);
             }
         }
-
-        self.controller.post_commit(ctx.tx_id());
 
         let after_root = self.root_hash();
         let receipt = TransactionReceipt {
@@ -1573,6 +1577,9 @@ impl VeritasEngine {
     }
 
     pub(crate) fn abort(&self, ctx: &mut TransactionContext, reason: AbortReason) {
+        // F-007: COMMIT 和 ABORT 必须由同一个 commit_lock 互斥
+        // Active -> Aborted 是不可与 Active -> Committed 并发交叉的生命周期转换
+        let _lock = self.commit_lock.lock().unwrap();
         self.controller.abort(ctx, reason);
     }
 
