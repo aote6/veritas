@@ -123,10 +123,7 @@ fn handle(world: &WorldService, req: &Value) -> Value {
 
         // Legacy short-tx create (compat). Prefer tx_* session path.
         "create_object" => match world.create_object_short() {
-            Ok((id, admin_cap)) => json!({
-                "ok": true,
-                "object": {"id": id, "state": "Alive", "admin_cap_id": admin_cap}
-            }),
+            Ok(id) => json!({"ok": true, "object": {"id": id, "state": "Alive"}}),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
         },
 
