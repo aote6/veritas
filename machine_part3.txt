@@ -1,0 +1,131 @@
+        }
+
+        // 宪法transaction.md第3节：Transaction不可嵌套。
+        // CALL/RETURN不改变Transaction边界，Commit只能在最外层执行。
+        if matches!(instruction, Instruction::Commit) && !self.call_stack.is_empty() {
+            self.status = MachineStatus::Aborted(AbortReason::WriteConflict);
+            return Err(VeritasError::Abort(AbortReason::WriteConflict));
+        }
+
+        // P1a: execute_kernel_instruction removed — all kernel ops now via KernelCall
+
+
+
+        self.pc += consumed;
+
+        // P19.1: 记录指令执行 trace
+        let regs_after = [
+            self.registers.get_u64(0), self.registers.get_u64(1),
+            self.registers.get_u64(2), self.registers.get_u64(3),
+            self.registers.get_u64(4), self.registers.get_u64(5),
+            self.registers.get_u64(6), self.registers.get_u64(7),
+        ];
+        self.execution.record_instruction(crate::trace::InstructionTrace {
+            pc: self.pc.saturating_sub(consumed),
+            opcode: instruction.opcode() as u8,
+            instruction: instruction.clone(),
+            registers_before: regs_before,
+            registers_after: regs_after,
+            state_reads: vec![],
+            state_writes: vec![],
+        });
+
+        if self.pc >= self.ram.len() {
+            self.status = MachineStatus::Halted;
+        }
+
+        Ok(())
+    }
+
+// P1a: execute_kernel_instruction removed — KernelCall is the sole dispatch path
+
+    pub fn run(&mut self) -> Result<(), VeritasError> {
+        while self.status == MachineStatus::Ready || self.status == MachineStatus::Running {
+            self.step()?;
+        }
+        Ok(())
+    }
+
+    pub fn run_with_config(&mut self, config: ExecutionConfig) -> Result<ExecutionResult, VeritasError> {
+        let mut cycles = 0;
+        while self.status == MachineStatus::Running || self.status == MachineStatus::Ready {
+            if cycles >= config.max_cycles {
+                return Ok(ExecutionResult::CycleLimitReached { cycles });
+            }
+            if self.status == MachineStatus::Ready {
+                self.status = MachineStatus::Running;
+            }
+            self.step()?;
+            cycles += 1;
+            if self.is_halted() {
+                return Ok(ExecutionResult::Halted { cycles });
+            }
+        }
+        Ok(ExecutionResult::Halted { cycles })
+    }
+
+    pub fn pc(&self) -> usize {
+        self.pc
+    }
+
+    pub fn with_program(mut self, program: Program) -> Result<Self, VeritasError> {
+        Verifier::verify(&program)?;
+        self.program = program;
+        self.status = MachineStatus::Ready;
+        self.trap_frame = None;
+        self.execution = crate::execution::ExecutionContext::new(0, 0);
+        Ok(self)
+    }
+
+    pub fn boot(&mut self, image: crate::program::ProgramImage) -> Result<(), VeritasError> {
+        self.registers.reset();
+        self.flags.reset();
+        self.ram.clear();
+        let prog_hash = image.hash();
+
+        let mut addr = 0usize;
+        for inst in &image.instructions {
+            let encoded = inst.encode()?;
+            self.ram.write_bytes(addr, &encoded)
+                .map_err(|e| VeritasError::EngineError(e))?;
+            addr += encoded.len();
+        }
+
+        self.pc = image.entry_point as usize;
+        self.status = MachineStatus::Running;
+        self.trap_frame = None;
+        self.execution = crate::execution::ExecutionContext::new(
+            prog_hash,
+            self.kernel.state_root(),
+        );
+        Ok(())
+    }
+
+
+    pub fn boot_bytes(&mut self, bytes: &[u8]) -> Result<(), VeritasError> {
+        let image = crate::program::ProgramImage::decode(bytes)?;
+        self.boot(image)
+    }
+
+    pub fn registers(&self) -> &RegisterFile { &self.registers }
+
+    pub fn flags(&self) -> &FlagsRegister { &self.flags }
+
+    pub fn status(&self) -> &MachineStatus {
+        &self.status
+    }
+
+    pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
+
+    pub fn trace_hash(&self) -> u64 { self.execution.trace.trace_hash() }
+
+    pub fn execution_receipt(&self) -> crate::receipt::ExecutionReceipt {
+        crate::receipt::ReceiptBuilder::build(&self.execution, self.state_root())
+    }
+
+    pub fn state_root(&self) -> u64 { self.kernel.state_root() }
+
+    pub fn is_halted(&self) -> bool {
+        matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_))
+    }
+}

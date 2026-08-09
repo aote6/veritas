@@ -1,0 +1,9 @@
+module world_demo
+version 1.0.0
+    ;; 计算部分
+    LOAD_CONST R0, 100
+    LOAD_CONST R1, 200
+    ADD R2, R0, R1
+
+    ;; 停机（后续内核操作需要通过 veritasd 的标准 JSON-RPC 流程）
+    HALT

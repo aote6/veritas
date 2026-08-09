@@ -1,0 +1,65 @@
+            Instruction::Read { state_id } => {
+                let bytes = self.kernel.read(&mut self.ctx, state_id)?;
+                self.registers.set(0, RegisterValue::Bytes(bytes));
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::Write { state_id, payload } => {
+                self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
+                self.execution.record_write(state_id, payload);
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::ObjectBirth { object_id } => {
+                let call = crate::kernel::KernelCall::ObjectBirth {
+                    object_type: crate::types::ObjectType::StateObject,
+                };
+                let result = self.kernel.handle(&mut self.ctx, call)?;
+                if let crate::kernel::TrapResult::ObjectId(id) = result {
+                    self.registers.set(0, RegisterValue::U64(id));
+                }
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::ObjectDeath { object_id } => {
+                let call = crate::kernel::KernelCall::ObjectDeath { object_id };
+                self.kernel.handle(&mut self.ctx, call)?;
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::ObjectFreeze { object_id } => {
+                let call = crate::kernel::KernelCall::ObjectFreeze { object_id };
+                self.kernel.handle(&mut self.ctx, call)?;
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::ObjectLink { from, to, relation } => {
+                let call = crate::kernel::KernelCall::ObjectLink {
+                    from,
+                    to,
+                    link_type: relation,
+                };
+                self.kernel.handle(&mut self.ctx, call)?;
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
+            Instruction::ObjectUnlink { from, to } => {
+                let call = crate::kernel::KernelCall::ObjectUnlink { from, to };
+                self.kernel.handle(&mut self.ctx, call)?;
+                self.pc += consumed;
+                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
+                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                return Ok(());
+            }
