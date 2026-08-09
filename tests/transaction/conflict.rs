@@ -30,3 +30,30 @@ fn t2_conflict_detection() {
     let res = tk.kernel.handle(&mut tx1, KernelCall::Commit);
     assert!(res.is_err(), "Tx1 must detect write-write conflict");
 }
+
+
+#[test]
+fn test_blind_write_write_conflict() {
+    let tk = new_kernel();
+    let root = tk.root_object;
+
+    let mut tx1 = tk.kernel.test_begin_in_object(root);
+    let mut tx2 = tk.kernel.test_begin_in_object(root);
+
+    let target_addr = 88888;
+
+    // 确保 read_set 绝对为空（纯写/盲写）
+    tk.kernel.test_write(&mut tx1, target_addr, vec![1]).unwrap();
+    tk.kernel.test_write(&mut tx2, target_addr, vec![2]).unwrap();
+
+    // T1 先提交，成功将 target_addr 的 entry.version 提升至 commit_version
+    let res1 = tk.kernel.test_commit(&mut tx1);
+    assert!(res1.is_ok(), "T1 commit should succeed");
+
+    // T2 后提交，在未读取 target_addr 的情况下，预期必须被拦截为 WriteConflict
+    let res2 = tk.kernel.test_commit(&mut tx2);
+    assert!(
+        res2.is_err(),
+        "T2 commit MUST fail with WriteConflict on blind write conflict"
+    );
+}

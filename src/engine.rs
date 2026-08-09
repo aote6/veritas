@@ -1584,6 +1584,7 @@ impl VeritasEngine {
     }
 
     fn detect_conflict(&self, ctx: &TransactionContext) -> Result<(), AbortReason> {
+        // 1. 读集检测 (OCC Read-Write Conflict)
         for (addr, read_version) in &ctx.read_set.states {
             if let Some(entry) = self.state_store.read(*addr) {
                 if entry.version > *read_version {
@@ -1591,6 +1592,18 @@ impl VeritasEngine {
                 }
             }
         }
+
+        // 2. 写集检测 (OCC Blind-Write / Write-Write Conflict)
+        // 在 commit_lock 排他临界区内，若待写入地址的当前全局版本大于事务创建时的 read_version，
+        // 说明该地址在当前事务生命周期内已被其他事务抢先 commit 并修改。
+        for (addr, _) in &ctx.write_set.changes {
+            if let Some(entry) = self.state_store.read(*addr) {
+                if entry.version > ctx.snapshot_version {
+                    return Err(AbortReason::WriteConflict);
+                }
+            }
+        }
+
         Ok(())
     }
 
