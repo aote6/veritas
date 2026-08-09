@@ -131,6 +131,13 @@ impl Machine {
         });
     }
     pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
+
+    fn resolve_operand(&self, op: &crate::instruction::Operand) -> u64 {
+        match op {
+            crate::instruction::Operand::Immediate(v) => *v,
+            crate::instruction::Operand::Register(r) => self.registers.get_u64(*r),
+        }
+    }
     pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
     /// Set the execution identity for subsequent instructions (CALL/Read/Write).
     /// Used by tests and by future TRAP-based context switch paths.
@@ -495,6 +502,7 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Read { state_id } => {
+                let state_id = self.resolve_operand(&state_id);
                 let bytes = self.kernel.read(&mut self.ctx, state_id)?;
                 self.registers.set(0, RegisterValue::Bytes(bytes));
                 self.pc += consumed;
@@ -503,6 +511,7 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Write { state_id, payload } => {
+                let state_id = self.resolve_operand(&state_id);
                 self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload);
                 self.pc += consumed;
@@ -525,6 +534,7 @@ impl Machine {
                 return Ok(());
             }
             Instruction::ObjectDeath { object_id } => {
+                let object_id = self.resolve_operand(&object_id);
                 let call = crate::kernel::KernelCall::ObjectDeath { object_id };
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
@@ -533,6 +543,7 @@ impl Machine {
                 return Ok(());
             }
             Instruction::ObjectFreeze { object_id } => {
+                let object_id = self.resolve_operand(&object_id);
                 let call = crate::kernel::KernelCall::ObjectFreeze { object_id };
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
@@ -541,6 +552,8 @@ impl Machine {
                 return Ok(());
             }
             Instruction::ObjectLink { from, to, relation } => {
+                let from = self.resolve_operand(&from);
+                let to = self.resolve_operand(&to);
                 let call = crate::kernel::KernelCall::ObjectLink {
                     from,
                     to,
@@ -553,6 +566,8 @@ impl Machine {
                 return Ok(());
             }
             Instruction::ObjectUnlink { from, to } => {
+                let from = self.resolve_operand(&from);
+                let to = self.resolve_operand(&to);
                 let call = crate::kernel::KernelCall::ObjectUnlink { from, to };
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;

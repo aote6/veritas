@@ -36,6 +36,33 @@ pub mod opcodes {
     pub const RETURN: u8 = 0x3A;
 }
 
+fn encode_operand(buf: &mut Vec<u8>, op: &crate::instruction::Operand) {
+    match op {
+        crate::instruction::Operand::Immediate(v) => {
+            buf.push(0u8);
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        crate::instruction::Operand::Register(r) => {
+            buf.push(1u8);
+            buf.extend_from_slice(&(*r as u64).to_le_bytes());
+        }
+    }
+}
+
+fn decode_operand(bytes: &[u8], pos: &mut usize) -> Result<crate::instruction::Operand, VeritasError> {
+    if *pos + 9 > bytes.len() {
+        return Err(VeritasError::EngineError("EOF decoding operand".into()));
+    }
+    let tag = bytes[*pos];
+    let val = u64::from_le_bytes(bytes[*pos + 1..*pos + 9].try_into().unwrap());
+    *pos += 9;
+    match tag {
+        0 => Ok(crate::instruction::Operand::Immediate(val)),
+        1 => Ok(crate::instruction::Operand::Register(val as u8)),
+        _ => Err(VeritasError::EngineError(format!("Invalid operand tag: {}", tag))),
+    }
+}
+
 impl Instruction {
     pub fn encode(&self) -> Result<Vec<u8>, VeritasError> {
         let mut buf = Vec::new();
@@ -100,11 +127,11 @@ impl Instruction {
             Instruction::Halt => buf.push(opcodes::HALT),
             Instruction::Read { state_id } => {
                 buf.push(opcodes::READ);
-                buf.extend_from_slice(&state_id.to_le_bytes());
+                encode_operand(&mut buf, state_id);
             }
             Instruction::Write { state_id, payload } => {
                 buf.push(opcodes::WRITE);
-                buf.extend_from_slice(&state_id.to_le_bytes());
+                encode_operand(&mut buf, state_id);
                 buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
                 buf.extend_from_slice(payload);
             }
@@ -119,12 +146,12 @@ impl Instruction {
             }
             Instruction::ObjectDeath { object_id } => {
                 buf.push(opcodes::OBJECT_DEATH);
-                buf.extend_from_slice(&object_id.to_le_bytes());
+                encode_operand(&mut buf, object_id);
             }
             Instruction::ObjectLink { from, to, relation } => {
                 buf.push(opcodes::OBJECT_LINK);
-                buf.extend_from_slice(&from.to_le_bytes());
-                buf.extend_from_slice(&to.to_le_bytes());
+                encode_operand(&mut buf, from);
+                encode_operand(&mut buf, to);
                 buf.push(*relation as u8);
             }
             Instruction::Trap { service_id } => {
@@ -137,12 +164,12 @@ impl Instruction {
             }
             Instruction::ObjectFreeze { object_id } => {
                 buf.push(opcodes::OBJECT_FREEZE);
-                buf.extend_from_slice(&object_id.to_le_bytes());
+                encode_operand(&mut buf, object_id);
             }
             Instruction::ObjectUnlink { from, to } => {
                 buf.push(opcodes::OBJECT_UNLINK);
-                buf.extend_from_slice(&from.to_le_bytes());
-                buf.extend_from_slice(&to.to_le_bytes());
+                encode_operand(&mut buf, from);
+                encode_operand(&mut buf, to);
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 buf.push(opcodes::CAPABILITY_GRANT);
@@ -266,20 +293,18 @@ impl Instruction {
             opcodes::ABORT => Instruction::Abort { reason: crate::types::AbortReason::WriteConflict },
             opcodes::HALT => Instruction::Halt,
             opcodes::READ => {
-                check!(8);
-                let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                pos += 8;
-                Instruction::Read { state_id: sid }
+                let state_id = decode_operand(bytes, &mut pos)?;
+                Instruction::Read { state_id }
             }
             opcodes::WRITE => {
-                check!(12);
-                let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let len = u32::from_le_bytes(bytes[pos+8..pos+12].try_into().unwrap()) as usize;
-                pos += 12;
+                let state_id = decode_operand(bytes, &mut pos)?;
+                check!(4);
+                let len = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+                pos += 4;
                 check!(len);
                 let payload = bytes[pos..pos+len].to_vec();
                 pos += len;
-                Instruction::Write { state_id: sid, payload }
+                Instruction::Write { state_id, payload }
             }
             opcodes::EFFECT => {
                 check!(4);
@@ -297,26 +322,22 @@ impl Instruction {
                 Instruction::ObjectBirth { object_id: oid }
             }
             opcodes::OBJECT_DEATH => {
-                check!(8);
-                let oid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                pos += 8;
-                Instruction::ObjectDeath { object_id: oid }
+                let object_id = decode_operand(bytes, &mut pos)?;
+                Instruction::ObjectDeath { object_id }
             }
             opcodes::OBJECT_LINK => {
-                check!(17);
-                let from = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let to = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap());
-                let rel = bytes[pos+16];
-                pos += 17;
-                {
-                    let link_type = match rel {
-                        0 => crate::types::LinkType::DependsOn,
-                        1 => crate::types::LinkType::Owns,
-                        2 => crate::types::LinkType::References,
-                        _ => return Err(VeritasError::EngineError(format!("Invalid LinkType: {}", rel))),
-                    };
-                    Instruction::ObjectLink { from, to, relation: link_type }
-                }
+                let from = decode_operand(bytes, &mut pos)?;
+                let to = decode_operand(bytes, &mut pos)?;
+                check!(1);
+                let rel = bytes[pos];
+                pos += 1;
+                let link_type = match rel {
+                    0 => crate::types::LinkType::DependsOn,
+                    1 => crate::types::LinkType::Owns,
+                    2 => crate::types::LinkType::References,
+                    _ => return Err(VeritasError::EngineError(format!("Invalid LinkType: {}", rel))),
+                };
+                Instruction::ObjectLink { from, to, relation: link_type }
             }
             opcodes::TRAP => {
                 check!(1);
@@ -331,16 +352,12 @@ impl Instruction {
                 Instruction::HostCall { call_id }
             }
             opcodes::OBJECT_FREEZE => {
-                check!(8);
-                let object_id = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                pos += 8;
+                let object_id = decode_operand(bytes, &mut pos)?;
                 Instruction::ObjectFreeze { object_id }
             }
             opcodes::OBJECT_UNLINK => {
-                check!(16);
-                let from = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let to = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap());
-                pos += 16;
+                let from = decode_operand(bytes, &mut pos)?;
+                let to = decode_operand(bytes, &mut pos)?;
                 Instruction::ObjectUnlink { from, to }
             }
             opcodes::CAPABILITY_GRANT => {

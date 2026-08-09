@@ -588,3 +588,89 @@ CRITICAL 级别的真实越权漏洞。
   待后续专项处理。
 - DependencyInvalidated 监听(#5)仍未实现——forge 目前只做
   create_object,未触发 Link/Death,暂无法测试,继续记债。
+
+## 2026-08-10 汇编器/虚拟机指令完整性 + Operand 动态寻址
+
+### 背景
+起因是想跑通 `world_demo.vasm`:OBJECT_BIRTH 创建对象、写数据、建链接。过程中
+连续暴露三层独立缺口,层层递进,记录完整链条以免日后重新排查一遍。
+
+### 问题链(按发现顺序)
+
+1. **汇编器指令覆盖不全(已修复)**
+   `instruction.rs` 定义 31 条指令,`assembler.rs` 只解析了 17 条。
+   `OBJECT_BIRTH`/`OBJECT_DEATH`/`OBJECT_FREEZE`/`OBJECT_LINK`/`OBJECT_UNLINK`/
+   `READ`/`WRITE`/`EFFECT`/`CALL`/`TRAP`/`HOST_CALL`/`CAPABILITY_GRANT`/
+   `SAVEPOINT`/`ROLLBACK_TO` 共 14 条无法用汇编文本写出。补全后 31 条全部可写。
+
+2. **Machine 未执行部分指令(已修复)**
+   `machine.rs` 的 `step()` 中,`ObjectBirth`/`ObjectDeath`/`ObjectFreeze`/
+   `ObjectLink`/`ObjectUnlink`/`Read`/`Write` 七条指令落入 `_ => {}`,解析后
+   静默不执行。补全后通过 `KernelCall` 调用 `kernel.handle()`。
+
+3. **【根因】ObjectBirth 后未切换执行身份(已修复)**
+   `Machine::new()` 时 `ctx.current_object = 0`,是空身份。`ObjectBirth` 执行后,
+   内核分配的新 object_id 只写回了寄存器 R0 供程序读取,但 `ctx.current_object`
+   从未更新为新对象 id。导致 birth 之后任何 `Write`/`ObjectLink` 等操作在
+   `commit()` 阶段生成 `AccessIntent`,`authorize_intent` 检查
+   `target == ctx.current_object` 时恒为假(current_object 卡在 0),
+   直接 `PermissionDenied`。
+   **误判过程**:最初怀疑是 `object_birth` 本身缺权限校验,需要 bootstrap
+   根对象(方案A/B/C)。经排查确认 `object_birth` 对创建动作本身**没有**
+   权限检查(`collect_access_intents` 不遍历 `pending_objects`),真正拒绝
+   发生在下一条指令的 commit 阶段。**修复只需一行**:
+   `ObjectBirth` 分支内 `self.ctx.enter_object(id)`。
+   不需要 bootstrap 根对象、不需要给空身份开权限特例——两者都会在权限模型
+   里引入隐式特权判断,是与 2026-08-09 `tx_write` 越权漏洞同构的反模式,
+   已规避。
+   语义参考 `enter_object` 现有注释(对应 CALL 跨 Module 调用的身份切换),
+   `ObjectBirth` 是同一机制的自举场景,而非独立语义。
+
+4. **指令操作数无法引用寄存器值(已修复,较大重构)**
+   即使 #3 修复后,`WRITE`/`OBJECT_LINK` 等指令的操作数字段
+   (`state_id`/`object_id`/`from`/`to`)在 `instruction.rs` 中是裸
+   `StateId`/`ObjectId`(即 `u64`),`assembler.rs` 只能编译立即数。
+   ObjectBirth 返回的运行时 ID 存在 R0 里,但下游指令写死在字节码里的
+   立即数无法引用它——`WRITE 10, "hi"` 里的 10 和 R0 的实际值无关。
+   **修复**:新增 `Operand { Immediate(u64), Register(u8) }` 枚举,
+   `Read.state_id` / `Write.state_id` / `ObjectDeath.object_id` /
+   `ObjectFreeze.object_id` / `ObjectLink.{from,to}` /
+   `ObjectUnlink.{from,to}` 六个字段类型改为 `Operand`
+   (`ObjectBirth.object_id` 不改,因为它是声明式的、由内核分配覆盖)。
+   涉及五个文件:
+   - `instruction.rs`:定义 `Operand`,改字段类型
+   - `assembler.rs`:新增 `parse_operand`(复用 `parse_reg` 的 `R\d+` 前缀
+     判断),六条指令解析改用它
+   - `machine.rs`:新增 `resolve_operand`(立即数直接返回,寄存器读
+     `self.registers.get_u64`),六条分支执行前先 resolve
+   - `executor.rs`:**独立于 Machine 的第二条执行路径**(`Executor` 结构体,
+     供 `run_program` 使用),无寄存器文件。新增 `resolve_immediate`,
+     遇到 `Operand::Register` 明确返回 `EngineError`(而非静默按0处理)。
+     确认此路径当前无任何外部调用者(仅 `executor.rs` 内部自用)。
+   - `instruction_codec.rs`:二进制编解码器。新增 `encode_operand`/
+     `decode_operand`,统一编码为 1 字节 tag(0=Immediate,1=Register)+
+     8 字节 value = 9 字节。六条指令的编码长度从 8/16/17 字节变为
+     9/18/19 字节。**Breaking change:此前编译的 `.vmod` 文件全部作废**
+     (读取会报 "Bad VMOD magic" 或类似解析错误),需用新 assembler 重新编译。
+
+### 验证
+`cargo build` 通过(0 error)。`cargo test` 全量通过(assembler 单元测试 +
+全部集成测试)。旧 `.vmod`(hello.vmod/create_obj.vmod/world_demo.vmod,均为
+2026-08-09/10 改动前编译)已删除,需重新汇编。
+
+### 结论 / 后续
+- `WRITE_REGISTER state_id, reg` 指令(改动前就存在)现在功能上是
+  `WRITE Rn, payload` 的子集,不再是唯一能写入运行时值的路径,可保留但
+  不建议新代码依赖它。
+- **约定**:以后新增指令时,若某个操作数字段的值可能来自运行时
+  (不只是 object_id,任何 handle/cap_id/动态计算值都算),从设计时就该用
+  `Operand` 而不是裸 `u64`/`ObjectId`/`StateId`,避免重演这次"先加指令、
+  跑起来才发现参数是死的"的返工。
+- `Executor`(`executor.rs`)确认是当前无外部调用者的独立执行路径,与
+  `Machine` 功能重叠但实现分离(无寄存器、无 trace)。是否该合并或废弃,
+  未决,记债。
+
+### 端到端验证(2026-08-10 完成)
+`world_demo.vasm` 改为 `OBJECT_BIRTH 0` → `WRITE R0, "..."` → `COMMIT` → `HALT`,
+`compile` + `run` 后输出 `r0=1`(内核实际分配 ID)、`objects in world: 1`。
+确认 R0 里的运行时值被 `WRITE` 正确引用并持久化,整条问题链(#1~#4)全部闭环。

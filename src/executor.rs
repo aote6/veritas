@@ -4,6 +4,18 @@ use crate::instruction::Instruction;
 use crate::verifier::Verifier;
 use crate::types::{TransactionContext, VeritasError, AbortReason};
 
+/// Executor没有寄存器文件，只能处理立即数操作数。
+/// 遇到Operand::Register时明确报错，而不是静默按0处理——
+/// 这条路径目前无外部调用者，一旦未来接入，错误信息能立刻指出根因。
+fn resolve_immediate(op: &crate::instruction::Operand) -> Result<u64, VeritasError> {
+    match op {
+        crate::instruction::Operand::Immediate(v) => Ok(*v),
+        crate::instruction::Operand::Register(_) => Err(VeritasError::EngineError(
+            "Executor has no register file; register operands are not supported on this execution path".into()
+        )),
+    }
+}
+
 pub struct Executor<'a> {
     engine: &'a VeritasEngine,
 }
@@ -49,10 +61,10 @@ impl<'a> Executor<'a> {
     ) -> Result<(), VeritasError> {
         match inst {
             Instruction::Read { state_id } => {
-                self.engine.read(ctx, *state_id)?;
+                self.engine.read(ctx, resolve_immediate(state_id)?)?;
             }
             Instruction::Write { state_id, payload } => {
-                self.engine.write(ctx, *state_id, payload.clone())?;
+                self.engine.write(ctx, resolve_immediate(state_id)?, payload.clone())?;
             }
             Instruction::Effect { payload } => {
                 self.engine.effect(ctx, payload.clone())?;
@@ -61,16 +73,16 @@ impl<'a> Executor<'a> {
                 self.engine.object_birth(ctx, *object_id)?;
             }
             Instruction::ObjectDeath { object_id } => {
-                self.engine.object_death(ctx, *object_id)?;
+                self.engine.object_death(ctx, resolve_immediate(object_id)?)?;
             }
             Instruction::ObjectFreeze { object_id } => {
-                self.engine.object_freeze(ctx, *object_id)?;
+                self.engine.object_freeze(ctx, resolve_immediate(object_id)?)?;
             }
             Instruction::ObjectLink { from, to, relation } => {
-                self.engine.object_link(ctx, *from, *to, *relation)?;
+                self.engine.object_link(ctx, resolve_immediate(from)?, resolve_immediate(to)?, *relation)?;
             }
             Instruction::ObjectUnlink { from, to } => {
-                self.engine.object_unlink(ctx, *from, *to)?;
+                self.engine.object_unlink(ctx, resolve_immediate(from)?, resolve_immediate(to)?)?;
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 let cap_id = self.engine.capability_grant(ctx, *holder, permission, *resource)?;

@@ -50,6 +50,15 @@ fn parse_reg(s: &str) -> Result<u8, VeritasError> {
     }
 }
 
+fn parse_operand(s: &str) -> Result<crate::instruction::Operand, VeritasError> {
+    let t = s.trim().to_uppercase();
+    if t.len() > 1 && t.starts_with('R') && t[1..].chars().all(|c| c.is_ascii_digit()) {
+        parse_reg(s).map(crate::instruction::Operand::Register)
+    } else {
+        parse_u64(s).map(crate::instruction::Operand::Immediate)
+    }
+}
+
 fn parse_u64(s: &str) -> Result<u64, VeritasError> {
     let s = s.trim();
     if s.starts_with("0x") || s.starts_with("0X") {
@@ -152,12 +161,12 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
         // ===== 新增指令 =====
         "READ" => {
             if args.is_empty() { return Err(VeritasError::EngineError("READ needs state_id".into())); }
-            Ok(Instruction::Read { state_id: parse_u64(args[0])? })
+            Ok(Instruction::Read { state_id: parse_operand(args[0])? })
         }
         "WRITE" => {
             if args.len() < 2 { return Err(VeritasError::EngineError("WRITE needs state_id, \"string\"".into())); }
             let payload = parse_quoted_string(args[1])?.into_bytes();
-            Ok(Instruction::Write { state_id: parse_u64(args[0])?, payload })
+            Ok(Instruction::Write { state_id: parse_operand(args[0])?, payload })
         }
         "EFFECT" => {
             if args.is_empty() { return Err(VeritasError::EngineError("EFFECT needs \"string\"".into())); }
@@ -170,25 +179,25 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
         }
         "OBJECT_DEATH" => {
             if args.is_empty() { return Err(VeritasError::EngineError("OBJECT_DEATH needs object_id".into())); }
-            Ok(Instruction::ObjectDeath { object_id: parse_u64(args[0])? })
+            Ok(Instruction::ObjectDeath { object_id: parse_operand(args[0])? })
         }
         "OBJECT_FREEZE" => {
             if args.is_empty() { return Err(VeritasError::EngineError("OBJECT_FREEZE needs object_id".into())); }
-            Ok(Instruction::ObjectFreeze { object_id: parse_u64(args[0])? })
+            Ok(Instruction::ObjectFreeze { object_id: parse_operand(args[0])? })
         }
         "OBJECT_LINK" => {
             if args.len() < 3 { return Err(VeritasError::EngineError("OBJECT_LINK needs from, to, relation".into())); }
             Ok(Instruction::ObjectLink {
-                from: parse_u64(args[0])?,
-                to: parse_u64(args[1])?,
+                from: parse_operand(args[0])?,
+                to: parse_operand(args[1])?,
                 relation: parse_link_type(args[2])?,
             })
         }
         "OBJECT_UNLINK" => {
             if args.len() < 2 { return Err(VeritasError::EngineError("OBJECT_UNLINK needs from, to".into())); }
             Ok(Instruction::ObjectUnlink {
-                from: parse_u64(args[0])?,
-                to: parse_u64(args[1])?,
+                from: parse_operand(args[0])?,
+                to: parse_operand(args[1])?,
             })
         }
         "CALL" => {
@@ -248,6 +257,7 @@ fn split_args_keep_quotes(input: &str) -> Vec<&str> {
 
 #[cfg(test)]
 mod tests {
+    use crate::instruction::Operand;
     use super::*;
 
     #[test]
@@ -292,9 +302,9 @@ mod tests {
         let insts = assemble(src).unwrap();
         assert_eq!(insts.len(), 8);
         assert!(matches!(insts[0], Instruction::ObjectBirth { object_id: 100 }));
-        assert!(matches!(insts[1], Instruction::Write { state_id: 100, .. }));
-        assert!(matches!(insts[2], Instruction::Read { state_id: 100 }));
-        assert!(matches!(insts[3], Instruction::ObjectLink { from: 1, to: 100, .. }));
+        assert!(matches!(insts[1], Instruction::Write { state_id: Operand::Immediate(100), .. }));
+        assert!(matches!(insts[2], Instruction::Read { state_id: Operand::Immediate(100) }));
+        assert!(matches!(insts[3], Instruction::ObjectLink { from: Operand::Immediate(1), to: Operand::Immediate(100), .. }));
         assert!(matches!(insts[4], Instruction::Call { object_id: 100, entry_pc: 0 }));
         assert!(matches!(insts[5], Instruction::Return));
         assert!(matches!(insts[6], Instruction::Commit));

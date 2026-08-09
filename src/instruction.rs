@@ -36,17 +36,23 @@ pub enum Opcode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Operand {
+    Immediate(u64),
+    Register(u8),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    Read { state_id: StateId },
-    Write { state_id: StateId, payload: Vec<u8> },
+    Read { state_id: Operand },
+    Write { state_id: Operand, payload: Vec<u8> },
     Effect { payload: Vec<u8> },
     ObjectBirth { object_id: ObjectId },
-    ObjectDeath { object_id: ObjectId },
+    ObjectDeath { object_id: Operand },
     Trap { service_id: u8 },
     HostCall { call_id: u8 },
-    ObjectFreeze { object_id: ObjectId },
-    ObjectLink { from: ObjectId, to: ObjectId, relation: LinkType },
-    ObjectUnlink { from: ObjectId, to: ObjectId },
+    ObjectFreeze { object_id: Operand },
+    ObjectLink { from: Operand, to: Operand, relation: LinkType },
+    ObjectUnlink { from: Operand, to: Operand },
     CapabilityGrant { holder: ObjectId, permission: String, resource: StateId },
     Savepoint { name: String },
     RollbackTo { name: String },

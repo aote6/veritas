@@ -1,9 +1,13 @@
 module world_demo
 version 1.0.0
-    ;; 计算部分
-    LOAD_CONST R0, 100
-    LOAD_CONST R1, 200
-    ADD R2, R0, R1
 
-    ;; 停机（后续内核操作需要通过 veritasd 的标准 JSON-RPC 流程）
-    HALT
+;; 创建对象，内核分配的真实 ID 写入 R0
+OBJECT_BIRTH 0
+
+;; 用 R0（刚创建对象的真实 ID）写入数据 —— 这是本次 Operand 重构要打通的路径
+WRITE R0, "hello from veritas"
+
+;; 提交事务，否则不会持久化
+COMMIT
+
+HALT
