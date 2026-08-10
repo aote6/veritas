@@ -520,7 +520,7 @@ impl Machine {
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
-            Instruction::ObjectBirth { object_id } => {
+            Instruction::ObjectBirth { object_id: _ } => {
                 let call = crate::kernel::KernelCall::ObjectBirth {
                     object_type: crate::types::ObjectType::StateObject,
                 };

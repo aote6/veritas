@@ -1,0 +1,4 @@
+OBJECT_BIRTH 0
+WRITE R0, "hello without call"
+COMMIT
+HALT
