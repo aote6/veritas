@@ -514,7 +514,6 @@ impl Machine {
             Instruction::Write { state_id, payload } => {
                 let state_id = self.resolve_operand(&state_id);
                 self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
-                eprintln!("[DEBUG] WRITE state_id={} payload={:?}", state_id, String::from_utf8_lossy(&payload));
                 self.execution.record_write(state_id, payload);
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
@@ -528,8 +527,25 @@ impl Machine {
                 let result = self.kernel.handle(&mut self.ctx, call)?;
                 if let crate::kernel::TrapResult::ObjectId(id) = result {
                     self.registers.set(0, RegisterValue::U64(id));
-                    // SECURITY/ARCH: 不再自动切换身份。创建者仍是 current_object；
-                    // 若需要以新对象身份继续执行，必须显式走 CALL（经过 authorize_intent 审计）。
+                    // ARCH (2026-08-10, 二次修正): 此前一版在此恢复了
+                    // enter_object(id)，理由是"id 是内核刚分配的全新对象，
+                    // 审计一定会通过所以可以省略"。这个前提是错的——object_birth
+                    // 把新对象的 self-AdminCap push 进 ctx.pending_capabilities，
+                    // 但从未 attach 到 ctx.capabilities，导致同一事务内哪怕真的
+                    // 用 CALL 也无法通过 authorize_intent 的 has_pending 检查。
+                    // 也就是说当时"反正会通过"其实是"根本没被检查过"，
+                    // 跟 ObjectLink 那次 enter_object(from) 是同一类问题：
+                    // 用隐式身份切换掩盖了一个从未真正建立的授权关系。
+                    //
+                    // 现在的修法：不切换身份，而是把新对象的 self-AdminCap
+                    // 显式 attach 到本事务 ctx，让 CALL 这条唯一合法的身份切换
+                    // 入口能够真正走通 authorize_intent 审计——而不是绕开它。
+                    if let Some(grant) = self.ctx.pending_capabilities.iter().find(|g| {
+                        g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
+                    }) {
+                        let cap_id = grant.capability_id;
+                        self.kernel.engine().attach_capability(&mut self.ctx, cap_id);
+                    }
                 }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);

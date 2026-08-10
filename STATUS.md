@@ -814,3 +814,69 @@ Address(0, 对象ID)，不是预期的"对象1名下"状态；OBJECT_LINK 因调
   (已确认二者共用同一 Kernel::with_wal_path 入口，问题应在别处)。
 - Instruction::ObjectBirth 的 object_id 字段是否为废弃字段待确认
   (机器实际使用 kernel 分配的动态 id，该字段疑似未使用)。
+
+---
+
+## 身份切换死结的最终解法 (2026-08-10 三度修正)
+
+### 事情经过（如实记录，包括反复）
+
+1. 最初审计发现 `ObjectLink` 用 `enter_object(from)` 自我授权绕过 capability
+   graph，判定为安全漏洞，删除修复（见上文"P0 安全修复"节）。
+2. 同一逻辑推广到 `OBJECT_BIRTH`：删除其 `enter_object(id)` 自动切身份，
+   改为身份切换只能经过 CALL。删除后 `world_demo.vasm` 测出：本轮虽然
+   `cargo test` 全绿，但没人验证过"root 用 CALL 显式进入自己刚创建的
+   对象"这个理应最基本的场景是否真的走得通。
+3. 后续窗口（未验证 CALL 路线是否可行）判定 CALL 路线"卡死"，恢复了
+   `enter_object(id)`，并论证"这个 case 安全，因为 id 是内核刚分配的
+   全新对象，反正 authorize_intent 一定会通过，与 ObjectLink 那个真实
+   漏洞不同构"。
+4. 逐行验证这个论证：`object_birth` 把新对象的 self-AdminCap push 进
+   `ctx.pending_capabilities`，但从未 `attach_capability` 到
+   `ctx.capabilities`。`authorize_intent` 的 `has_pending` 分支要求
+   `ctx.capabilities.contains(&g.capability_id)` 才算数（第三个 or 条件）
+   或 `grantee == ctx.current_object/capability_context`（新对象自己的
+   grantee 是它本身，不是 root）。也就是说：**"审计一定会通过"这个
+   前提是错的——CALL 当时根本走不通，跟直接绕过一样，只是没人跑过
+   这条路径**。用隐式切身份掩盖了一个从未被真正建立的授权关系，这正是
+   与 ObjectLink 同构的问题，不是"不同构"。
+
+### 最终结论（已实现，已测试锁定）
+
+**不恢复 `enter_object(id)`。OBJECT_BIRTH 依旧不切换身份。**
+改为：`OBJECT_BIRTH` 执行后，从 `ctx.pending_capabilities` 里找出刚创建的
+`grantee == resource == id && cap_type == "AdminCap"` 的那条 grant，
+把它的 `capability_id` 显式 `attach_capability` 到本事务 `ctx`。
+
+效果：
+- 身份切换的合法入口维持唯一——只有 CALL（先 `authorize_intent`
+  审计，通过才切）。没有"这个case反正安全"的隐式例外口子。
+- CALL 现在真的能通过审计走进新对象，因为 self-AdminCap 已经
+  attach 到 ctx，`has_pending` 分支能查到。不是"反正会通过"，
+  是"真的被检查过、真的通过"。
+- 覆盖了最坏情况：root(current_object==0) 创建对象时，
+  object_birth 不会给 root 发额外 grant（这条分支专门排除了
+  current_object==0），过去被认为是"死结"——但死结的本质不是
+  "root 没资格"，是"资格发了但没接上"，接上就好，不需要造
+  process/bootstrap 那层。
+
+### 验证
+
+新增 `tests/object_birth_self_call.rs`：
+`root_can_call_into_object_it_just_birthed` —— root 身份 birth
+一个新对象后，用 CALL 显式进入它必须成功，且 current_object
+必须真的切换过去。这是本轮争论最终要证明的行为，不再只靠论证
+或手工跑 world_demo.vasm 确认。
+
+`tests/machine_object_link_security.rs`（P0）和这个新测试一起，
+构成了"身份切换只能经过唯一受控入口"这条不变量的完整回归覆盖。
+
+全量测试：211 + 1 = 212 passed, 0 failed。
+
+### 给未来的教训
+
+这次反复本身就是一个案例：**一个"看起来安全的隐式例外"，
+如果没有实测验证替代路径是否可行，很容易被当作"唯一解"而恢复
+回去**。以后遇到类似"这个特权豁免反正安全"的论证，应该先问
+"如果坚持走正规路径，会不会真的卡住"——如果卡住，先查卡在哪，
+而不是退回隐式例外。详见新建的 `docs/IDENTITY_MODEL.md`。
