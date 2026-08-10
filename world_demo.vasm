@@ -1,13 +1,18 @@
 module world_demo
 version 1.0.0
 
-;; 创建对象，内核分配的真实 ID 写入 R0
-OBJECT_BIRTH 0
+    ;; NOTE (2026-08-10): OBJECT_BIRTH 不再自动切换 current_object。
+    ;; 本程序从头到尾身份保持为初始值(0)，因此 WRITE 实际写入的地址
+    ;; 是 Address(0, 对象1的ID)，不是"对象1名下"的状态——这不是本
+    ;; demo 原本想验证的语义。OBJECT_LINK 同理不会有合法调用者身份。
+    ;; 重写方案(引入 CALL 切换身份 + 标签)见 STATUS.md 待办，本文件
+    ;; 暂不删除，留作 P4(Operand化)完成后的下一步重写起点。
 
-;; 用 R0（刚创建对象的真实 ID）写入数据 —— 这是本次 Operand 重构要打通的路径
-WRITE R0, "hello from veritas"
-
-;; 提交事务，否则不会持久化
-COMMIT
-
-HALT
+    OBJECT_BIRTH 0
+    WRITE R0, "hello from veritas"
+    LOAD_CONST R2, 0
+    ADD R1, R0, R2
+    OBJECT_BIRTH 0
+    OBJECT_LINK R1, R0, owns
+    COMMIT
+    HALT

@@ -85,7 +85,7 @@ impl<'a> Executor<'a> {
                 self.engine.object_unlink(ctx, resolve_immediate(from)?, resolve_immediate(to)?)?;
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
-                let cap_id = self.engine.capability_grant(ctx, *holder, permission, *resource)?;
+                let cap_id = self.engine.capability_grant(ctx, resolve_immediate(holder)?, permission, resolve_immediate(resource)?)?;
                 self.engine.attach_capability(ctx, cap_id);
             }
             Instruction::Savepoint { name } => {

@@ -120,7 +120,7 @@ impl Instruction {
             Instruction::Abort { .. } => buf.push(opcodes::ABORT),
             Instruction::Call { object_id, entry_pc } => {
                 buf.push(opcodes::CALL);
-                buf.extend_from_slice(&object_id.to_le_bytes());
+                encode_operand(&mut buf, object_id);
                 buf.extend_from_slice(&(*entry_pc as u64).to_le_bytes());
             }
             Instruction::Return => buf.push(opcodes::RETURN),
@@ -173,11 +173,11 @@ impl Instruction {
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 buf.push(opcodes::CAPABILITY_GRANT);
-                buf.extend_from_slice(&holder.to_le_bytes());
+                encode_operand(&mut buf, holder);
                 let perm_bytes = permission.as_bytes();
                 buf.extend_from_slice(&(perm_bytes.len() as u32).to_le_bytes());
                 buf.extend_from_slice(perm_bytes);
-                buf.extend_from_slice(&resource.to_le_bytes());
+                encode_operand(&mut buf, resource);
             }
             Instruction::Savepoint { name } => {
                 buf.push(opcodes::SAVEPOINT);
@@ -255,10 +255,10 @@ impl Instruction {
                 Instruction::Jnz { target: t }
             }
             opcodes::CALL => {
-                check!(16);
-                let object_id = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let entry_pc = u64::from_le_bytes(bytes[pos+8..pos+16].try_into().unwrap()) as usize;
-                pos += 16;
+                let object_id = decode_operand(bytes, &mut pos)?;
+                check!(8);
+                let entry_pc = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
+                pos += 8;
                 Instruction::Call { object_id, entry_pc }
             }
             opcodes::RETURN => Instruction::Return,
@@ -361,16 +361,15 @@ impl Instruction {
                 Instruction::ObjectUnlink { from, to }
             }
             opcodes::CAPABILITY_GRANT => {
-                check!(16);
-                let holder = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let plen = u32::from_le_bytes(bytes[pos+8..pos+12].try_into().unwrap()) as usize;
-                pos += 12;
-                check!(plen + 8);
+                let holder = decode_operand(bytes, &mut pos)?;
+                check!(4);
+                let plen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+                pos += 4;
+                check!(plen);
                 let perm = String::from_utf8(bytes[pos..pos+plen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in CapabilityGrant".into()))?;
                 pos += plen;
-                let res = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                pos += 8;
-                Instruction::CapabilityGrant { holder, permission: perm, resource: res }
+                let resource = decode_operand(bytes, &mut pos)?;
+                Instruction::CapabilityGrant { holder, permission: perm, resource }
             }
             opcodes::SAVEPOINT => {
                 check!(4);

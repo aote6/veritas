@@ -674,3 +674,143 @@ CRITICAL 级别的真实越权漏洞。
 `world_demo.vasm` 改为 `OBJECT_BIRTH 0` → `WRITE R0, "..."` → `COMMIT` → `HALT`,
 `compile` + `run` 后输出 `r0=1`(内核实际分配 ID)、`objects in world: 1`。
 确认 R0 里的运行时值被 `WRITE` 正确引用并持久化,整条问题链(#1~#4)全部闭环。
+
+---
+
+## P31 — First User Program / Vertical Execution Proof (2026-08-10)
+
+### 里程碑
+Veritas 第一次证明了用户可以用汇编写程序，驱动整条链路完成一次完整的世界变化。
+
+之前 STATUS 描述 "Machine - Step/run" 和 "Assembler - Present" 只能证明组件存在，
+不能证明从源码到持久化世界的全链路通畅。
+
+### E2E 验证程序
+
+module world_demo
+version 1.0.0
+    OBJECT_BIRTH 0
+    WRITE R0, "hello from veritas"
+    LOAD_CONST R2, 0
+    ADD R1, R0, R2
+    OBJECT_BIRTH 0
+    OBJECT_LINK R1, R0, owns
+    COMMIT
+    HALT
+
+结果: pc=86 r0=2, objects in recovered world: 2
+
+### 验证链路
+
+VASM -> Assembler -> VMOD -> Instruction Codec -> Machine
+-> Register/Operand Resolution -> KernelCall -> TransactionContext
+-> commit -> TransactionDelta -> WAL -> Recovery -> World query
+
+### 同时验证的能力
+
+- 运行时创建对象
+- Kernel 分配真实 ObjectId
+- ObjectId 返回寄存器
+- 后续指令引用运行时寄存器值
+- 动态 ID 参与写操作
+- 同一事务创建多个对象
+- 多个运行时 ID 参与关系构造
+- 身份上下文随执行正确切换
+- Birth + Write + Link 在一个 TransactionDelta 中
+- Commit 持久化到 WAL
+- WAL 可恢复为可查询 World
+
+### 修复的问题链
+
+1. Assembler 指令覆盖不全: 17/31 -> 31/31
+2. Machine 未执行部分指令: _ => {} 静默丢弃 -> 7条指令全部分发
+3. ObjectBirth 后未切换执行身份: current_object=0 -> enter_object(id)
+4. Operand 不支持寄存器: Write/Read/ObjectLink 等操作数从裸u64改为Operand枚举
+5. ObjectLink 执行身份为to而非from: 新增enter_object(from)
+
+### 后续架构债
+
+- ObjectLink 隐式身份切换: 长期应改为显式ENTER_OBJECT或AccessIntent三参数模型
+- inspect list CLI 路径与 veritasd 查询路径不一致
+- Executor(executor.rs) 与 Machine 功能重叠，待合并或废弃
+- OBJECT_DEATH/OBJECT_FREEZE 执行后不切换身份 (语义待定)
+
+### 身份切换审计 (2026-08-10 识别)
+
+当前 current_object 承担双重职责:
+  A. 当前执行身份
+  B. 下一条操作默认的授权主体
+
+OBJECT_LINK 的隐式 enter_object(from) 使链接操作附带身份切换能力，
+与 2026-08-09 修复的越权漏洞结构相似(只是本事务内新建对象暂安全)。
+
+长期方案:
+  方案1: AccessIntent::Link { actor, from, to } 三参数模型
+         actor 是否有权建立 from->to，不依赖 current_object 豁免
+  方案2: 要求程序显式 ENTER_OBJECT 后再操作
+         不给业务操作附带隐式身份切换
+
+当前允许切换身份的指令: OBJECT_BIRTH, CALL, RETURN, OBJECT_LINK(临时)
+目标: OBJECT_LINK 从名单中移除
+
+---
+
+## P0 安全修复 + 身份切换架构纠正 (2026-08-10 续)
+
+### 背景
+
+P31 记录里第3、5条("修复"current_object=0 → enter_object(id)；新增enter_object(from))
+实际是引入了安全漏洞，不是修复。审计发现后本轮予以纠正。
+
+### 漏洞根因
+
+`ObjectLink` 执行时调用 `self.ctx.enter_object(from)`，使 commit 阶段
+`authorize_intent(AccessIntent::Link(from,to))` 里 `target == ctx.current_object`
+恒真，等价于调用者对 from 自我授权，完全绕过 capability graph 检查。
+与 2026-08-09 修复的 tx_write/tx_freeze_object/tx_death_object 越权漏洞同构。
+
+### 已完成修复
+
+1. **P0**: 删除 `machine.rs` ObjectLink 分支的 `enter_object(from)`。
+   授权完全交给 commit 时 `authorize_intent`，以调用者真实身份走 capability graph。
+   新增回归测试 `tests/machine_object_link_security.rs`
+   (恶意路径必须拒绝 + 合法路径必须成功，两个用例)。
+
+2. **P3**: 删除 `machine.rs` dispatch 末尾的 `_ => {}` 死代码兜底。
+   编译验证：删除后无 non-exhaustive match 报错，证明当前全部指令变体
+   已被显式处理；此后新增指令若漏实现会被编译器强制拦下。
+
+3. **架构纠正 — OBJECT_BIRTH 不再自动切换身份**：
+   `current_object` 的改变现在只能经过唯一受控入口 CALL
+   (先 authorize_intent(AccessIntent::Call) 审计，通过后才切换)。
+   OBJECT_BIRTH 只把新 ObjectId 写入寄存器，创建者身份不变。
+   全仓库排查确认无 Rust 测试依赖旧的自动切换行为，仅
+   `world_demo.vasm` 依赖，已知失效，见下方。
+
+4. **P4 (部分)**: `Instruction::CapabilityGrant` 的 holder/resource、
+   `Instruction::Call` 的 object_id，从裸 u64/ObjectId 改为 Operand，
+   贯穿 assembler.rs / instruction_codec.rs / machine.rs / executor.rs 四层。
+   使 CALL 目标对象和 CAPABILITY_GRANT 的持有者/资源现在可以是运行时
+   寄存器值，不再要求硬编码。
+
+### 已知失效 — world_demo.vasm
+
+身份切换收紧后，该 demo 从 OBJECT_BIRTH 到 OBJECT_LINK 之间从未
+CALL 进入任何对象，current_object 全程停留在初始值。WRITE 实际写入
+Address(0, 对象ID)，不是预期的"对象1名下"状态；OBJECT_LINK 因调用者
+对 from 无 capability 会在 commit 时被拒绝(PermissionDenied)。
+
+程序文件保留(未删除)，仅更新头部注释说明现状，作为下一轮重写起点。
+
+### 下一轮待办
+
+- 重写 world_demo.vasm：用 CALL(现已支持 Operand 动态目标)+ 标签，
+  走 birth → CALL 进入新对象身份完成 WRITE → RETURN → 建 Link 的
+  完整闭环；需先核实 CallFrame 寄存器传递语义是否够用。
+- P1: tests/machine.rs 仍为空文件，完整 E2E 测试待写
+  (E2E-1~4，见最初审计: 单对象闭环、动态Operand、Birth+Write+Link、
+  跨对象非法操作必须失败)。
+- P2: CLI inspect 与 veritasd 排查尚未深入
+  (已确认二者共用同一 Kernel::with_wal_path 入口，问题应在别处)。
+- Instruction::ObjectBirth 的 object_id 字段是否为废弃字段待确认
+  (机器实际使用 kernel 分配的动态 id，该字段疑似未使用)。

@@ -203,7 +203,7 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
         "CALL" => {
             if args.len() < 2 { return Err(VeritasError::EngineError("CALL needs object_id, entry_pc".into())); }
             Ok(Instruction::Call {
-                object_id: parse_u64(args[0])?,
+                object_id: parse_operand(args[0])?,
                 entry_pc: parse_target(args[1], labels)?,
             })
         }
@@ -218,9 +218,9 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
         "CAPABILITY_GRANT" => {
             if args.len() < 3 { return Err(VeritasError::EngineError("CAPABILITY_GRANT needs holder, \"permission\", resource".into())); }
             Ok(Instruction::CapabilityGrant {
-                holder: parse_u64(args[0])?,
+                holder: parse_operand(args[0])?,
                 permission: parse_quoted_string(args[1])?,
-                resource: parse_u64(args[2])?,
+                resource: parse_operand(args[2])?,
             })
         }
         "SAVEPOINT" => {
@@ -305,7 +305,7 @@ mod tests {
         assert!(matches!(insts[1], Instruction::Write { state_id: Operand::Immediate(100), .. }));
         assert!(matches!(insts[2], Instruction::Read { state_id: Operand::Immediate(100) }));
         assert!(matches!(insts[3], Instruction::ObjectLink { from: Operand::Immediate(1), to: Operand::Immediate(100), .. }));
-        assert!(matches!(insts[4], Instruction::Call { object_id: 100, entry_pc: 0 }));
+        assert!(matches!(insts[4], Instruction::Call { object_id: Operand::Immediate(100), entry_pc: 0 }));
         assert!(matches!(insts[5], Instruction::Return));
         assert!(matches!(insts[6], Instruction::Commit));
         assert!(matches!(insts[7], Instruction::Halt));

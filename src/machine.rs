@@ -326,9 +326,9 @@ impl Machine {
             }
             Instruction::CapabilityGrant { holder, permission, resource } => {
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                let h = holder;
+                let h = self.resolve_operand(&holder);
                 let p = permission;
-                let r = resource;
+                let r = self.resolve_operand(&resource);
                 let call = crate::kernel::KernelCall::CapabilityGrant {
                     grantee: h,
                     capability_type: p.clone(),
@@ -398,6 +398,7 @@ impl Machine {
             Instruction::Call { object_id, entry_pc } => {
                 // P3: CALL enters AccessIntent path — same authorize entry as
                 // Read/Write/Link/... (commit-time verify_capability).
+                let object_id = self.resolve_operand(&object_id);
                 let intent = crate::types::AccessIntent::Call(object_id);
                 if let Err(_) = self.kernel.engine().authorize_intent(&self.ctx, &intent) {
                     let reason = crate::types::TrapReason::AccessDenied { pc: self.pc };
@@ -513,6 +514,7 @@ impl Machine {
             Instruction::Write { state_id, payload } => {
                 let state_id = self.resolve_operand(&state_id);
                 self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
+                eprintln!("[DEBUG] WRITE state_id={} payload={:?}", state_id, String::from_utf8_lossy(&payload));
                 self.execution.record_write(state_id, payload);
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
@@ -526,7 +528,8 @@ impl Machine {
                 let result = self.kernel.handle(&mut self.ctx, call)?;
                 if let crate::kernel::TrapResult::ObjectId(id) = result {
                     self.registers.set(0, RegisterValue::U64(id));
-                    self.ctx.enter_object(id);
+                    // SECURITY/ARCH: 不再自动切换身份。创建者仍是 current_object；
+                    // 若需要以新对象身份继续执行，必须显式走 CALL（经过 authorize_intent 审计）。
                 }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
@@ -554,6 +557,9 @@ impl Machine {
             Instruction::ObjectLink { from, to, relation } => {
                 let from = self.resolve_operand(&from);
                 let to = self.resolve_operand(&to);
+                // SECURITY: 不再隐式切换身份。授权检查完全交给 commit 时的
+                // authorize_intent(AccessIntent::Link(from, to))，以调用者
+                // 真实的 ctx.current_object 走 capability graph 校验。
                 let call = crate::kernel::KernelCall::ObjectLink {
                     from,
                     to,
@@ -575,7 +581,6 @@ impl Machine {
                 if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
                 return Ok(());
             }
-            _ => {}
         }
 
         // 宪法transaction.md第3节：Transaction不可嵌套。

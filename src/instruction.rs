@@ -53,13 +53,13 @@ pub enum Instruction {
     ObjectFreeze { object_id: Operand },
     ObjectLink { from: Operand, to: Operand, relation: LinkType },
     ObjectUnlink { from: Operand, to: Operand },
-    CapabilityGrant { holder: ObjectId, permission: String, resource: StateId },
+    CapabilityGrant { holder: Operand, permission: String, resource: Operand },
     Savepoint { name: String },
     RollbackTo { name: String },
     /// 切换当前执行上下文到目标Object，跳转到entry_pc继续执行。
     /// 对应module.md第6节"跨Module调用"设计的最小可用实现：
     /// 暂不涉及独立代码空间，仅切换current_object + 维护调用栈。
-    Call { object_id: ObjectId, entry_pc: usize },
+    Call { object_id: Operand, entry_pc: usize },
     /// 从Call返回：恢复调用前的current_object和pc。
     Return,
     Nop,

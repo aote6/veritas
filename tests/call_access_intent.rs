@@ -55,7 +55,7 @@ fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
 fn load_call_program(machine: &mut Machine, callee: u64, entry_pc: usize) {
     // CALL callee, entry_pc ; HALT at entry so callee "returns" by halt
     let bytes = Instruction::Call {
-        object_id: callee,
+        object_id: veritas_kernel::instruction::Operand::Immediate(callee),
         entry_pc,
     }
     .encode()
@@ -67,7 +67,7 @@ fn load_call_program(machine: &mut Machine, callee: u64, entry_pc: usize) {
     image.extend_from_slice(&halt);
     // Fix: encode Call with correct entry_pc
     let bytes = Instruction::Call {
-        object_id: callee,
+        object_id: veritas_kernel::instruction::Operand::Immediate(callee),
         entry_pc: entry,
     }
     .encode()
@@ -108,12 +108,12 @@ fn call_with_capability_succeeds() {
     machine.set_execution_object(caller);
     // Rebuild program after we know objects
     let bytes = Instruction::Call {
-        object_id: callee,
-        entry_pc: 17, // 1+8+8 = 17
+        object_id: veritas_kernel::instruction::Operand::Immediate(callee),
+        entry_pc: 18, // 1(opcode) + 9(Operand::Immediate: 1 tag + 8 value) + 8(entry_pc) = 18
     }
     .encode()
     .unwrap();
-    assert_eq!(bytes.len(), 17);
+    assert_eq!(bytes.len(), 18);
     let mut image = bytes;
     image.extend_from_slice(&Instruction::Halt.encode().unwrap());
     machine.ram_mut().write_bytes(0, &image).unwrap();
@@ -155,7 +155,7 @@ fn call_after_delegate_succeeds() {
     let mut machine = Machine::new(Arc::new(kernel));
     machine.set_execution_object(delegatee);
     let bytes = Instruction::Call {
-        object_id: callee,
+        object_id: veritas_kernel::instruction::Operand::Immediate(callee),
         entry_pc: 17,
     }
     .encode()
@@ -197,7 +197,7 @@ fn call_after_revoke_fails() {
     let mut machine = Machine::new(Arc::new(kernel));
     machine.set_execution_object(caller);
     let bytes = Instruction::Call {
-        object_id: callee,
+        object_id: veritas_kernel::instruction::Operand::Immediate(callee),
         entry_pc: 17,
     }
     .encode()
