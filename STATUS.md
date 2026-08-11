@@ -880,3 +880,62 @@ Address(0, 对象ID)，不是预期的"对象1名下"状态；OBJECT_LINK 因调
 回去**。以后遇到类似"这个特权豁免反正安全"的论证，应该先问
 "如果坚持走正规路径，会不会真的卡住"——如果卡住，先查卡在哪，
 而不是退回隐式例外。详见新建的 `docs/IDENTITY_MODEL.md`。
+
+---
+
+## 2026-08-11 — world_demo 重写闭环 + is_halted() 死循环修复
+
+### world_demo.vasm 完整重写
+
+之前版本(见上文"已知失效"节)身份切换收紧后从未 CALL 进任何对象，
+WRITE 缺失、OBJECT_LINK 因无 capability 会被拒绝。本轮彻底重写：
+
+  birth A -> CALL 进 A -> WRITE -> RETURN 回 root
+  birth B -> CALL 进 B -> WRITE -> RETURN 回 root
+  root 身份下直接 OBJECT_LINK A, B, owns（两次 birth 已各自 attach self-AdminCap 到同一 ctx，
+  无需再次 CALL，root_link_two_children.rs 已验证此前提）
+  COMMIT / HALT
+
+CLI 实跑验证：compile -> run -> inspect 全链路通过，
+finished pc=104 r0=2，objects in world: 2，两个对象均 Alive。
+
+### tests/machine/basic.rs — E2E-1~4 补齐
+
+不再是空 stub。新增 4 个测试，全部走生产真实路径
+（assemble_module + Machine::boot，而非手拼字节码）：
+
+  E2E-1 单对象闭环：birth -> CALL -> WRITE -> RETURN -> COMMIT -> HALT
+  E2E-2 动态寄存器数据流：ADD 复制出的寄存器作为 CALL 目标 operand，验证可用
+  E2E-3 Birth+Write+Link 全链路：直接读取磁盘上的 world_demo.vasm 文件本身跑，
+        保证测试与交付文件不脱节，断言 has_link(A,B) 为真
+  E2E-4 跨对象非法操作必须失败：新 tx 在无 capability 情况下 CALL 进已提交对象，
+        必须 Trapped，且 current_object 不得切换
+
+因 Runtime::execute 遇 Trap 会死循环（见下），测试改用自写的
+run_bounded() 帮助函数，带步数上限，手动匹配 Halted/Aborted/Trapped 三态。
+
+全量测试：cargo test 103+ 全绿，0 failed。
+
+### 已知问题修复：Runtime::execute 遇 Trap 死循环
+
+is_halted() 原实现只认 Halted | Aborted(_)，不认 Trapped，
+导致 Runtime::execute 的 while !is_halted() 循环在程序触发 Trap 时永不退出，
+CLI 的 veritas run 命令会挂死。已修复：is_halted() 加入 Trapped(_) 分支。
+详见 docs/VASM_EXECUTION_MODEL.md 第8节。
+
+### 新增文档
+
+docs/VASM_EXECUTION_MODEL.md（277行）—— 面向下一个接手 AI 的完整参考：
+执行链路分层、Machine vs Executor 两条路径说明、身份切换模型（current_object/
+capability_context/CallFrame 语义）、WRITE 地址组装规则、Operand 解析规则、
+vasm 语法速查、CLI 三段式操作流程、is_halted 死循环问题记录、
+身份切换死结的历史教训摘要、给未来会话的排查方法论。
+
+### 仍未解决
+
+P2: CLI inspect 与 veritasd 查询结果不一致——仍未深入，只排除了
+"两者共用同一 Kernel::with_wal_path 入口"这个方向，问题应在别处（WAL flush
+时机？查询时序？未验证）。
+
+Executor(executor.rs) 与 Machine 功能重叠——今仍未处理，无外部调用者，
+是否合并/废弃未决，继续记债。
