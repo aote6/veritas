@@ -2,10 +2,21 @@ module world_demo
 version 1.0.0
 
 OBJECT_BIRTH 0
-LOAD_CONST R2, 0
-ADD R1, R0, R2
+LOAD_CONST R3, 0
+ADD R1, R0, R3
+CALL R1, obj_a_body
 OBJECT_BIRTH 0
-OBJECT_LINK R1, R0, owns
-OBJECT_LINK R0, R1, depends_on
+LOAD_CONST R3, 0
+ADD R2, R0, R3
+CALL R2, obj_b_body
+OBJECT_LINK R1, R2, owns
 COMMIT
 HALT
+
+obj_a_body:
+WRITE R0, "hello from object A"
+RETURN
+
+obj_b_body:
+WRITE R0, "hello from object B"
+RETURN
