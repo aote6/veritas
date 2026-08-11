@@ -1,6 +1,0 @@
-module create_obj
-version 1.0.0
-    LOAD_CONST R0, 100
-    LOAD_CONST R1, 200
-    ADD R2, R0, R1
-    HALT
