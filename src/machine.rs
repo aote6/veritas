@@ -725,6 +725,6 @@ impl Machine {
     pub fn state_root(&self) -> u64 { self.kernel.state_root() }
 
     pub fn is_halted(&self) -> bool {
-        matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_))
+        matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_))
     }
 }
