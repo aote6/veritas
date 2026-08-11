@@ -6,6 +6,12 @@ use std::sync::Arc;
 
 pub struct Runtime;
 
+#[derive(Debug, Clone)]
+pub enum ExecutionOutcome {
+    Completed { pc: usize, r0: u64 },
+    Trapped { pc: usize, reason: crate::types::TrapReason, r0: u64 },
+}
+
 impl Runtime {
     /// Execute a module on an existing Kernel world.
     /// The Kernel persists beyond this call — objects created by this module
@@ -13,7 +19,7 @@ impl Runtime {
     pub fn execute(
         kernel: &Arc<Kernel>,
         module: &ModuleImage,
-    ) -> Result<(usize, u64), VeritasError> {
+    ) -> Result<ExecutionOutcome, VeritasError> {
         let mut machine = Machine::new(Arc::clone(kernel));
         machine.boot(module.program_image.clone())?;
 
@@ -21,7 +27,16 @@ impl Runtime {
             machine.step()?;
         }
 
+        let pc = machine.pc();
         let r0 = machine.registers().get_u64(0);
-        Ok((machine.pc(), r0))
+
+        match machine.trap_frame() {
+            Some(frame) => Ok(ExecutionOutcome::Trapped {
+                pc: frame.pc,
+                reason: frame.reason.clone(),
+                r0,
+            }),
+            None => Ok(ExecutionOutcome::Completed { pc, r0 }),
+        }
     }
 }

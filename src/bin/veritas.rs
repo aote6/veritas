@@ -4,7 +4,7 @@ use std::process;
 use veritas_kernel::assembler::assemble_module;
 use veritas_kernel::module::{ModuleImage, ModuleLoader};
 use veritas_kernel::kernel::Kernel;
-use veritas_kernel::runtime::Runtime;
+use veritas_kernel::runtime::{Runtime, ExecutionOutcome};
 use std::sync::Arc;
 
 fn main() {
@@ -57,10 +57,19 @@ fn run_command(args: &[String]) -> Result<(), String> {
             let mut loader = ModuleLoader::new();
             let name = loader.load_and_install(&bytes).map_err(|e| format!("load: {:?}", e))?;
             let loaded = loader.get_module(&name).ok_or("module not found after install")?;
-            let (pc, r0) = Runtime::execute(&kernel, &loaded.image)
+            let outcome = Runtime::execute(&kernel, &loaded.image)
                 .map_err(|e| format!("exec: {:?}", e))?;
-            println!("finished pc={} r0={}", pc, r0);
-            println!("objects in world: {}", kernel.list_object_ids().len());
+            match outcome {
+                ExecutionOutcome::Completed { pc, r0 } => {
+                    println!("finished pc={} r0={}", pc, r0);
+                    println!("objects in world: {}", kernel.list_object_ids().len());
+                }
+                ExecutionOutcome::Trapped { pc, reason, r0 } => {
+                    eprintln!("trapped pc={} r0={} reason={:?}", pc, r0, reason);
+                    println!("objects in world: {}", kernel.list_object_ids().len());
+                    std::process::exit(1);
+                }
+            }
         }
         "info" => {
             if args.len() < 3 {
