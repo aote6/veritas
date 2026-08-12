@@ -333,6 +333,7 @@ impl WorldService {
                     // When an actor is already set, keep it so creator can link/admin the child.
                     if state.ctx.current_object == 0 {
                         state.ctx.enter_object(id);
+                        state.ctx.capability_context = id;
                     }
                     Ok(id)
                 }
