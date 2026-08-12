@@ -1038,3 +1038,11 @@ Object Birth → WorldRuntime Session → tx_write(path,state_id=0) + tx_write(c
 - 失败不回滚已提交的 Veritas 世界状态
 - 文件不谎报写入成功
 - 重启后对象保持 Alive，世界一致
+
+## P4-4 Projection 重试/幂等性 — 2026-08-12 ✅
+
+- 第一次 apply 失败：success=False，文件不存在
+- 第二次重试成功：文件写入正确内容
+- 第三次幂等 apply：内容不变，不重复写入，文件大小不变
+- Veritas version 不受 projection retry 影响
+- 重启后 ObjectPathMap 正确，不重复污染
