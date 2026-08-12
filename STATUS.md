@@ -1194,3 +1194,34 @@ world_api.rs: tx_begin() 里 begin_in_object(actor) 后显式设置 ctx.capabili
 
 ### 修改文件
 veritas_kernel/src/world_api.rs（tx_begin 一处）
+
+## 多对象事务最终修复 — 2026-08-12
+
+### 真正的根因
+tx_begin(None) 路径下，tx_create_object 在 current_object==0 时只设了
+current_object=A，没设 capability_context。此后 tx_write 跨对象切换
+current_object，capability_context 恒为 0。commit 时 authorize_intent
+用 current_object(已被最后一次 write 切走) 和 capability_context(0)
+去验证历史 intent，找不到 holder → PermissionDenied。
+
+### 之前的修复（tx_begin 设 capability_context=actor）
+只覆盖了 tx_begin(Some(actor)) 路径，tx_begin(None) 路径下 actor=0，
+capability_context 仍是 0。
+
+### 最终修复
+tx_create_object 里 current_object==0 分支，enter_object(id) 后加
+capability_context = id。此后 capability_context 作为 session 的
+稳定授权身份，不随 tx_write 切换而漂移。
+
+修改文件：veritas_kernel/src/world_api.rs（tx_create_object，一行）
+
+### 新增测试
+- tests/world_demo.rs: birth A → write A → birth B → link A→B → commit → WAL recovery
+- tests/multi_object_transaction_regression.rs: Test A(abort) / Test B(跨session隔离) / Test C(WAL recovery + link去重)
+
+### 全量验证
+- cargo test: 全部通过
+- Forge pytest: 208 passed
+- world_demo: PASS
+- 三个回归测试: PASS
+- machine_object_link_security: PASS
