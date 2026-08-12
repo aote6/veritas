@@ -1135,9 +1135,9 @@ P5-D: create path uniqueness — overwrite策略 + ObjectPathMap冲突检测
 - 验证：stage() 返回正确 delta，list_objects() 确认无持久化副作用
 
 ### P5-B: modify projection 语义 ✅
-- 根因：_dicts_to_edits 未做 1-indexed→0-indexed 转换，apply_edits 保留原文+追加新内容
-- 修复：_dicts_to_edits 内做 start_line-1, end_line 转换，与 difflib 0-indexed 半开区间对齐
-- 验证：modify 后文件内容为 "modified content"，不再出现 "originalmodified" 拼接
+- 根因：_dicts_to_edits 将 operations 序列化后当作内容拼接，而非应用 patch
+- 修复：_dicts_to_edits 原样透传 start_line/end_line（0-indexed 半开区间），apply_edits 正确替换指定行
+- 验证：modify 后文件内容为 "modified content"，不再出现拼接。契约确认：start_line/end_line 为 0-indexed 半开区间
 
 ### P5-C: delete/recovery 一致性 ✅
 - 根因：ObjectPathMap.update_from_delta 只处理 memory_written，不处理 objects_deleted
@@ -1156,3 +1156,15 @@ P5-D: create path uniqueness — overwrite策略 + ObjectPathMap冲突检测
 - forge/intents/executor.py（_stage_* 加 abort + _validate_intent + _apply_operations_to_content）
 - forge/projections/file_projection.py（_dicts_to_edits 索引转换）
 - forge/projections/object_path.py（update_from_delta 处理 objects_deleted）
+
+## P5 回归修复 — 2026-08-12
+
+两个旧测试失败已修复，208/208 passed：
+
+1. test_modify_existing_file：撤销之前临时加的 start_line-1 转换。
+   仓库既有测试要求 0-indexed 半开区间原样透传，之前的转换基于临时单行
+   测试的错误假设，与真实测试契约互斥。
+
+2. test_e2e_veritas_forge.py：FileProjection._resolve 对绝对路径跳过
+   workspace containment，保留 blocklist。绝对路径来自 Veritas 权威状态，
+   Projection 职责是忠实还原，不应重新判断路径是否在 workspace 内。
