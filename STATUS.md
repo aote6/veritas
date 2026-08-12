@@ -1225,3 +1225,37 @@ capability_context = id。此后 capability_context 作为 session 的
 - world_demo: PASS
 - 三个回归测试: PASS
 - machine_object_link_security: PASS
+
+## 架构债：Session/Machine 身份管理统一 — 待执行
+
+### 问题
+Veritas 有两条独立执行入口，各自维护身份上下文：
+- Machine：CALL 指令完整管理 current_object、capability_context、CallFrame 栈、pending_calls
+- Session：tx_write 手抄了半份 CALL 逻辑（authorize_intent + enter_object），漏了 capability_context 同步、
+  pending_calls 记录、无对称的"退出"步骤，身份切换是永久性的
+
+同一概念两套实现，导致 root/call/capability_context 等身份问题反复出现。
+
+### 方向
+Session 不再自己管理身份，底层走 Machine 指令执行。Machine 的 CALL/RETURN
+是唯一合法的身份切换入口。
+
+### 执行步骤
+1. 从 Machine 的 CALL handler 中抽出身份切换核心，做成 Engine 上的
+   enter_identity(target) / leave_identity() 方法，独立于寄存器/PC
+2. TransactionContext 加 identity_stack: Vec<IdentityFrame>，
+   CallFrame 瘦身只保留寄存器/PC
+3. Session 的 tx_write 改成 enter_identity + write + leave_identity 对称模式
+4. tx_create_object/tx_link 等逐步迁移
+5. 收紧 current_object/capability_context/identity_stack 可见性为 pub(crate)，
+   删除 enter_object 公开方法，编译期禁止手改身份
+6. 删除 Session 侧手抄的 authorize_intent + enter_object 逻辑
+
+### 不改
+- authorize_intent / verify_capability / commit 权限模型
+- capability graph / ObjectBirth grant 逻辑
+- Machine CALL/RETURN 语义（只瘦身 CallFrame，不改变行为）
+
+### 时机
+不紧急。当前多对象事务已修好，全量测试通过。等下次遇到身份相关 bug
+或完成当前 roadmap 主要功能后再执行。
