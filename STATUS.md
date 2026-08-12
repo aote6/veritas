@@ -1168,3 +1168,29 @@ P5-D: create path uniqueness — overwrite策略 + ObjectPathMap冲突检测
 2. test_e2e_veritas_forge.py：FileProjection._resolve 对绝对路径跳过
    workspace containment，保留 blocklist。绝对路径来自 Veritas 权威状态，
    Projection 职责是忠实还原，不应重新判断路径是否在 workspace 内。
+
+## 多对象事务修复 — 2026-08-12
+
+### 问题
+同一 session 内 birth A → write A → birth B → write B → link A→B → commit
+在 commit 阶段 PermissionDenied。
+
+### 根因
+TransactionContext.capability_context 设计意图是"记住事务发起者身份，不随跨对象切换改变"，
+但 WorldService::tx_begin 从未设置它（恒为0）。只有 Machine 的 CALL/RETURN 路径正确维护。
+session 内多次 write 触发 enter_object 覆盖 current_object 后，commit 时 verify_capability
+用 current_object(已是最后切换的对象)和 capability_context(恒为0)查 capability，
+最初持有 cap 的 actor 身份"够不着"，鉴权失败。
+
+### 修复
+world_api.rs: tx_begin() 里 begin_in_object(actor) 后显式设置 ctx.capability_context = actor。
+一行修复，不碰权限模型、capability 语义、enter_object、authorize_intent。
+
+### 验证
+- birth A + write A + birth B + write B + link A→B + commit → ok, receipt 含 links_added [[A,B,owns]]
+- 重启后 A/B 均 Alive
+- cargo test: 全部通过
+- pytest: 208 passed
+
+### 修改文件
+veritas_kernel/src/world_api.rs（tx_begin 一处）
