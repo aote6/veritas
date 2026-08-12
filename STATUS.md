@@ -1081,3 +1081,25 @@ P4-5 多 receipt partial failure + 独立 retry + 幂等 + 重启恢复 ✅
 Veritas commit → receipt持久化 → projection failure
 → Runtime crash/restart → receipt recovery → ObjectPathMap重建
 → projection retry → 正确结果 → 幂等安全
+
+## P4-7 边界审计 — 2026-08-12 ✅
+
+- 空 delta apply：success=True，安全无操作
+- 无效 object_id：不 crash，正常返回
+- Receipt/Delta mismatch：不 crash，返回有效结果
+- 重复 apply 跨 restart：内容不变（size=12）
+- 连续两次失败 + 第三次 retry：成功
+- 失败 → restart → 再次失败 → 最终 retry：成功，内容正确
+
+## P4 Projection 最终结论
+
+P4-1 ObjectPathMap 闭环 ✅
+P4-2 FileProjection 真实落盘 ✅
+P4-3 Projection 失败语义 ✅
+P4-4 单 receipt 重试/幂等 ✅
+P4-5 多 receipt partial failure + 独立 retry ✅
+P4-6 Crash/Restart + Projection Recovery ✅
+P4-7 边界审计（空delta/无效id/mismatch/双重失败/重启后再失败）✅
+
+Projection 层已验证：失败安全、可重试、幂等、可跨重启恢复、边界不崩溃。
+下一阶段：P5 Forge Intent → World Transaction。
