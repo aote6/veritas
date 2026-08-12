@@ -1051,3 +1051,11 @@ Object Birth → WorldRuntime Session → tx_write(path,state_id=0) + tx_write(c
 ### 待验证
 - P4-3: Projection 失败语义（World COMMIT成功但FileProjection失败时，不谎报成功/回滚）
 - state_id=0 临时路径协议（待全链跑通后再决定是否升级为正式Object metadata）
+
+## P4-3 Projection 失败语义 — 2026-08-12 ✅
+
+- FileProjection 失败时 ProjectionResult.success=False，reason 明确
+- retryable=True，调用方可据此重试
+- 失败不回滚已提交的 Veritas 世界状态
+- 文件不谎报写入成功
+- 重启后对象保持 Alive，世界一致
