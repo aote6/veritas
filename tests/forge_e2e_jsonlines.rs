@@ -4,24 +4,7 @@ use std::process::{Command, Stdio};
 /// Full Forge-like E2E: start veritasd, drive JSON-Lines, verify the whole chain.
 #[test]
 fn forge_e2e_create_write_read_commit_observe() {
-    // Locate veritasd binary next to the test binary (cargo test puts them together)
-    let mut veritasd_path = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    veritasd_path.push("veritasd");
-    if !veritasd_path.exists() {
-        // fallback: try target_tmp/debug/ (for noexec / custom target dir)
-        veritasd_path = std::path::PathBuf::from(
-            std::env::var("VERITASD_PATH").unwrap_or_else(|_| {
-                format!(
-                    "{}/target_tmp/debug/veritasd",
-                    std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into())
-                )
-            }),
-        );
-    }
+    let veritasd_path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_veritasd"));
 
     // Use a temp WAL so the test is isolated
     let wal_path = format!(

@@ -959,3 +959,23 @@ Executor(executor.rs) 与 Machine 功能重叠——今仍未处理，无外部�
 - 已改为 match 解构 `ExecutionOutcome::Completed{r0,..}`，`object_id` 取自 `r0`，测试通过
 
 **环境提示：** proot-distro debian(python镜像) 容器已删除。之前用于装 aider，后确认无用，且今天排查 P2 时一度造成路径混淆（容器内 `/root/termux-home/...` 与原生 Termux `~/veritas_kernel` 是两份独立文件系统，非软链接）。以后统一在原生 Termux 环境操作。
+
+## Test Integrity Pass — 2026-08-12
+
+背景：P0 self-authorization修复后，需确认现有测试是否绕过身份路径。
+
+审计结果：
+- forge_e2e_jsonlines：路径bug（veritasd找不到），改用env!(CARGO_BIN_EXE_veritasd)修复
+- tests/capability.rs：纯占位assert!(true)，已删除
+- call_access_intent(8个)：走真实Machine执行，断言精确，可信
+- world_api内联(12个)：走WorldService公开API，安全边界清晰，可信
+- 其余安全测试(capability_revoke/delegate/recovery/machine_object_link_security等)：可信
+
+结论：核心安全路径测试均走真实入口，未发现假绿问题。全量测试通过，0 failed。
+
+剩余债务：部分单元测试断言偏弱(is_ok)，属正常惯例，非阻塞。
+
+API→授权闭环验证：
+tx_write/tx_freeze_object/tx_death_object 三者均在 enter_object(target)
+之前调用 kernel.engine().authorize_intent()，确认 API 层统一进入同一套
+核心授权逻辑，不存在 API 层独立做权限判断的旁路。
