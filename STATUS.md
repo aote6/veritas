@@ -995,32 +995,11 @@ Forge → WorldAdapter → veritasd → WorldService → Kernel → WAL → rest
 "CLI inspect 与 veritasd 不一致"的判断基于错误 CLI 参数（inspect --wal PATH），
 实际 inspect 通过 VERITAS_WAL 环境变量读取 WAL。使用正确参数后结果一致。
 
-### 发现
-- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
-- WorldRuntime当前采用单active session约束，未发现违反架构契约一个小问题
-CLI recovery 日志显示"当前版本号: 0"而 Forge world_info() 返回 version=9。
-对象集合已一致，疑为 CLI 日志字段使用错误，非状态不一致。单独记债，不阻塞。
-
-### 结论
-P2 关闭。veritasd 与 CLI inspect 使用同一 WAL/apply()/Kernel，查询结果一致。
-
-## P3 WorldRuntime 事务语义审计 — 2026-08-12 完成
-
-### 全部通过
-- P3-1: Abort 回滚 ✅
-- P3-2: 多对象原子提交 ✅（A1+A2同一session，重启均Alive）
-- P3-3: Commit后session不可用（SessionClosedError）✅
-- P3-4: 跨对象失败+abort，无半事务泄露 ✅
-- P3-5: 跨对象授权 ✅
-  - A无capability写B → PermissionDenied
-  - A创建的对象自动持AdminCap → 可写
-  - A跨对象写B（未创建B）→ PermissionDenied
-- P3-6: Receipt history跨进程恢复 ✅
 
 ### 发现
-- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
-- WorldRuntime当前采用单active session约束，未发现违反架构契约
-- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
+- veritasd 未暴露 CapabilityGrant 命令，跨身份授权仅通过 ObjectBirth 自动完成
+- WorldRuntime 当前采用单 active session 约束，未发现违反架构契约
+- CLI recovery 日志显示"当前版本号: 0"而 Forge world_info() 返回 version=9，疑为日志字段使用错误，单独记债
 - WorldRuntime只维护单session（_current_session），是设计约束而非bug
 
 ## P4-1 ObjectPathMap 闭环 — 2026-08-12
