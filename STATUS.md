@@ -1046,3 +1046,38 @@ Object Birth → WorldRuntime Session → tx_write(path,state_id=0) + tx_write(c
 - 第三次幂等 apply：内容不变，不重复写入，文件大小不变
 - Veritas version 不受 projection retry 影响
 - 重启后 ObjectPathMap 正确，不重复污染
+
+## P4-5 Multi-object Partial Failure + Retry — 2026-08-12 ✅
+
+- A/B/C 各自独立 receipt，B receipt 投影失败时 A 和 C 不受影响
+- B 文件不存在，A/C 正常投影
+- B 可单独 retry，成功后不损坏 A/C
+- 全部 receipt 幂等再 apply，文件大小不变（均为12 bytes）
+- 重启后三个对象全部 Alive，ObjectPathMap 路径和反向查找正确
+
+### 架构发现
+- FileProjection.apply(receipt, delta) 是单 receipt 投影器，receipt 间独立执行
+- B 失败不阻塞 C——不是跨 receipt batch transaction，语义正确
+- Veritas 当前不允许跨对象写（需 capability），每个对象独立 commit/receipt
+- B projection failure 不污染 Veritas 世界，不损坏已投影的 A/C
+
+### P4 完整结论
+P4-1 ObjectPathMap 闭环 ✅
+P4-2 FileProjection 真实落盘 ✅
+P4-3 Projection 失败语义（success=False, retryable=True, 世界不回滚）✅
+P4-4 单 receipt 重试/幂等 ✅
+P4-5 多 receipt partial failure + 独立 retry + 幂等 + 重启恢复 ✅
+
+## P4-6 Crash/Restart + Projection Recovery — 2026-08-12 ✅
+
+- commit 成功，projection 故意失败（success=False, retryable=True）
+- Runtime 关闭后重启，从 receipt history 恢复完整 receipt
+- ObjectPathMap 从 receipt history 重建，定位到目标 receipt
+- retry projection 成功，文件内容正确（"data survived crash"）
+- 对象保持 Alive，ObjectPathMap 正反向查找正确
+- 幂等再 apply 安全，文件大小不变（19 bytes）
+
+### 已验证完整闭环
+Veritas commit → receipt持久化 → projection failure
+→ Runtime crash/restart → receipt recovery → ObjectPathMap重建
+→ projection retry → 正确结果 → 幂等安全
