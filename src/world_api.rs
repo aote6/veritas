@@ -306,7 +306,9 @@ impl WorldService {
             if self.kernel.get_object_state(actor).is_none() {
                 return Err(WorldError::ObjectNotFound(actor));
             }
-            self.kernel.begin_in_object(actor)
+            let mut c = self.kernel.begin_in_object(actor);
+            c.capability_context = actor;
+            c
         } else {
             self.kernel.begin()
         };
