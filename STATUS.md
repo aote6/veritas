@@ -979,3 +979,53 @@ API→授权闭环验证：
 tx_write/tx_freeze_object/tx_death_object 三者均在 enter_object(target)
 之前调用 kernel.engine().authorize_intent()，确认 API 层统一进入同一套
 核心授权逻辑，不存在 API 层独立做权限判断的旁路。
+
+## P2 闭合 — 2026-08-12
+
+### 验证结果
+Forge → WorldAdapter → veritasd → WorldService → Kernel → WAL → restart → CLI inspect 全链路通过。
+
+### 实测数据
+- Forge: version=9, count=9, object 9 Alive
+- CLI: 恢复9条记录，9 Alive
+- 重启后新 WorldAdapter 指向同一 WAL：object 9 存在且 Alive
+- 两者对象列表完全一致（1-9 全部 Alive）
+
+### 此前误判原因
+"CLI inspect 与 veritasd 不一致"的判断基于错误 CLI 参数（inspect --wal PATH），
+实际 inspect 通过 VERITAS_WAL 环境变量读取 WAL。使用正确参数后结果一致。
+
+### 发现
+- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
+- WorldRuntime当前采用单active session约束，未发现违反架构契约一个小问题
+CLI recovery 日志显示"当前版本号: 0"而 Forge world_info() 返回 version=9。
+对象集合已一致，疑为 CLI 日志字段使用错误，非状态不一致。单独记债，不阻塞。
+
+### 结论
+P2 关闭。veritasd 与 CLI inspect 使用同一 WAL/apply()/Kernel，查询结果一致。
+
+## P3 WorldRuntime 事务语义审计 — 2026-08-12 完成
+
+### 全部通过
+- P3-1: Abort 回滚 ✅
+- P3-2: 多对象原子提交 ✅（A1+A2同一session，重启均Alive）
+- P3-3: Commit后session不可用（SessionClosedError）✅
+- P3-4: 跨对象失败+abort，无半事务泄露 ✅
+- P3-5: 跨对象授权 ✅
+  - A无capability写B → PermissionDenied
+  - A创建的对象自动持AdminCap → 可写
+  - A跨对象写B（未创建B）→ PermissionDenied
+- P3-6: Receipt history跨进程恢复 ✅
+
+### 发现
+- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
+- WorldRuntime当前采用单active session约束，未发现违反架构契约
+- veritasd未暴露CapabilityGrant命令，跨身份授权仅通过ObjectBirth自动完成
+- WorldRuntime只维护单session（_current_session），是设计约束而非bug
+
+## P4-1 ObjectPathMap 闭环 — 2026-08-12
+
+- Intent → WorldRuntime → Receipt → ObjectPathMap → Restart 全链路通过
+- state_id=0 作为路径约定，ObjectPathMap.update_from_delta() 从 memory_written 提取
+- 重启后从 receipt history 重建 ObjectPathMap，正反向查找均正确
+- 对象在 Veritas 中保持 Alive
