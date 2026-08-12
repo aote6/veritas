@@ -939,3 +939,23 @@ P2: CLI inspect 与 veritasd 查询结果不一致——仍未深入，只排除
 
 Executor(executor.rs) 与 Machine 功能重叠——今仍未处理，无外部调用者，
 是否合并/废弃未决，继续记债。
+
+## 08-12 更新
+
+**P2: CLI inspect 与 veritasd 查询结果不一致 — 挂起，非当前 bug**
+- 排查过程：依次排除了 WAL fsync 时机、CLI/veritasd 重放逻辑分叉（两者共用同一 `apply()` 函数）、Executor 死代码干扰等方向
+- 关键发现：veritasd 本体不是 socket 常驻服务，而是从 stdin 逐行读 JSON、stdout 逐行吐 JSON 的进程（见 `src/bin/veritasd.rs:307` `main()`）。用 `&` 或 `nohup` 裸起后台会导致 stdin 立即 EOF，进程"安静退出"而非崩溃，此前排查时被这个假象干扰
+- 真实调用路径在 `forge/forge/world/runtime.py`（`WorldAdapter` 管理子进程 stdin/stdout 管道），本次未深入这条链路
+- 结论：veritasd 尚未跑通过完整流程（起服务→adapter通信→查询），当前"不一致"现象是记录自某次测试/改动时的观察，非稳定复现。**降级为待验证项，等 veritasd 完整流程首次跑通后再判断是否仍存在，届时再正式排查**
+
+**Executor(executor.rs) 已删除**
+- 确认 `src/` 和 `tests/` 目录下均无任何引用（grep 全局为空）
+- 删除 `src/executor.rs`，移除 `src/lib.rs:10` 的 `pub mod executor;` 声明
+- 编译通过，全量测试 103+ 项全绿
+
+**顺带修复：`tests/kernel_world_runtime.rs` 编译错误**
+- 该测试文件解构 `Runtime::execute` 返回值时仍按旧签名当元组用（`(pc, object_id)`），但该函数现在返回 `ExecutionOutcome` 枚举（`Completed{pc,r0}` / `Trapped{...}`）
+- 与本次 Executor 删除无关，是独立遗留的签名不同步（`cargo build` 不编译 tests/，此前一直未暴露，本次跑 `cargo test` 时发现）
+- 已改为 match 解构 `ExecutionOutcome::Completed{r0,..}`，`object_id` 取自 `r0`，测试通过
+
+**环境提示：** proot-distro debian(python镜像) 容器已删除。之前用于装 aider，后确认无用，且今天排查 P2 时一度造成路径混淆（容器内 `/root/termux-home/...` 与原生 Termux `~/veritas_kernel` 是两份独立文件系统，非软链接）。以后统一在原生 Termux 环境操作。

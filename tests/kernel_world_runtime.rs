@@ -23,8 +23,12 @@ fn module_a_object_visible_to_module_b_through_runtime_execute() {
     let kernel = Arc::new(Kernel::new());
 
     let module_a = make_birth_module();
-    let (_pc_a, object_id) = Runtime::execute(&kernel, &module_a)
-        .expect("module A execute failed");
+    let object_id = match Runtime::execute(&kernel, &module_a)
+        .expect("module A execute failed")
+    {
+        veritas_kernel::runtime::ExecutionOutcome::Completed { r0, .. } => r0,
+        other => panic!("expected Completed, got {:?}", other),
+    };
 
     assert!(object_id > 0, "module A should receive ObjectId from TRAP, got {}", object_id);
 

@@ -7,7 +7,6 @@ pub mod instruction_codec;
 pub mod assembler;
 pub mod program;
 pub mod verifier;
-pub mod executor;
 // Veritas Kernel V0.2 - 主入口
 
 pub mod engine;
