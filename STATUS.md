@@ -1125,3 +1125,34 @@ P5-A: stage() — 临时session + preview + abort，禁止mutation
 P5-B: modify projection — operations 应产生新文件内容，非序列化追加
 P5-C: execute_batch atomicity — 同transaction多Intent + 失败回滚验证
 P5-D: create path uniqueness — overwrite策略 + ObjectPathMap冲突检测
+
+## P5 修复完成 — 2026-08-12
+
+### P5-A: stage/preview_delta ✅
+- WorldSession 新增本地 buffer（_objects_created/deleted/frozen/links/memory_written）
+- preview_delta() 从 buffer 本地拼装，不触发 tx_commit
+- 三个 _stage_* 方法加 try/finally: session.abort()，预览后不留残留会话
+- 验证：stage() 返回正确 delta，list_objects() 确认无持久化副作用
+
+### P5-B: modify projection 语义 ✅
+- 根因：_dicts_to_edits 未做 1-indexed→0-indexed 转换，apply_edits 保留原文+追加新内容
+- 修复：_dicts_to_edits 内做 start_line-1, end_line 转换，与 difflib 0-indexed 半开区间对齐
+- 验证：modify 后文件内容为 "modified content"，不再出现 "originalmodified" 拼接
+
+### P5-C: delete/recovery 一致性 ✅
+- 根因：ObjectPathMap.update_from_delta 只处理 memory_written，不处理 objects_deleted
+- 修复：update_from_delta 末尾对 delta.objects_deleted 逐个调用 self.remove()
+- 验证：delete 后实时/重放/重启后 path map 均正确遗忘，list_objects() 只剩活对象
+
+### P5-D: 输入校验 ✅
+- IntentExecutor 新增 _validate_intent，在 execute/execute_batch/stage 前统一校验
+- create_file: path 非空 + content 非空 + overwrite=False 时路径冲突检测
+- modify_file/delete_file: object_id 必须存在且 Alive
+- 校验失败不调用 begin_session()，无残留会话
+- 验证：4种非法输入全部提前拒绝，合法操作无回归，stage() 校验同样生效
+
+### 修改文件
+- forge/world/session.py（重写，新增本地 buffer + preview_delta）
+- forge/intents/executor.py（_stage_* 加 abort + _validate_intent + _apply_operations_to_content）
+- forge/projections/file_projection.py（_dicts_to_edits 索引转换）
+- forge/projections/object_path.py（update_from_delta 处理 objects_deleted）
