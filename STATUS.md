@@ -1029,3 +1029,25 @@ P2 关闭。veritasd 与 CLI inspect 使用同一 WAL/apply()/Kernel，查询结
 - state_id=0 作为路径约定，ObjectPathMap.update_from_delta() 从 memory_written 提取
 - 重启后从 receipt history 重建 ObjectPathMap，正反向查找均正确
 - 对象在 Veritas 中保持 Alive
+
+## P4 Projection 验证 — 2026-08-12
+
+### P4-1 ObjectPathMap 闭环 ✅
+- Object → path 映射从 memory_written(state_id=0) 提取
+- 重启后从 receipt history 重建，正反向查找正确
+- 当前协议：state_id=0 为路径约定（临时，非 Veritas Object metadata）
+
+### P4-2 FileProjection 真实落盘 ✅
+- 完整链路：Intent → WorldRuntime → Receipt → FileProjection.apply(receipt, delta) → 真实文件
+- 正确接口：fp.apply(receipt, delta)，非 apply_delta(delta)
+- 路径语义：project_root + 相对路径，非绝对路径
+- 重启后 ObjectPathMap 恢复映射，Veritas 对象保持 Alive
+
+### 已验证闭环
+Object Birth → WorldRuntime Session → tx_write(path,state_id=0) + tx_write(content,state_id=1)
+→ Veritas Commit → Receipt/TransactionDelta → ObjectPathMap → FileProjection.apply()
+→ FileManager → Host File → Restart → ObjectPathMap恢复 → Object Alive
+
+### 待验证
+- P4-3: Projection 失败语义（World COMMIT成功但FileProjection失败时，不谎报成功/回滚）
+- state_id=0 临时路径协议（待全链跑通后再决定是否升级为正式Object metadata）
