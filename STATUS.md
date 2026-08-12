@@ -1103,3 +1103,25 @@ P4-7 边界审计（空delta/无效id/mismatch/双重失败/重启后再失败�
 
 Projection 层已验证：失败安全、可重试、幂等、可跨重启恢复、边界不崩溃。
 下一阶段：P5 Forge Intent → World Transaction。
+
+## P5 Intent → World Transaction 审计 — 2026-08-12
+
+### 已验证通过
+- P5-1 create_file: Intent → Executor → Veritas → Projection → 文件 → 重启恢复 ✅
+- P5-3 delete_file: Intent → session.death() → objects_deleted → 文件删除 → 重启不存在 ✅
+
+### 发现真实问题
+- P5-2 modify: Projection 将 patch JSON 追加到原文，而非应用修改（文件内容 "originalmodified"）
+  根因：Executor 将 operations 写入 state_id=2，Projection 将其当内容拼接
+- stage(): WorldSession 缺少 preview_delta()，require_confirm=True 路径已损坏
+  stage 不应创建未关闭的 session，应走 begin → execute → preview → abort
+- execute_batch: 跨对象 PermissionDenied，未完成原子性验证
+  当前每个对象独立 commit，非同一 transaction
+- create_file 未检查路径冲突：overwrite=False 策略未生效
+  多个 create 同一路径 → ObjectPathMap 覆盖，无冲突检测
+
+### P5 修复优先级
+P5-A: stage() — 临时session + preview + abort，禁止mutation
+P5-B: modify projection — operations 应产生新文件内容，非序列化追加
+P5-C: execute_batch atomicity — 同transaction多Intent + 失败回滚验证
+P5-D: create path uniqueness — overwrite策略 + ObjectPathMap冲突检测
