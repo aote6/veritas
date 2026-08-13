@@ -141,11 +141,11 @@ fn checkpoint_root_hash_consistent() {
     build_world(&kernel);
 
     let engine = kernel.test_engine();
-    let root_before = engine.state_root();
+    let _root_before = engine.state_root();
     let snap = engine.create_checkpoint();
 
     engine.restore_checkpoint(&snap);
-    let root_after = engine.state_root();
+    let _root_after = engine.state_root();
 
     // 恢复后 state_root 应与创建快照时一致
     let snap2 = engine.create_checkpoint();

@@ -1,4 +1,3 @@
-use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;

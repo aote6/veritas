@@ -872,7 +872,7 @@ mod tests {
 
     #[test]
     fn test_truncated_transaction_committed_discarded() {
-        use crate::types::{Address, TransactionDelta};
+        use crate::types::TransactionDelta;
 
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path();

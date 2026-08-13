@@ -691,7 +691,7 @@ mod tests {
         let (id_a, _cap_a) = world
             .create_object_short()
             .expect("create_object_short must succeed for object A");
-        let (id_b, cap_b) = world
+        let (_id_b, cap_b) = world
             .create_object_short()
             .expect("create_object_short must succeed for object B");
 

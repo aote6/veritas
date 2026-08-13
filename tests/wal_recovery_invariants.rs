@@ -1,8 +1,7 @@
-use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
-use veritas_kernel::types::{AbortReason, LinkType, ObjectState};
+use veritas_kernel::types::{LinkType, ObjectState};
 
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();

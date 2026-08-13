@@ -286,7 +286,7 @@ fn s_a06_revoke_then_use_denied() {
     let wal = temp_wal("s_a06");
     let kernel = Kernel::with_wal_path(wal.clone());
 
-    let a = birth_via_kernel(&kernel);
+    let _a = birth_via_kernel(&kernel);
     let b = birth_via_kernel(&kernel);
     let resource = birth_via_kernel(&kernel);
 

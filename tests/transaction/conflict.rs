@@ -1,7 +1,6 @@
 use crate::common::new_kernel;
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::KernelCall;
-use veritas_kernel::types::AbortReason;
 
 #[test]
 fn t2_conflict_detection() {

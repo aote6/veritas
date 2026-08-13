@@ -5,7 +5,7 @@ use veritas_kernel::kernel::{Kernel, KernelCall};
 use veritas_kernel::module::{ModuleImage, ModuleVersion};
 use veritas_kernel::program::ProgramImage;
 use veritas_kernel::runtime::Runtime;
-use veritas_kernel::types::{ObjectState, ObjectType};
+use veritas_kernel::types::ObjectState;
 
 /// Module A: TRAP OBJECT_BIRTH → COMMIT → HALT
 fn make_birth_module() -> ModuleImage {
