@@ -1359,6 +1359,48 @@ Recovery 路径：
 
 ---
 
+## P4 安全/恢复审计 + 3 个 bug 修复完成 — 2026-08-13
+
+### 审计覆盖
+
+- 新增 tests/security_recovery_audit.rs（22 个精准测试）
+- 覆盖 link 授权（WorldService/Machine parity）、global_version recovery、
+  WAL 结构攻击（重复 TXCOMMIT、乱序 version、重复 link、重复 cap grant、
+  birth id=0、坏 CRC、legacy Commit 兼容）
+
+### 发现并修复 3 个真 bug
+
+| Bug | 现象 | 修复 |
+|-----|------|------|
+| C: version 回退 | 低版本 TXCOMMIT 让 global_version 从 2 倒回 1，并应用额外 birth | apply() 拒绝 commit_version < current；with_wal_path 初始 0 |
+| D: link 重复边 | 重复 TXCOMMIT 产生 2 条相同 A→B 边 | apply() link 按 (from,to,type) 去重 |
+| E: birth id=0 | 非法 WAL 的 BIRTH 0 被注册为对象 | apply() 跳过 object_id=0 |
+
+### 澄清的非 bug
+
+- S-A09 link 无 cap：不是漏洞，commit 时拒绝（之前只测了 stage）
+- 日志 version=0：不是 OCC bug，是 recover() 返回值不完整 + 日志打了错变量
+- WorldService link pre-auth：与 Machine 一致，都是 commit 时检查
+
+### 修复范围
+
+- 只改 src/engine.rs 的 apply() 和 with_wal_path（4 处）
+- 未碰 CapabilityGraph / Machine / veritasd / Forge
+- 测试未改（Grok 原测试中有 3 处假断言/观察脚本已修正为真断言）
+
+### 验证
+
+- cargo test --test security_recovery_audit：22 passed, 0 failed
+- cargo test 全量：308 passed, 0 failed
+- 生产代码修改集中在 src/engine.rs
+
+### 相关 commit
+
+- 576b94f: test: P4 安全/恢复审计 22 测试 + 3 个真 bug 钉死
+- 51c89fa: fix: 修复 3 个 recovery/apply bug
+
+---
+
 ## P0 CapabilityGrant 链闭合完成 — 2026-08-13
 
 ### 已完成（两个 commit）
