@@ -997,7 +997,7 @@ Forge → WorldAdapter → veritasd → WorldService → Kernel → WAL → rest
 
 
 ### 发现
-- veritasd 未暴露 CapabilityGrant 命令，跨身份授权仅通过 ObjectBirth 自动完成
+- CapabilityGrant 已是 Veritas 的正式能力原语（Kernel/Machine/WAL 链路均实现），但 Engine::capability_grant 的 grantor 参数被硬编码为 grantee（self-grant），宪法 §3.5 要求的 from→to 跨对象授权语义在 Engine 层未实现；veritasd 对外命令面未暴露 Capability 命令
 - WorldRuntime 当前采用单 active session 约束，未发现违反架构契约
 - CLI recovery 日志显示"当前版本号: 0"而 Forge world_info() 返回 version=9，疑为日志字段使用错误，单独记债
 - WorldRuntime只维护单session（_current_session），是设计约束而非bug
@@ -1226,6 +1226,55 @@ capability_context = id。此后 capability_context 作为 session 的
 - 三个回归测试: PASS
 - machine_object_link_security: PASS
 
+## 只读架构核对 — 2026-08-13 CapabilityGrant 链闭合状态
+
+### 核对范围（只读，未改任何代码）
+
+| 层 | 文件 | 状态 | 问题 |
+|---|------|------|------|
+| CapabilityGraph::grant | capability.rs:284 | ✅ 正确 | 签名含 grantor/grantee/resource |
+| Engine::capability_grant | engine.rs:1242 | ❌ 错误 | grantor 硬编码为 grantee |
+| KernelCall::CapabilityGrant | kernel.rs:45 | ❌ 不完整 | 缺 grantor 字段 |
+| Machine::CapabilityGrant | machine.rs:327 | ❌ 不完整 | 无法表达 from→to |
+| veritasd JSONL | bin/veritasd.rs | ❌ 未暴露 | 20 个命令，0 个 Capability |
+| Forge adapter/session | forge/forge/world/ | ✅ 边界正确 | 纯适配层，未复制 Ver 语义 |
+
+### 唯一已确认的语义错误
+
+`Engine::capability_grant` 把 grantor 硬编码为 grantee，导致宪法 §3.5
+要求的 from→to 跨对象授权语义在 Engine 层未实现。
+
+`KernelCall::CapabilityGrant` 缺少 grantor 字段、`Machine::CapabilityGrant`
+无法表达 from→to，均属于同一语义缺口向上暴露后的链路不完整，
+不应视为三个独立 bug。
+
+CapabilityGraph 层本身正确。
+
+### 修复路径（Ver 内部闭环 → 公开 → Forge 适配）
+
+P0（Ver 内部闭环）：
+  Engine::capability_grant 加 grantor 参数
+  KernelCall::CapabilityGrant 加 grantor 字段
+  Machine::CapabilityGrant 从 ctx.current_object 取 grantor
+  测试：A grant B → B 操作 A 成功，A ≠ B
+
+P1（veritasd 暴露）：
+  tx_capability_grant 命令（只暴露 Ver 原语，不发明 Forge 接口）
+
+P2（Forge 适配）：
+  WorldAdapter.grant / WorldSession.grant（薄包装，不复制语义）
+
+### 架构边界（本次审计确认）
+
+- Ver = 独立计算机/运行时基础设施
+- veritasd = Ver 的外部接口（JSONL）
+- Forge = 运行在 Ver 之上的应用
+
+Forge 可以使用 Ver 的全部能力，但 Ver 不依赖 Forge，也不包含 Forge。
+CapabilityGrant 是 Ver 的计算机权限原语，Forge 消失后它依然应该存在。
+
+---
+
 ## 架构债：Session/Machine 身份管理统一 — 待执行
 
 ### 问题
@@ -1236,26 +1285,38 @@ Veritas 有两条独立执行入口，各自维护身份上下文：
 
 同一概念两套实现，导致 root/call/capability_context 等身份问题反复出现。
 
-### 方向
-Session 不再自己管理身份，底层走 Machine 指令执行。Machine 的 CALL/RETURN
-是唯一合法的身份切换入口。
+### 当前状态（事实）
+- Machine 的 CALL/RETURN 是完整且有作用域的身份切换机制。
+- Session 仍存在独立的身份管理逻辑（tx_write 手抄了 authorize_intent +
+  enter_object），与 Machine CALL 语义实现分离。
+- 当前已知故障已通过 capability_context bootstrap 等修复消除
+  （多对象事务、WAL recovery 均通过），但双实现未统一。
+- 因此该项属于结构性架构债，不是当前已确认的功能性 bug。
 
-### 执行步骤
-1. 从 Machine 的 CALL handler 中抽出身份切换核心，做成 Engine 上的
-   enter_identity(target) / leave_identity() 方法，独立于寄存器/PC
-2. TransactionContext 加 identity_stack: Vec<IdentityFrame>，
-   CallFrame 瘦身只保留寄存器/PC
-3. Session 的 tx_write 改成 enter_identity + write + leave_identity 对称模式
-4. tx_create_object/tx_link 等逐步迁移
-5. 收紧 current_object/capability_context/identity_stack 可见性为 pub(crate)，
-   删除 enter_object 公开方法，编译期禁止手改身份
-6. 删除 Session 侧手抄的 authorize_intent + enter_object 逻辑
+### 目标（计划）
+- Session 不再维护一套独立的身份切换语义。
+- 身份进入/退出的核心语义由 Engine/TransactionContext 统一实现。
+- Machine CALL/RETURN 与 Session 的隐式 current_object 操作最终共享
+  同一身份作用域机制。
 
-### 不改
+### 执行步骤（计划）
+1. 从 Machine CALL handler 中抽出身份切换核心，形成 Engine 层
+   enter_identity(target) / leave_identity() 方法。
+2. TransactionContext 增加 identity_stack；CallFrame 仅保留 Machine
+   执行所需的寄存器/PC 状态。
+3. Session 的隐式身份绑定操作改用统一的
+   enter_identity + operation + leave_identity 作用域。
+4. 逐步迁移其他依赖 current_object 的 Session 原语。
+5. 收紧 current_object/capability_context/identity_stack 的可见性，
+   删除公开的手工身份切换入口。
+6. 删除 Session 侧重复的 authorize_intent / enter_object 实现。
+
+### 不改（边界）
 - authorize_intent / verify_capability / commit 权限模型
-- capability graph / ObjectBirth grant 逻辑
-- Machine CALL/RETURN 语义（只瘦身 CallFrame，不改变行为）
+- capability graph
+- ObjectBirth 的自动授权逻辑
+- Machine CALL/RETURN 的外部语义
 
 ### 时机
-不紧急。当前多对象事务已修好，全量测试通过。等下次遇到身份相关 bug
-或完成当前 roadmap 主要功能后再执行。
+非紧急。当前多对象事务身份问题已经修复，全量测试通过。
+在下一次身份相关变更或出现重复身份 bug 时实施结构性收敛。
