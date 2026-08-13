@@ -40,13 +40,35 @@
 
 **原因**：目前只测了一种操作顺序（birth A → write A → birth B → link A→B → commit）。需要覆盖更多变体，防止以后改代码时把身份生命周期搞坏。
 
-**解决**：补 3-5 个测试，覆盖不同操作顺序
+**原则**：只增加测试，不修改内核。若测试失败，先分类：
+- ① 真 bug → 修
+- ② 测试假设错误 → 修测试
+- ③ 架构边界导致的预期失败 → 确认预期后标记
+- ④ Session/Machine 架构债 → 不趁机重构
 
-**步骤**：
-1. birth A → birth B → write A → write B → link → commit
-2. birth A → write A → birth B → write B → link → abort（确认回滚）
-3. birth A → birth B → link → write A → write B → commit（link 在 write 之前）
-4. 连续 5 次跨对象 write 后 commit（确认 capability_context 不漂移）
+**第一批测试清单**：
+
+正常路径：
+1. birth A → birth B → write A → write B → commit
+2. birth A → birth B → link A→B → write A → commit
+3. birth A → birth B → write A → link A→B → commit
+
+Grant 路径：
+4. birth A → birth B → grant A→B → write B → commit
+5. birth A → birth B → grant A→B → link B→C → commit
+6. birth A → birth B → grant A→B → write B → link B→A → commit
+
+Abort 路径：
+7. birth A → write A → birth B → write B → abort（确认回滚）
+8. birth A → birth B → grant A→B → abort → capability 不应留下
+
+Recovery 路径：
+9. grant → write/link → commit → WAL recovery → capability + object/link 状态一致
+10. grant → abort → WAL recovery → 不应出现残留 capability
+
+**反向测试（重要）**：
+11. A grant B on C → B 操作 C 成功 → 确认 A 不因此变成 holder
+12. A grant B → B 再尝试 grant C → 验证授权链语义不变
 
 ---
 
