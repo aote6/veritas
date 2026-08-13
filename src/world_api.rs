@@ -404,6 +404,35 @@ impl WorldService {
         })
     }
 
+    pub fn tx_capability_grant(
+        &self,
+        session_id: SessionId,
+        grantor: ObjectId,
+        grantee: ObjectId,
+        capability_type: String,
+        resource: ObjectId,
+    ) -> Result<(), WorldError> {
+        self.with_session_mut(session_id, |kernel, state| {
+            if state.ctx.current_object != grantor {
+                kernel.engine().authorize_intent(
+                    &state.ctx,
+                    &crate::types::AccessIntent::Call(grantor),
+                )?;
+                state.ctx.enter_object(grantor);
+            }
+            kernel.handle(
+                &mut state.ctx,
+                KernelCall::CapabilityGrant {
+                    grantor,
+                    grantee,
+                    capability_type,
+                    resource,
+                },
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn tx_unlink(
         &self,
         session_id: SessionId,

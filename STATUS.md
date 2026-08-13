@@ -1275,6 +1275,36 @@ CapabilityGrant 是 Ver 的计算机权限原语，Forge 消失后它依然应�
 
 ---
 
+## P1 veritasd 外部接口暴露完成 — 2026-08-13
+
+### 已完成
+
+- WorldService::tx_capability_grant 方法
+  - grantor 必须与 current_object 一致，否则先 authorize_intent(Call) + enter_object
+  - 不重新设计授权逻辑，只是薄适配到已有 KernelCall::CapabilityGrant
+- veritasd JSONL 命令 tx_capability_grant
+  - 请求格式：session_id, grantor, grantee, capability_type, resource
+  - 响应格式：ok: true / ok: false + error
+- 新增测试
+  - tests/capability_grant_p1_worldapi.rs：WorldService 层集成测试
+  - tests/capability_grant_p1_jsonlines.rs：JSONL 外部进程 e2e 测试
+
+### 验证结果
+
+- cargo test 全量通过：103 + 2 = 105 passed, 0 failed
+- JSONL e2e 验证完整链路：JSON request → veritasd → WorldApi → Kernel → Engine → CapabilityGraph
+- 未授权 B 操作在 commit 时被拒绝
+- A grant B 后 B 操作成功
+- grantor 语义保持真实（A != B）
+
+### 未做
+
+- Forge 未修改（P2 待做）
+- CapabilityGraph 未修改
+- Engine 授权语义未修改
+
+---
+
 ## P0 CapabilityGrant 链闭合完成 — 2026-08-13
 
 ### 已完成（两个 commit）

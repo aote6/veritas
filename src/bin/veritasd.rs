@@ -289,6 +289,33 @@ fn handle(world: &WorldService, req: &Value) -> Value {
             }
         }
 
+        "tx_capability_grant" => {
+            let sid = match req.get("session_id").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing session_id"}),
+            };
+            let grantor = match req.get("grantor").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing grantor"}),
+            };
+            let grantee = match req.get("grantee").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing grantee"}),
+            };
+            let resource = match req.get("resource").and_then(|v| v.as_u64()) {
+                Some(s) => s,
+                None => return json!({"ok": false, "error": "missing resource"}),
+            };
+            let capability_type = match req.get("capability_type").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(),
+                None => return json!({"ok": false, "error": "missing capability_type"}),
+            };
+            match world.tx_capability_grant(sid, grantor, grantee, capability_type, resource) {
+                Ok(()) => json!({"ok": true}),
+                Err(e) => json!({"ok": false, "error": e.to_string()}),
+            }
+        }
+
         "receipts_since" => {
             let version = req.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
             let limit = req.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
