@@ -1094,17 +1094,15 @@ fn s_a09_link_without_capability() {
     world.tx_commit(sid1).unwrap();
 
     // A tries to link A→B without capability on B.
+    // P4 confirmed: staging succeeds, commit rejects with PermissionDenied.
     let sid = world.tx_begin(Some(a)).unwrap();
     let result = world.tx_link(sid, a, b, "REFERENCES");
-    // Depending on whether link checks target capability — record actual behavior.
-    // Existing machine_object_link_security tests require capability on target.
-    if result.is_ok() {
-        // If allowed, commit and note as observed behavior (document, not force-fail).
-        let _ = world.tx_commit(sid);
-        eprintln!("OBSERVED: link without explicit cap on target was allowed");
-    } else {
-        let _ = world.tx_abort(sid);
-    }
+    assert!(result.is_ok(), "staging link must succeed (commit enforces auth)");
+    let commit_result = world.tx_commit(sid);
+    assert!(
+        commit_result.is_err(),
+        "commit must reject link without target capability"
+    );
     cleanup(&wal);
 }
 
