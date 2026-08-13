@@ -790,8 +790,11 @@ impl VeritasEngine {
             .unwrap_or(0);
         let next_object_id = max_birth_id + 1;
 
+        // Start at 0 so apply() can enforce monotonic commit_version while
+        // replaying in order. Final version is set by the last accepted delta
+        // (or remains 0 for empty WAL). recovered_version is only for logging.
         let engine = VeritasEngine {
-            global_version: AtomicU64::new(recovered_version),
+            global_version: AtomicU64::new(0),
             state_store: StateStore::new(),
             scope_registry: ScopeRegistry::new(),
             commit_lock: Mutex::new(()),
@@ -808,6 +811,7 @@ impl VeritasEngine {
         };
 
         // Step 2c: 按 Commit 顺序依次 apply 每个 Delta
+        // apply() rejects commit_version < current global_version (no regression).
         for delta in &ordered_deltas {
             engine.apply(delta);
         }
@@ -1179,6 +1183,15 @@ impl VeritasEngine {
     /// 步骤顺序不可变更：links/unlinks 必须先于 OWNS 闭包展开，
     /// 否则闭包会漏算本事务内新增的 OWNS 边。
     pub(crate) fn apply(&self, delta: &TransactionDelta) {
+        // BUG C: reject version regression. Do not apply any part of a delta
+        // whose commit_version is strictly less than the current global version.
+        // Equal is allowed (idempotent replay of the same version is rare but
+        // must not regress). Normal commit always uses global_version+1.
+        let current = self.global_version.load(Ordering::Acquire);
+        if delta.commit_version < current {
+            return;
+        }
+
         // 1. State writes
         for (addr, value) in &delta.writes {
             self.state_store.insert(
@@ -1202,10 +1215,13 @@ impl VeritasEngine {
             }
         }
 
-        // 3. Births
+        // 3. Births — ObjectId 0 is reserved (caller identity), never a real object
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &delta.births {
+                if *object_id == 0 {
+                    continue; // BUG E: skip illegal BIRTH id=0
+                }
                 registry.insert(
                     *object_id,
                     crate::types::ObjectRecord::new_state(*object_id),
@@ -1247,14 +1263,20 @@ impl VeritasEngine {
         }
 
         // 5. Links / Unlinks — must happen before OWNS closure (step 6)
+        // Link identity is (from, to, link_type); duplicate edges are ignored (BUG D).
         {
             let mut topo = self.topology.lock().unwrap();
             for (from, to, link_type) in &delta.links {
-                topo.push(LinkEdge {
-                    from: *from,
-                    to: *to,
-                    link_type: *link_type,
+                let exists = topo.iter().any(|e| {
+                    e.from == *from && e.to == *to && e.link_type == *link_type
                 });
+                if !exists {
+                    topo.push(LinkEdge {
+                        from: *from,
+                        to: *to,
+                        link_type: *link_type,
+                    });
+                }
             }
             for (from, to) in &delta.unlinks {
                 topo.retain(|e| e.from != *from || e.to != *to);
