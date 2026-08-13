@@ -1305,6 +1305,60 @@ CapabilityGrant 是 Ver 的计算机权限原语，Forge 消失后它依然应�
 
 ---
 
+## P3 跨对象事务排列组合矩阵完成 — 2026-08-13
+
+### 已完成
+
+- 新增 tests/multi_object_transaction_matrix.rs（21 个测试）
+- 覆盖 ROADMAP 第 3 项全部场景：
+
+正常路径：
+- s01 birth A→B → write A→B → commit
+- s02 birth A→B → link A→B → write A → commit
+- s03 birth A→B → write A → link A→B → commit
+
+Grant 路径：
+- s04 grant A→B on C → write B → commit
+- s05 grant A→B on C → link B→C → commit
+- s06 grant + write B + link B→A（含另授 A 的 link cap）
+- s06b 仅 grant on C 不能授权 link B→A（负例）
+
+Abort 路径：
+- s07 multi-object abort 无残留
+- s08 grant → abort → cap 不残留且 B 仍被拒
+
+Recovery 路径：
+- s09 grant+link+write commit → WAL recovery 一致
+- s10 grant → abort → recovery 无残留 cap
+
+反向测试：
+- s11 grantor 不因 grant 变成该 cap 的 holder
+- s12 B 再 CapabilityGrant：新 root grantor=B（真实语义）
+
+额外覆盖（8 个）：
+- 三对象 grant/write/link 组合
+- 同事务多个 grant
+- abort 后新 tx 不能用旧 grant
+- grant commit 后新 session 可用
+- 连续跨对象 write 无 context 漂移
+- link/unlink + grant 混合
+- commit 前多次 object switch
+- grant 后切换身份再回 A
+
+### 验证结果
+
+- cargo test --test multi_object_transaction_matrix：21 passed, 0 failed
+- cargo test 全量：103 + 21 = 124 passed, 0 failed
+- 无生产代码修改
+- 无 Forge 修改
+- Cargo.lock 未修改
+
+### 相关 commit
+
+- veritas_kernel: 19a799d test: 跨对象事务排列组合矩阵 21 个测试
+
+---
+
 ## P0 CapabilityGrant 链闭合完成 — 2026-08-13
 
 ### 已完成（两个 commit）
