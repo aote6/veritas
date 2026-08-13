@@ -44,6 +44,9 @@ pub struct VeritasEngine {
     object_id_counter: AtomicU64,
     /// Test probe: DependencyInvalidated pairs from last commit. Not for production use.
     last_dep_inv: std::sync::Mutex<Vec<(crate::types::ObjectId, crate::types::ObjectId)>>,
+    /// Identity of the last successfully applied Delta (constitution §3.4 / §4).
+    /// Genesis = ZERO_HASH. Updated only on successful apply path.
+    last_applied_delta_hash: Mutex<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -468,6 +471,7 @@ impl VeritasEngine {
         let global_version = self.global_version.load(Ordering::Acquire);
         let object_id_counter = self.object_id_counter.load(Ordering::Acquire);
         let grant_sequence = self.capability_graph.lock().unwrap().current_sequence();
+        let last_applied_delta_hash = *self.last_applied_delta_hash.lock().unwrap();
 
         WorldSnapshot {
             commitment_hash,
@@ -480,6 +484,7 @@ impl VeritasEngine {
             global_version,
             object_id_counter,
             grant_sequence,
+            last_applied_delta_hash,
         }
     }
 
@@ -498,6 +503,7 @@ impl VeritasEngine {
         self.restore_objects(&snap.objects);
         self.restore_links(&snap.links);
         self.scope_registry.restore_scopes(&snap.scopes);
+        *self.last_applied_delta_hash.lock().unwrap() = snap.last_applied_delta_hash;
         true
     }
 
@@ -747,6 +753,7 @@ impl VeritasEngine {
             controller,
             object_id_counter: AtomicU64::new(1),
             last_dep_inv: Mutex::new(Vec::new()),
+            last_applied_delta_hash: Mutex::new(crate::types::ZERO_HASH),
         }
     }
 
@@ -808,6 +815,7 @@ impl VeritasEngine {
             controller,
             object_id_counter: AtomicU64::new(next_object_id),
             last_dep_inv: std::sync::Mutex::new(Vec::new()),
+            last_applied_delta_hash: Mutex::new(crate::types::ZERO_HASH),
         };
 
         // Step 2c: 按 Commit 顺序依次 apply 每个 Delta
@@ -1365,6 +1373,10 @@ impl VeritasEngine {
         // Global version update
         self.global_version
             .store(delta.commit_version, Ordering::SeqCst);
+
+        // Record last applied Delta identity (constitution continuity).
+        // Does not alter version acceptance/rejection semantics.
+        *self.last_applied_delta_hash.lock().unwrap() = delta.content_hash();
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权
@@ -1778,6 +1790,11 @@ impl VeritasEngine {
 
     pub fn get_global_version(&self) -> Version {
         self.global_version.load(Ordering::Acquire)
+    }
+
+    /// Last successfully applied Delta content hash (ZERO_HASH at genesis).
+    pub fn get_last_applied_delta_hash(&self) -> [u8; 32] {
+        *self.last_applied_delta_hash.lock().unwrap()
     }
 
     /// 返回 WAL 文件路径（用于 Replay 测试）

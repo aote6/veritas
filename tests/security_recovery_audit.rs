@@ -13,8 +13,9 @@ use std::sync::Arc;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{
-    AccessIntent, Address, LinkType, ObjectType, PendingCapabilityGrant, TransactionDelta,
-    VeritasError,
+    AccessIntent, Address, LinkType, ObjectType, PendingCapabilityDelegate,
+    PendingCapabilityGrant, PendingCapabilityRevoke, ScopeChangeType, TransactionDelta,
+    VeritasError, ZERO_HASH,
 };
 use veritas_kernel::wal::WalEntry;
 use veritas_kernel::world_api::WorldService;
@@ -1524,3 +1525,365 @@ fn audit_equal_version_same_content_preserves_root() {
 // same version + same mutations + different actor_id → different
 // content hash → REJECT (not NO-OP). Current production API has no
 // observable content-hash entry point; do not invent a hash here.
+
+// =============================================================================
+// Canonical Identity & Checkpoint Continuity (this round infrastructure)
+// =============================================================================
+
+fn base_delta() -> TransactionDelta {
+    TransactionDelta {
+        tx_id: 1,
+        commit_version: 1,
+        actor_id: 42,
+        writes: vec![(Address::new(1, 1), b"v".to_vec())],
+        scope_changes: vec![(1, ScopeChangeType::Bind, 10)],
+        births: vec![1, 2],
+        deaths: vec![3],
+        freezes: vec![4],
+        links: vec![(1, 2, LinkType::Owns)],
+        unlinks: vec![(5, 6)],
+        capability_grants: vec![PendingCapabilityGrant {
+            capability_id: 100,
+            grant_sequence: 1,
+            cap_type: "Admin".to_string(),
+            grantor: 1,
+            grantee: 2,
+            resource: 3,
+        }],
+        capability_delegates: vec![PendingCapabilityDelegate {
+            capability_id: 100,
+            from: 2,
+            to: 7,
+            cascade_on_revoke: true,
+        }],
+        capability_revokes: vec![PendingCapabilityRevoke {
+            capability_id: 100,
+            holder: 7,
+            cascade_override: Some(true),
+        }],
+        effects: vec![("k".to_string(), b"p".to_vec())],
+    }
+}
+
+#[test]
+fn audit_canonical_identity_same_delta_equal() {
+    let a = base_delta();
+    let b = base_delta();
+    assert_eq!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "identical deltas must produce identical canonical bytes"
+    );
+    assert_eq!(a.content_hash(), b.content_hash());
+}
+
+#[test]
+fn audit_canonical_identity_excludes_tx_id() {
+    let mut a = base_delta();
+    let mut b = base_delta();
+    a.tx_id = 1;
+    b.tx_id = 999;
+    assert_eq!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "tx_id must not participate in canonical identity"
+    );
+}
+
+#[test]
+fn audit_canonical_identity_excludes_commit_version() {
+    let mut a = base_delta();
+    let mut b = base_delta();
+    a.commit_version = 1;
+    b.commit_version = 99;
+    assert_eq!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "commit_version must not participate in canonical identity"
+    );
+}
+
+#[test]
+fn audit_canonical_identity_includes_actor_id() {
+    let mut a = base_delta();
+    let mut b = base_delta();
+    a.actor_id = 1;
+    b.actor_id = 2;
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "actor_id must participate in canonical identity"
+    );
+}
+
+#[test]
+fn audit_canonical_identity_vec_order_matters() {
+    let mut a = base_delta();
+    let mut b = base_delta();
+    a.births = vec![1, 2];
+    b.births = vec![2, 1];
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "Vec order is semantic; births [1,2] != [2,1]"
+    );
+}
+
+#[test]
+fn audit_canonical_identity_string_boundary_safe() {
+    let mut a = empty_delta(1, 1);
+    let mut b = empty_delta(1, 1);
+    a.effects = vec![("ab".to_string(), b"c".to_vec())];
+    b.effects = vec![("a".to_string(), b"bc".to_vec())];
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "string/byte boundary must be unambiguous"
+    );
+
+    let mut c = empty_delta(1, 1);
+    c.effects = vec![
+        ("a".to_string(), b"b".to_vec()),
+        ("c".to_string(), vec![]),
+    ];
+    assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
+}
+
+#[test]
+fn audit_canonical_identity_empty_vs_nonempty_vec() {
+    let mut a = empty_delta(1, 1);
+    let mut b = empty_delta(1, 1);
+    a.births = vec![];
+    b.births = vec![1];
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "empty Vec must not collide with non-empty"
+    );
+}
+
+#[test]
+fn audit_canonical_identity_option_some_none() {
+    let mut a = empty_delta(1, 1);
+    let mut b = empty_delta(1, 1);
+    a.capability_revokes = vec![PendingCapabilityRevoke {
+        capability_id: 1,
+        holder: 2,
+        cascade_override: None,
+    }];
+    b.capability_revokes = vec![PendingCapabilityRevoke {
+        capability_id: 1,
+        holder: 2,
+        cascade_override: Some(true),
+    }];
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "Option None vs Some must differ"
+    );
+    let mut c = empty_delta(1, 1);
+    c.capability_revokes = vec![PendingCapabilityRevoke {
+        capability_id: 1,
+        holder: 2,
+        cascade_override: Some(false),
+    }];
+    assert_ne!(b.canonical_identity_bytes(), c.canonical_identity_bytes());
+    assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
+}
+
+#[test]
+fn audit_canonical_identity_enum_variants() {
+    let mut a = empty_delta(1, 1);
+    let mut b = empty_delta(1, 1);
+    a.scope_changes = vec![(1, ScopeChangeType::Bind, 10)];
+    b.scope_changes = vec![(1, ScopeChangeType::Unbind, 10)];
+    assert_ne!(
+        a.canonical_identity_bytes(),
+        b.canonical_identity_bytes(),
+        "enum variants must produce different identity"
+    );
+
+    let mut c = empty_delta(1, 1);
+    let mut d = empty_delta(1, 1);
+    c.links = vec![(1, 2, LinkType::Owns)];
+    d.links = vec![(1, 2, LinkType::DependsOn)];
+    assert_ne!(c.canonical_identity_bytes(), d.canonical_identity_bytes());
+}
+
+#[test]
+fn audit_canonical_identity_every_semantic_field() {
+    let empty = empty_delta(1, 1);
+    let base = empty.canonical_identity_bytes();
+
+    let cases: Vec<(&str, TransactionDelta)> = vec![
+        ("actor_id", {
+            let mut d = empty_delta(1, 1);
+            d.actor_id = 7;
+            d
+        }),
+        ("writes", {
+            let mut d = empty_delta(1, 1);
+            d.writes = vec![(Address::new(1, 1), b"x".to_vec())];
+            d
+        }),
+        ("scope_changes", {
+            let mut d = empty_delta(1, 1);
+            d.scope_changes = vec![(1, ScopeChangeType::Bind, 1)];
+            d
+        }),
+        ("births", {
+            let mut d = empty_delta(1, 1);
+            d.births = vec![9];
+            d
+        }),
+        ("deaths", {
+            let mut d = empty_delta(1, 1);
+            d.deaths = vec![9];
+            d
+        }),
+        ("freezes", {
+            let mut d = empty_delta(1, 1);
+            d.freezes = vec![9];
+            d
+        }),
+        ("links", {
+            let mut d = empty_delta(1, 1);
+            d.links = vec![(1, 2, LinkType::References)];
+            d
+        }),
+        ("unlinks", {
+            let mut d = empty_delta(1, 1);
+            d.unlinks = vec![(1, 2)];
+            d
+        }),
+        ("capability_grants", {
+            let mut d = empty_delta(1, 1);
+            d.capability_grants = vec![PendingCapabilityGrant {
+                capability_id: 1,
+                grant_sequence: 1,
+                cap_type: "T".into(),
+                grantor: 1,
+                grantee: 2,
+                resource: 3,
+            }];
+            d
+        }),
+        ("capability_delegates", {
+            let mut d = empty_delta(1, 1);
+            d.capability_delegates = vec![PendingCapabilityDelegate {
+                capability_id: 1,
+                from: 1,
+                to: 2,
+                cascade_on_revoke: false,
+            }];
+            d
+        }),
+        ("capability_revokes", {
+            let mut d = empty_delta(1, 1);
+            d.capability_revokes = vec![PendingCapabilityRevoke {
+                capability_id: 1,
+                holder: 2,
+                cascade_override: None,
+            }];
+            d
+        }),
+        ("effects", {
+            let mut d = empty_delta(1, 1);
+            d.effects = vec![("e".into(), b"1".to_vec())];
+            d
+        }),
+    ];
+
+    for (name, d) in cases {
+        assert_ne!(
+            d.canonical_identity_bytes(),
+            base,
+            "field `{name}` must affect canonical identity"
+        );
+    }
+
+    let mut tx_only = empty_delta(1, 1);
+    tx_only.tx_id = 12345;
+    assert_eq!(tx_only.canonical_identity_bytes(), base);
+    let mut ver_only = empty_delta(1, 1);
+    ver_only.commit_version = 77;
+    assert_eq!(ver_only.canonical_identity_bytes(), base);
+}
+
+#[test]
+fn audit_last_applied_delta_hash_genesis_is_zero() {
+    let (wal, kernel, _world) = world_pair("lah_genesis");
+    assert_eq!(
+        kernel.get_last_applied_delta_hash(),
+        ZERO_HASH,
+        "genesis last_applied_delta_hash must be ZERO_HASH"
+    );
+    assert_eq!(kernel.get_global_version(), 0);
+    cleanup(&wal);
+}
+
+#[test]
+fn audit_last_applied_delta_hash_updates_on_apply() {
+    let (wal, kernel, _world) = world_pair("lah_apply");
+    let d = make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]);
+    let expected = d.content_hash();
+    kernel.test_apply(&d);
+    assert_eq!(
+        kernel.get_last_applied_delta_hash(),
+        expected,
+        "successful apply must record delta content_hash"
+    );
+    cleanup(&wal);
+}
+
+#[test]
+fn audit_checkpoint_preserves_last_applied_delta_hash() {
+    let (wal, kernel, _world) = world_pair("lah_ckpt");
+    let d = make_delta(1, 1, 5, vec![], vec![11], vec![], vec![], vec![], vec![], vec![]);
+    kernel.test_apply(&d);
+    let h = kernel.get_last_applied_delta_hash();
+    assert_ne!(h, ZERO_HASH);
+
+    let snap = kernel.create_checkpoint();
+    assert_eq!(
+        snap.last_applied_delta_hash, h,
+        "create_checkpoint must persist last_applied_delta_hash"
+    );
+
+    let d2 = make_delta(2, 2, 5, vec![], vec![12], vec![], vec![], vec![], vec![], vec![]);
+    kernel.test_apply(&d2);
+    assert_ne!(kernel.get_last_applied_delta_hash(), h);
+
+    assert!(kernel.restore_checkpoint(&snap));
+    assert_eq!(
+        kernel.get_last_applied_delta_hash(),
+        h,
+        "restore_checkpoint must restore last_applied_delta_hash"
+    );
+    assert_eq!(kernel.get_global_version(), 1);
+    cleanup(&wal);
+}
+
+#[test]
+fn audit_checkpoint_roundtrip_identity_continuity() {
+    let (wal, kernel, _world) = world_pair("lah_roundtrip");
+    let d = make_delta(1, 1, 9, vec![], vec![21], vec![], vec![], vec![], vec![], vec![]);
+    kernel.test_apply(&d);
+    let hash_a = kernel.get_last_applied_delta_hash();
+    let ver_a = kernel.get_global_version();
+    let root_a = kernel.test_engine().root_hash();
+
+    let snap = kernel.create_checkpoint();
+
+    let d2 = make_delta(2, 2, 9, vec![], vec![22], vec![], vec![], vec![], vec![], vec![]);
+    kernel.test_apply(&d2);
+    assert_ne!(kernel.get_last_applied_delta_hash(), hash_a);
+
+    assert!(kernel.restore_checkpoint(&snap));
+    assert_eq!(kernel.get_global_version(), ver_a);
+    assert_eq!(kernel.get_last_applied_delta_hash(), hash_a);
+    assert_eq!(kernel.test_engine().root_hash(), root_a);
+    assert!(kernel.list_object_ids().contains(&21));
+    assert!(!kernel.list_object_ids().contains(&22));
+    cleanup(&wal);
+}

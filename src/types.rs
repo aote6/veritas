@@ -848,9 +848,157 @@ impl TransactionDelta {
             effects,
         })
     }
+
+    /// Canonical identity bytes for Delta Identity (constitution §3.3).
+    ///
+    /// Independent of WAL `serialize()`. Deterministic, boundary-safe binary
+    /// encoding. Excludes `tx_id` and `commit_version`. Includes `actor_id`
+    /// and every semantic mutation field, preserving Vec order.
+    ///
+    /// Encoding rules (frozen constitution §3.3):
+    /// - integers: fixed-width little-endian (u64 = 8 bytes)
+    /// - strings / byte arrays: u64 length prefix + raw bytes
+    /// - enums: explicit stable tags
+    /// - collections: u64 count + elements in original order
+    /// - field order: ACTOR, WRITES, SCOPE_CHANGES, BIRTHS, DEATHS, FREEZES,
+    ///   LINKS, UNLINKS, CAPABILITY_GRANTS, CAPABILITY_DELEGATES,
+    ///   CAPABILITY_REVOKES, EFFECTS
+    pub fn canonical_identity_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+
+        // ACTOR
+        buf.extend_from_slice(&self.actor_id.to_le_bytes());
+
+        // WRITES: count + (object_id, state_id, value_len, value)*
+        buf.extend_from_slice(&(self.writes.len() as u64).to_le_bytes());
+        for (addr, val) in &self.writes {
+            buf.extend_from_slice(&addr.object_id.to_le_bytes());
+            buf.extend_from_slice(&addr.state_id.to_le_bytes());
+            buf.extend_from_slice(&(val.len() as u64).to_le_bytes());
+            buf.extend_from_slice(val);
+        }
+
+        // SCOPE_CHANGES: count + (scope_id, tag, state_id)*
+        // tag: Bind=0, Unbind=1
+        buf.extend_from_slice(&(self.scope_changes.len() as u64).to_le_bytes());
+        for (scope_id, change_type, state_id) in &self.scope_changes {
+            buf.extend_from_slice(&scope_id.to_le_bytes());
+            let tag: u8 = match change_type {
+                ScopeChangeType::Bind => 0,
+                ScopeChangeType::Unbind => 1,
+            };
+            buf.push(tag);
+            buf.extend_from_slice(&state_id.to_le_bytes());
+        }
+
+        // BIRTHS
+        buf.extend_from_slice(&(self.births.len() as u64).to_le_bytes());
+        for id in &self.births {
+            buf.extend_from_slice(&id.to_le_bytes());
+        }
+
+        // DEATHS
+        buf.extend_from_slice(&(self.deaths.len() as u64).to_le_bytes());
+        for id in &self.deaths {
+            buf.extend_from_slice(&id.to_le_bytes());
+        }
+
+        // FREEZES
+        buf.extend_from_slice(&(self.freezes.len() as u64).to_le_bytes());
+        for id in &self.freezes {
+            buf.extend_from_slice(&id.to_le_bytes());
+        }
+
+        // LINKS: count + (from, to, link_type_u8)*
+        buf.extend_from_slice(&(self.links.len() as u64).to_le_bytes());
+        for (from, to, link_type) in &self.links {
+            buf.extend_from_slice(&from.to_le_bytes());
+            buf.extend_from_slice(&to.to_le_bytes());
+            buf.push(*link_type as u8);
+        }
+
+        // UNLINKS
+        buf.extend_from_slice(&(self.unlinks.len() as u64).to_le_bytes());
+        for (from, to) in &self.unlinks {
+            buf.extend_from_slice(&from.to_le_bytes());
+            buf.extend_from_slice(&to.to_le_bytes());
+        }
+
+        // CAPABILITY_GRANTS
+        buf.extend_from_slice(&(self.capability_grants.len() as u64).to_le_bytes());
+        for g in &self.capability_grants {
+            buf.extend_from_slice(&g.capability_id.to_le_bytes());
+            buf.extend_from_slice(&g.grant_sequence.to_le_bytes());
+            buf.extend_from_slice(&g.grantor.to_le_bytes());
+            buf.extend_from_slice(&g.grantee.to_le_bytes());
+            buf.extend_from_slice(&g.resource.to_le_bytes());
+            let tb = g.cap_type.as_bytes();
+            buf.extend_from_slice(&(tb.len() as u64).to_le_bytes());
+            buf.extend_from_slice(tb);
+        }
+
+        // CAPABILITY_DELEGATES
+        buf.extend_from_slice(&(self.capability_delegates.len() as u64).to_le_bytes());
+        for d in &self.capability_delegates {
+            buf.extend_from_slice(&d.capability_id.to_le_bytes());
+            buf.extend_from_slice(&d.from.to_le_bytes());
+            buf.extend_from_slice(&d.to.to_le_bytes());
+            buf.push(if d.cascade_on_revoke { 1u8 } else { 0u8 });
+        }
+
+        // CAPABILITY_REVOKES
+        // cascade_override: 0 = None, 1 = Some(true), 2 = Some(false)
+        buf.extend_from_slice(&(self.capability_revokes.len() as u64).to_le_bytes());
+        for r in &self.capability_revokes {
+            buf.extend_from_slice(&r.capability_id.to_le_bytes());
+            buf.extend_from_slice(&r.holder.to_le_bytes());
+            let tag: u8 = match r.cascade_override {
+                None => 0,
+                Some(true) => 1,
+                Some(false) => 2,
+            };
+            buf.push(tag);
+        }
+
+        // EFFECTS: count + (key_len, key, payload_len, payload)*
+        buf.extend_from_slice(&(self.effects.len() as u64).to_le_bytes());
+        for (key, payload) in &self.effects {
+            let kb = key.as_bytes();
+            buf.extend_from_slice(&(kb.len() as u64).to_le_bytes());
+            buf.extend_from_slice(kb);
+            buf.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+            buf.extend_from_slice(payload);
+        }
+
+        buf
+    }
+
+    /// Content hash of this Delta for identity comparison.
+    /// Uses the same FNV-1a byte hash as the rest of the kernel; result is
+    /// expanded to 32 bytes (first 8 = LE u64, remainder zero) to match
+    /// the Hash / commitment_hash width used elsewhere.
+    pub fn content_hash(&self) -> [u8; 32] {
+        delta_content_hash(&self.canonical_identity_bytes())
+    }
 }
 
+/// Fixed zero hash for genesis / no-applied-delta (constitution §4).
+pub const ZERO_HASH: [u8; 32] = [0u8; 32];
 
+/// Hash canonical identity bytes into a 32-byte Hash value.
+/// Reuses the kernel's existing FNV-1a over bytes (no new algorithm).
+pub fn delta_content_hash(identity_bytes: &[u8]) -> [u8; 32] {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut h = FNV_OFFSET_BASIS;
+    for &b in identity_bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    let mut out = [0u8; 32];
+    out[0..8].copy_from_slice(&h.to_le_bytes());
+    out
+}
 
 /// WorldSnapshot 是 Stage 3.4b 规范的恢复协议（Serialization Contract）
 /// 仅保存稳定的纯语义数据，绝对不与子模块的内部数据结构绑定。
@@ -870,6 +1018,9 @@ pub struct WorldSnapshot {
     pub global_version: Version,
     pub object_id_counter: u64,
     pub grant_sequence: u64,
+    /// Identity of the last successfully applied Delta (constitution §3.4 / §4).
+    /// Genesis / no applied delta = ZERO_HASH.
+    pub last_applied_delta_hash: [u8; 32],
 }
 
 /// Object 的稳定语义快照。不绑定 ObjectRecord 内部布局。

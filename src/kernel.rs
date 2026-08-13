@@ -342,6 +342,10 @@ impl Kernel {
         self.engine.get_global_version()
     }
 
+    pub fn get_last_applied_delta_hash(&self) -> [u8; 32] {
+        self.engine.get_last_applied_delta_hash()
+    }
+
     // ----- Runtime-internal mutation surface (Machine / WorldService only) -----
     // External production code must use handle() or WorldService.
     // Integration tests use crate::test_api::KernelTestExt.
