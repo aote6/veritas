@@ -1528,3 +1528,54 @@ Veritas 有两条独立执行入口，各自维护身份上下文：
 ## P4 Residual Gap Audit (2026-08-13)
 - **漏洞**: `src/engine.rs:1191` 仅校验 `delta.commit_version < current`，导致同版本号伪造 Payload 可穿透应用改写状态。
 - **状态**: 已在 `tests/security_recovery_audit.rs` 增加 `audit_equal_version_residual_gap_red` 红测试钉死，成功亮红（FAILED），生产代码 0 修改，等待修复。
+
+## P4 Residual Gap 修复完成 — 2026-08-13
+
+### 完整修复链
+
+1. **宪法补充**：新增 `docs/constitution/commit_version.md`（第七份宪法）
+   - 定义 commit_version 是 World State 线性提交序号，不是 Delta 唯一身份
+   - 定义 Delta Identity = (commit_version, delta_content_hash)
+   - 定义 apply() 准入状态机（stale reject / equal-no-op-or-reject / next-apply / gap-reject）
+
+2. **Canonical Identity 基础设施**（commit `413907a`）
+   - `TransactionDelta::canonical_identity_bytes()`：LE binary 编码
+   - 排除 tx_id 和 commit_version，包含 actor_id
+   - `TransactionDelta::content_hash()`：FNV-1a → [u8; 32]
+   - `ZERO_HASH` 常量：genesis 初始值
+   - `VeritasEngine.last_applied_delta_hash`：成功 apply 后记录
+   - `WorldSnapshot.last_applied_delta_hash`：checkpoint 保存/恢复
+
+3. **apply() 版本状态机**（commit `c6acd75`）
+   - Case A: version < current → REJECT
+   - Case B: version == current
+     - same content_hash → NO-OP（幂等重放）
+     - different content_hash → REJECT（历史冲突）
+   - Case C: version == current + 1 → APPLY（正常推进）
+   - Case D: version > current + 1 → REJECT（版本跳跃）
+   - 所有 REJECT/NO-OP 路径在任何 mutation 之前返回
+
+### 测试结果
+
+- `security_recovery_audit`: 45 passed, 0 failed
+- 全量: 331 passed, 0 failed
+- 原两个 EXPECTED RED 已转绿：
+  - `audit_equal_version_different_content_is_rejected`
+  - `audit_version_gap_is_rejected`
+
+### 未解决（下一阶段）
+
+1. **root_hash 未纳入 global_version 和 last_applied_delta_hash**
+   - 宪法 §3.4 要求纳入
+   - 当前 root_hash 仍是五组件 World State commitment
+   - 需要单独决策后再修改
+
+2. **audit_wal_empty_delta_bumps_version 断言已对齐宪法**
+   - 原测试期望 version gap 推进 global_version
+   - 已改为期望 gap 必须 REJECT
+
+### 相关 commit
+
+- `b80a18a` docs: add commit version and delta identity constitution v0.1
+- `413907a` feat: add canonical delta identity and checkpoint continuity
+- `c6acd75` fix: implement apply() version acceptance state machine
