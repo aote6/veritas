@@ -1191,14 +1191,39 @@ impl VeritasEngine {
     /// 步骤顺序不可变更：links/unlinks 必须先于 OWNS 闭包展开，
     /// 否则闭包会漏算本事务内新增的 OWNS 边。
     pub(crate) fn apply(&self, delta: &TransactionDelta) {
-        // BUG C: reject version regression. Do not apply any part of a delta
-        // whose commit_version is strictly less than the current global version.
-        // Equal is allowed (idempotent replay of the same version is rare but
-        // must not regress). Normal commit always uses global_version+1.
+        // Version acceptance/rejection state machine (constitution commit_version.md §5).
+        // All REJECT and NO-OP paths return before any mutation.
+        //
+        // current_version = global_version
+        // current_hash    = last_applied_delta_hash
+        //
+        // A: delta.commit_version < current          → REJECT (stale)
+        // B: delta.commit_version == current
+        //      content_hash == current_hash          → NO-OP  (idempotent replay)
+        //      content_hash != current_hash          → REJECT (history conflict)
+        // C: delta.commit_version == current + 1     → APPLY  (normal next)
+        // D: delta.commit_version > current + 1      → REJECT (version gap)
         let current = self.global_version.load(Ordering::Acquire);
         if delta.commit_version < current {
+            // Case A: stale version — reject, zero mutation
             return;
         }
+        if delta.commit_version == current {
+            // Case B: equal version — distinguish same content vs conflict
+            let current_hash = *self.last_applied_delta_hash.lock().unwrap();
+            if delta.content_hash() == current_hash {
+                // Same content → idempotent replay, zero mutation
+                return;
+            } else {
+                // Different content → history conflict, reject, zero mutation
+                return;
+            }
+        }
+        if delta.commit_version > current + 1 {
+            // Case D: version gap — reject, zero mutation
+            return;
+        }
+        // Case C: delta.commit_version == current + 1 → proceed to mutate
 
         // 1. State writes
         for (addr, value) in &delta.writes {

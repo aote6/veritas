@@ -866,6 +866,8 @@ fn audit_wal_empty_delta_bumps_version() {
         let _ = birth_kernel(&k);
         snap = snapshot_world(&k);
     }
+    // Inject a version-gap empty delta (current+5). Constitution §5 case D:
+    // version > current + 1 must REJECT with zero mutation.
     let delta = empty_delta(70, snap.version + 5);
     append_wal_entry(&wal, &WalEntry::TransactionCommitted(delta));
 
@@ -877,11 +879,11 @@ fn audit_wal_empty_delta_bumps_version() {
         snap.version + 5,
         v
     );
-    // apply stores delta.commit_version — expect jump.
+    // Version gap must be rejected: global_version stays at pre-gap value.
     assert_eq!(
         v,
-        snap.version + 5,
-        "empty TransactionCommitted still updates global_version via apply"
+        snap.version,
+        "version-gap empty TransactionCommitted must be rejected; global_version must not jump"
     );
     // Objects unchanged.
     assert_eq!(k2.list_object_ids().len(), snap.ids.len());
