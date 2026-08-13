@@ -1359,6 +1359,43 @@ Recovery 路径：
 
 ---
 
+## P4 独立审计 + equal-version residual gap — 2026-08-13
+
+### 审计结论
+
+- BUG C（version 回退）：PASS，低版本 delta 整笔不落地
+- BUG D（link 重复边）：PASS，(from,to,type) 去重正确
+- BUG E（birth id=0）：PASS，宪法 ObjectId=0 保留生效
+
+### 新发现：equal-version residual gap（未修）
+
+**位置**：src/engine.rs apply() 入口 version gate
+
+**现状**：如果 delta.commit_version 小于 current 则拒绝，等于 current 仍然 apply。
+
+**风险**：同 version 不同内容的 crafted WAL 会被完整 apply，
+造成额外对象/状态覆盖/死亡副作用污染。
+
+**宪法现状**：
+- global_version 是 World State，单调递增
+- tx_id 不在 World State（可推导）
+- 未规定 commit_version 必须唯一，也未规定同 version 处理策略
+
+**为什么现在不修**：
+- 直接改成小于等于可能误杀合法的重复 replay / checkpoint 语义
+- 需要先研究 tx_id 是否应参与 replay identity
+- 需要确认 WAL 是否有 CRC/hash 可以绑定 delta
+
+**下一轮任务（只研究 + 写测试，不修生产代码）**：
+1. 查宪法对 commit_version 唯一性的定义
+2. 查 TransactionCommitted 的唯一身份是什么
+3. 重复同内容 TXCOMMIT 应允许还是拒绝
+4. 同 version 不同内容应怎样处理
+5. checkpoint/recovery 是否依赖 equal-version
+6. 写红测试钉死预期行为
+
+---
+
 ## P4 安全/恢复审计 + 3 个 bug 修复完成 — 2026-08-13
 
 ### 审计覆盖
