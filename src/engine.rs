@@ -336,6 +336,13 @@ impl VeritasEngine {
         cap_graph.is_capability_valid(cap_id) && cap_graph.holds(cap_id, holder)
     }
 
+    /// 测试专用只读转发：不改变 CapabilityGraph 的内部模型，
+    /// 仅暴露既有的 snapshot_capabilities()，用于验证 grantor/grantee 语义。
+    #[doc(hidden)]
+    pub fn snapshot_capabilities_for_test(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
+        self.capability_graph.lock().unwrap().snapshot_capabilities()
+    }
+
     /// 只读查询：capability_graph 当前的 grant_sequence 计数器值。测试用于推算 cap_id。
     pub fn capability_sequence(&self) -> u64 {
         let cap_graph = self.capability_graph.lock().unwrap();

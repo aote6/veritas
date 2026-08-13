@@ -45,6 +45,7 @@ pub trait KernelTestExt {
     ) -> Result<(), VeritasError>;
     fn test_attach_capability(&self, ctx: &mut TransactionContext, cap_id: u64);
     fn test_engine(&self) -> &VeritasEngine;
+    fn test_capability_records(&self) -> Vec<crate::types::CapabilitySemanticRecord>;
     fn test_init_state_in_tx(
         &self,
         ctx: &mut TransactionContext,
@@ -112,6 +113,9 @@ impl KernelTestExt for Kernel {
     }
     fn test_engine(&self) -> &VeritasEngine {
         self.engine()
+    }
+    fn test_capability_records(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
+        self.engine().snapshot_capabilities_for_test()
     }
     fn test_init_state_in_tx(
         &self,
