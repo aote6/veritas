@@ -1003,3 +1003,44 @@ fn audit_write_cross_object_still_denied() {
     assert_eq!(kernel.state_root(), root);
     cleanup(&wal);
 }
+
+// =============================================================================
+// Part 5: P4 Residual Gap Audit (equal-version different payload exploit)
+// =============================================================================
+
+#[test]
+fn audit_equal_version_residual_gap_red() {
+    let (wal, kernel, world) = world_pair("gap_red");
+    
+    // 1. 提交正常事务，拉高全局版本号
+    let sid = world.tx_begin(None).unwrap();
+    let obj_a = world.tx_create_object(sid).unwrap();
+    world.tx_commit(sid).unwrap();
+
+    let current_version = kernel.test_engine().get_global_version();
+    assert!(current_version > 0);
+
+    // 2. 构造一个同 Version 但含有不同 payload (伪造 DEATH) 的 Delta 文本
+    let malicious_payload = format!(
+        "TXCOMMIT TX=9999 VERSION={} ACTOR=0 DEATH={} END",
+        current_version, obj_a
+    );
+
+    let malicious_delta = TransactionDelta::deserialize(&malicious_payload)
+        .expect("Failed to deserialize crafted delta text");
+
+    // 3. 尝试重放/应用该 Delta
+    let apply_result = std::panic::catch_unwind(|| {
+        kernel.test_apply(&malicious_delta);
+    });
+
+    // 预期安全行为：同 version 不同内容必须被拒绝 (Err/Panic)
+    // 现状 (Gap)：1191 行只检查 delta.commit_version < current，导致同版本直接穿透并杀死对象
+    assert!(
+        apply_result.is_err(),
+        "RED TEST FAILED: Engine accepted crafted Delta with equal version ({}) and different payload!",
+        current_version
+    );
+
+    cleanup(&wal);
+}

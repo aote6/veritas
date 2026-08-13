@@ -1524,3 +1524,7 @@ Veritas 有两条独立执行入口，各自维护身份上下文：
 ### 时机
 非紧急。当前多对象事务身份问题已经修复，全量测试通过。
 在下一次身份相关变更或出现重复身份 bug 时实施结构性收敛。
+
+## P4 Residual Gap Audit (2026-08-13)
+- **漏洞**: `src/engine.rs:1191` 仅校验 `delta.commit_version < current`，导致同版本号伪造 Payload 可穿透应用改写状态。
+- **状态**: 已在 `tests/security_recovery_audit.rs` 增加 `audit_equal_version_residual_gap_red` 红测试钉死，成功亮红（FAILED），生产代码 0 修改，等待修复。

@@ -11,6 +11,7 @@ use crate::types::*;
 /// Extension trait exposing test-only mutation helpers on Kernel.
 /// Production code paths use `Kernel::handle` or `WorldService`.
 pub trait KernelTestExt {
+    fn test_apply(&self, delta: &TransactionDelta);
     fn test_begin(&self) -> TransactionContext;
     fn test_begin_in_object(&self, object_id: ObjectId) -> TransactionContext;
     fn test_read(
@@ -60,6 +61,7 @@ pub trait KernelTestExt {
 }
 
 impl KernelTestExt for Kernel {
+    fn test_apply(&self, delta: &TransactionDelta) { self.engine().apply(delta); }
     fn test_begin(&self) -> TransactionContext {
         self.begin()
     }
