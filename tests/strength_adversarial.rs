@@ -110,10 +110,11 @@ fn s_a01_illegal_grantor() {
         "illegal grantor B from actor A must be rejected; got Ok({:?})",
         result.ok()
     );
+    let err = result.unwrap_err();
     assert!(
-        is_permission_denied(&result.unwrap_err())
-            || true, // accept any deterministic error; PermissionDenied preferred
-        "expected permission-style error"
+        is_permission_denied(&err),
+        "expected permission-style error, got {:?}",
+        err
     );
 
     // Abort must leave no residual capability records for this grant.
@@ -956,9 +957,9 @@ fn s_e04_stress_wide_capability_graph() {
     for &r in &resources {
         // Grant from holder (self) to grantee on resource r.
         // Need to be in holder context — creator already is.
-        let res = world.tx_capability_grant(sid, holder, grantee, "AdminCap".into(), r);
-        // Some may fail if semantics require special conditions; collect outcomes.
-        let _ = res;
+        world
+            .tx_capability_grant(sid, holder, grantee, "AdminCap".into(), r)
+            .expect("creator grant to grantee must succeed");
     }
     world.tx_commit(sid).unwrap();
     let caps = kernel.test_capability_records();
