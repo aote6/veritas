@@ -1219,8 +1219,11 @@ impl VeritasEngine {
                 return;
             }
         }
-        if delta.commit_version > current + 1 {
-            // Case D: version gap — reject, zero mutation
+        if delta.commit_version > current.saturating_add(1) {
+            // Case D: version gap — reject, zero mutation.
+            // saturating_add(1): when current == u64::MAX, no representable
+            // next version exists; any delta with version > MAX is impossible,
+            // and delta with version == MAX is already handled by Case B.
             return;
         }
         // Case C: delta.commit_version == current + 1 → proceed to mutate
