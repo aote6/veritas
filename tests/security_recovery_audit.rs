@@ -13,7 +13,8 @@ use std::sync::Arc;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{
-    AccessIntent, LinkType, ObjectType, PendingCapabilityGrant, TransactionDelta, VeritasError,
+    AccessIntent, Address, LinkType, ObjectType, PendingCapabilityGrant, TransactionDelta,
+    VeritasError,
 };
 use veritas_kernel::wal::WalEntry;
 use veritas_kernel::world_api::WorldService;
@@ -1005,42 +1006,521 @@ fn audit_write_cross_object_still_denied() {
 }
 
 // =============================================================================
-// Part 5: P4 Residual Gap Audit (equal-version different payload exploit)
+// Part 5: Commit Version & Delta Identity Constitution v0.1 — behavior matrix
+//
+// Constitution: docs/constitution/commit_version.md
+//
+// apply() target state machine:
+//   version <  current              → REJECT  (atomic, no mutation)
+//   version == current && same hash → NO-OP   (idempotent, root/version unchanged)
+//   version == current && diff hash → REJECT  (atomic, no mutation)
+//   version == current + 1          → APPLY
+//   version >  current + 1          → REJECT  (atomic, no mutation)
+//
+// Production code is NOT modified in this audit. Tests that fail because the
+// constitution is not yet implemented are EXPECTED RED.
 // =============================================================================
 
+/// Helper: construct a TransactionDelta with explicit fields.
+fn make_delta(
+    tx_id: u64,
+    version: u64,
+    actor_id: u64,
+    writes: Vec<(Address, Vec<u8>)>,
+    births: Vec<u64>,
+    deaths: Vec<u64>,
+    freezes: Vec<u64>,
+    links: Vec<(u64, u64, LinkType)>,
+    unlinks: Vec<(u64, u64)>,
+    effects: Vec<(String, Vec<u8>)>,
+) -> TransactionDelta {
+    TransactionDelta {
+        tx_id,
+        commit_version: version,
+        actor_id,
+        writes,
+        scope_changes: vec![],
+        births,
+        deaths,
+        freezes,
+        links,
+        unlinks,
+        capability_grants: vec![],
+        capability_delegates: vec![],
+        capability_revokes: vec![],
+        effects,
+    }
+}
+
+/// 1. First apply: current=0, incoming.version=1 → APPLY
 #[test]
-fn audit_equal_version_residual_gap_red() {
-    let (wal, kernel, world) = world_pair("gap_red");
-    
-    // 1. 提交正常事务，拉高全局版本号
-    let sid = world.tx_begin(None).unwrap();
-    let obj_a = world.tx_create_object(sid).unwrap();
-    world.tx_commit(sid).unwrap();
+fn audit_commit_version_first_apply() {
+    let (wal, kernel, _world) = world_pair("cv_first");
 
-    let current_version = kernel.test_engine().get_global_version();
-    assert!(current_version > 0);
+    assert_eq!(kernel.get_global_version(), 0, "precondition: start at version 0");
+    let before = snapshot_world(&kernel);
 
-    // 2. 构造一个同 Version 但含有不同 payload (伪造 DEATH) 的 Delta 文本
-    let malicious_payload = format!(
-        "TXCOMMIT TX=9999 VERSION={} ACTOR=0 DEATH={} END",
-        current_version, obj_a
+    // Minimal new delta at version 1: birth object 1
+    let delta = make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![1],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
     );
 
-    let malicious_delta = TransactionDelta::deserialize(&malicious_payload)
-        .expect("Failed to deserialize crafted delta text");
+    kernel.test_apply(&delta);
 
-    // 3. 尝试重放/应用该 Delta
-    let apply_result = std::panic::catch_unwind(|| {
-        kernel.test_apply(&malicious_delta);
-    });
-
-    // 预期安全行为：同 version 不同内容必须被拒绝 (Err/Panic)
-    // 现状 (Gap)：1191 行只检查 delta.commit_version < current，导致同版本直接穿透并杀死对象
+    let after = snapshot_world(&kernel);
+    assert_eq!(
+        after.version, 1,
+        "APPLY version 1 must advance global_version to 1"
+    );
     assert!(
-        apply_result.is_err(),
-        "RED TEST FAILED: Engine accepted crafted Delta with equal version ({}) and different payload!",
-        current_version
+        after.ids.contains(&1),
+        "birth in delta must be visible in World State"
+    );
+    assert_ne!(
+        before.root, after.root,
+        "first APPLY must change root_hash (new object)"
     );
 
     cleanup(&wal);
 }
+
+/// 2. Consecutive apply: version 1 then version 2 → both APPLY
+#[test]
+fn audit_commit_version_consecutive_apply() {
+    let (wal, kernel, _world) = world_pair("cv_consec");
+
+    assert_eq!(kernel.get_global_version(), 0);
+
+    let d1 = make_delta(
+        10,
+        1,
+        0,
+        vec![],
+        vec![10],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&d1);
+    assert_eq!(kernel.get_global_version(), 1);
+    assert!(kernel.list_object_ids().contains(&10));
+
+    let d2 = make_delta(
+        20,
+        2,
+        0,
+        vec![(Address::new(10, 0), b"v2-payload".to_vec())],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    let root_after_1 = kernel.state_root();
+    kernel.test_apply(&d2);
+
+    assert_eq!(
+        kernel.get_global_version(),
+        2,
+        "second consecutive APPLY must advance global_version 1 → 2"
+    );
+    assert_ne!(
+        root_after_1,
+        kernel.state_root(),
+        "write in version-2 delta must change root_hash"
+    );
+
+    cleanup(&wal);
+}
+
+/// 3. Equal version + same content → NO-OP (idempotent)
+///
+/// tx_id is NOT part of Delta Identity; different tx_id with identical
+/// canonical content must still be recognized as the same Delta.
+#[test]
+fn audit_equal_version_same_content_is_idempotent() {
+    let (wal, kernel, _world) = world_pair("cv_same_content");
+
+    let d1 = make_delta(
+        100,
+        1,
+        0,
+        vec![],
+        vec![42],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&d1);
+    assert_eq!(kernel.get_global_version(), 1);
+    let snap_after_apply = snapshot_world(&kernel);
+    let root_after_apply = kernel.state_root();
+
+    // Same content, different tx_id, same version
+    let d1_replay = make_delta(
+        9999, // different tx_id — must not matter
+        1,
+        0,
+        vec![],
+        vec![42],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&d1_replay);
+
+    let snap_after_noop = snapshot_world(&kernel);
+    assert_eq!(
+        snap_after_noop.version, 1,
+        "NO-OP must leave global_version unchanged"
+    );
+    assert_eq!(
+        kernel.state_root(),
+        root_after_apply,
+        "NO-OP must leave root_hash completely unchanged"
+    );
+    assert_eq!(
+        snap_after_noop, snap_after_apply,
+        "NO-OP must leave all observable World State components unchanged"
+    );
+
+    cleanup(&wal);
+}
+
+/// 4. Equal version + different content → REJECT (history conflict)
+///
+/// Upgrade of the former audit_equal_version_residual_gap_red.
+/// Core residual-gap contract: same version, different payload must not mutate.
+#[test]
+fn audit_equal_version_different_content_is_rejected() {
+    let (wal, kernel, world) = world_pair("cv_diff_content");
+
+    // Establish version 1 with a known write
+    let sid = world.tx_begin(None).unwrap();
+    let obj = world.tx_create_object(sid).unwrap();
+    world
+        .tx_write(sid, 0, b"original-A".to_vec(), Some(obj))
+        .unwrap();
+    world.tx_commit(sid).unwrap();
+
+    let current = kernel.get_global_version();
+    assert!(current >= 1);
+    let snap_before = snapshot_world(&kernel);
+    let root_before = kernel.state_root();
+
+    // Same version, different content (overwrite state with "B" + extra death attempt)
+    let conflict = make_delta(
+        7777,
+        current, // equal version
+        0,
+        vec![(Address::new(obj, 0), b"conflict-B".to_vec())],
+        vec![],
+        vec![obj], // different mutation set
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+
+    // apply() is currently void; constitution requires REJECT before any mutation.
+    // We verify atomicity via World State identity, not via Result (API may still
+    // be void until production implements the gate).
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        kernel.test_apply(&conflict);
+    }));
+
+    let snap_after = snapshot_world(&kernel);
+    assert_eq!(
+        snap_after.version, snap_before.version,
+        "REJECT equal-version different content must leave global_version unchanged"
+    );
+    assert_eq!(
+        kernel.state_root(),
+        root_before,
+        "REJECT must leave root_hash unchanged"
+    );
+    assert_eq!(
+        snap_after, snap_before,
+        "REJECT must leave World State (objects/links/caps/root/version) fully identical — no partial mutation"
+    );
+
+    // Object must still be alive (death in conflict delta must not have applied)
+    assert!(
+        kernel.list_object_ids().contains(&obj),
+        "object must still exist after rejected conflict delta"
+    );
+
+    cleanup(&wal);
+}
+
+/// 5. Stale version (version < current) → REJECT
+///
+/// Even if content hash matched a historical delta, stale version must REJECT.
+/// NO-OP is ONLY for equal version + same content hash.
+#[test]
+fn audit_stale_version_is_rejected() {
+    let (wal, kernel, _world) = world_pair("cv_stale");
+
+    // Advance to version 2
+    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]));
+    kernel.test_apply(&make_delta(2, 2, 0, vec![], vec![2], vec![], vec![], vec![], vec![], vec![]));
+    assert_eq!(kernel.get_global_version(), 2);
+
+    let snap_before = snapshot_world(&kernel);
+    let root_before = kernel.state_root();
+
+    // Stale version 1 (content may even match historical birth of 1)
+    let stale = make_delta(
+        50,
+        1, // < current
+        0,
+        vec![],
+        vec![1],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&stale);
+
+    let snap_after = snapshot_world(&kernel);
+    assert_eq!(
+        snap_after.version, 2,
+        "stale version must not change global_version"
+    );
+    assert_eq!(
+        kernel.state_root(),
+        root_before,
+        "stale version REJECT must leave root_hash unchanged"
+    );
+    assert_eq!(
+        snap_after, snap_before,
+        "stale version REJECT must leave World State fully identical"
+    );
+
+    cleanup(&wal);
+}
+
+/// 6. Version gap (version > current + 1) → REJECT
+#[test]
+fn audit_version_gap_is_rejected() {
+    let (wal, kernel, _world) = world_pair("cv_gap");
+
+    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]));
+    kernel.test_apply(&make_delta(2, 2, 0, vec![], vec![2], vec![], vec![], vec![], vec![], vec![]));
+    assert_eq!(kernel.get_global_version(), 2);
+
+    let snap_before = snapshot_world(&kernel);
+    let root_before = kernel.state_root();
+
+    // Skip version 3 → jump to 4
+    let gap = make_delta(
+        40,
+        4,
+        0,
+        vec![],
+        vec![99],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        kernel.test_apply(&gap);
+    }));
+
+    let snap_after = snapshot_world(&kernel);
+    assert_eq!(
+        snap_after.version, 2,
+        "version gap must leave global_version at 2"
+    );
+    assert_eq!(
+        kernel.state_root(),
+        root_before,
+        "version gap REJECT must leave root_hash unchanged"
+    );
+    assert_eq!(
+        snap_after, snap_before,
+        "version gap REJECT must leave World State fully identical"
+    );
+    assert!(
+        !kernel.list_object_ids().contains(&99),
+        "birth in gapped delta must not have been applied"
+    );
+
+    cleanup(&wal);
+}
+
+/// 7. Repeated WAL replay is idempotent (A then B, then A then B again → NO-OP)
+#[test]
+fn audit_repeated_wal_replay_is_idempotent() {
+    let (wal, kernel, _world) = world_pair("cv_replay");
+
+    let a = make_delta(1, 1, 0, vec![], vec![11], vec![], vec![], vec![], vec![], vec![]);
+    let b = make_delta(
+        2,
+        2,
+        0,
+        vec![(Address::new(11, 0), b"replay-B".to_vec())],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+
+    // First replay
+    kernel.test_apply(&a);
+    kernel.test_apply(&b);
+    assert_eq!(kernel.get_global_version(), 2);
+    let snap_first = snapshot_world(&kernel);
+    let root_first = kernel.state_root();
+
+    // Second replay of the same sequence
+    kernel.test_apply(&a); // equal version 1 + same content → NO-OP
+    kernel.test_apply(&b); // equal version 2 + same content → NO-OP
+
+    let snap_second = snapshot_world(&kernel);
+    assert_eq!(
+        snap_second.version, 2,
+        "repeated replay must leave global_version at 2"
+    );
+    assert_eq!(
+        kernel.state_root(),
+        root_first,
+        "repeated replay must leave root_hash identical to first replay"
+    );
+    assert_eq!(
+        snap_second, snap_first,
+        "repeated WAL replay must be fully idempotent on World State"
+    );
+
+    cleanup(&wal);
+}
+
+/// 8. REJECT is atomic — multi-mutation illegal delta must not partially apply
+#[test]
+fn audit_rejected_delta_is_atomic() {
+    let (wal, kernel, _world) = world_pair("cv_atomic");
+
+    // Known baseline: version 1 with object 7
+    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![7], vec![], vec![], vec![], vec![], vec![]));
+    assert_eq!(kernel.get_global_version(), 1);
+
+    let snap_before = snapshot_world(&kernel);
+    let root_before = kernel.state_root();
+    let ids_before = kernel.list_object_ids();
+
+    // Illegal: version 0 (stale) but rich mutation set
+    let illegal = make_delta(
+        888,
+        0, // stale → must REJECT before any mutation
+        0,
+        vec![(Address::new(7, 0), b"should-not-write".to_vec())],
+        vec![100, 101], // births
+        vec![7],        // death
+        vec![7],        // freeze
+        vec![(7, 100, LinkType::References)],
+        vec![],
+        vec![("eff-key".into(), b"payload".to_vec())],
+    );
+
+    kernel.test_apply(&illegal);
+
+    let snap_after = snapshot_world(&kernel);
+    assert_eq!(
+        snap_after, snap_before,
+        "REJECT must be atomic: full WorldSnap identity"
+    );
+    assert_eq!(kernel.state_root(), root_before);
+    assert_eq!(kernel.get_global_version(), 1);
+    assert_eq!(kernel.list_object_ids(), ids_before);
+    assert!(
+        !kernel.list_object_ids().contains(&100),
+        "birth must not partially apply on REJECT"
+    );
+    assert!(
+        kernel.list_object_ids().contains(&7),
+        "death must not partially apply on REJECT"
+    );
+
+    cleanup(&wal);
+}
+
+/// 9. Equal version + same content preserves root identity (NO-OP root pin)
+#[test]
+fn audit_equal_version_same_content_preserves_root() {
+    let (wal, kernel, _world) = world_pair("cv_root_pin");
+
+    let d = make_delta(
+        55,
+        1,
+        0,
+        vec![(Address::new(0, 0), b"pin-value".to_vec())],
+        vec![55],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&d);
+    let root_before = kernel.state_root();
+    let snap_before = snapshot_world(&kernel);
+    assert_eq!(kernel.get_global_version(), 1);
+
+    // Replay identical content, different tx_id
+    let d_again = make_delta(
+        66,
+        1,
+        0,
+        vec![(Address::new(0, 0), b"pin-value".to_vec())],
+        vec![55],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
+    kernel.test_apply(&d_again);
+
+    assert_eq!(
+        kernel.state_root(),
+        root_before,
+        "NO-OP same-content equal-version must preserve root_hash exactly"
+    );
+    assert_eq!(kernel.get_global_version(), 1);
+    assert_eq!(
+        snapshot_world(&kernel),
+        snap_before,
+        "NO-OP must preserve full World State"
+    );
+
+    cleanup(&wal);
+}
+
+// Note on actor_id identity:
+// actor_id belongs to Delta content (canonical_identity_bytes).
+// Once canonical_identity_bytes() is implemented, add a test that
+// same version + same mutations + different actor_id → different
+// content hash → REJECT (not NO-OP). Current production API has no
+// observable content-hash entry point; do not invent a hash here.
