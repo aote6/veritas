@@ -1,7 +1,7 @@
 //! P4: CapabilityDelegate WAL Closure — topology recovery equivalence.
 
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 
 fn temp_wal(name: &str) -> String {
@@ -35,6 +35,7 @@ fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
+                grantor: grantee,
                 grantee,
                 capability_type: "read".into(),
                 resource,
@@ -117,7 +118,11 @@ fn t2_multilevel_delegate_tree() {
     delegate(&kernel, cap, c, d, false);
 
     for h in [a, b, c, d] {
-        assert!(kernel.test_engine().holds_capability(cap, h), "holder {}", h);
+        assert!(
+            kernel.test_engine().holds_capability(cap, h),
+            "holder {}",
+            h
+        );
     }
 
     let snap = kernel.create_checkpoint();
@@ -242,12 +247,7 @@ fn t6_rollback_drops_pending_delegate() {
 
     let mut tx = kernel.test_begin();
     kernel
-        .handle(
-            &mut tx,
-            KernelCall::Savepoint {
-                name: "sp".into(),
-            },
-        )
+        .handle(&mut tx, KernelCall::Savepoint { name: "sp".into() })
         .unwrap();
     kernel
         .handle(
@@ -262,12 +262,7 @@ fn t6_rollback_drops_pending_delegate() {
         .unwrap();
     assert_eq!(tx.pending_delegates.len(), 1);
     kernel
-        .handle(
-            &mut tx,
-            KernelCall::RollbackTo {
-                name: "sp".into(),
-            },
-        )
+        .handle(&mut tx, KernelCall::RollbackTo { name: "sp".into() })
         .unwrap();
     assert!(
         tx.pending_delegates.is_empty(),
@@ -282,9 +277,7 @@ fn t6_rollback_drops_pending_delegate() {
 /// T7: old WAL without CAPDELEGATE still deserializes (empty delegates).
 #[test]
 fn t7_old_wal_without_capdelegate_compatible() {
-    use veritas_kernel::types::{
-        PendingCapabilityGrant, TransactionDelta,
-    };
+    use veritas_kernel::types::{PendingCapabilityGrant, TransactionDelta};
     let delta = TransactionDelta {
         tx_id: 1,
         commit_version: 1,

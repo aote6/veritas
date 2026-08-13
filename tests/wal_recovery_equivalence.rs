@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
-use veritas_kernel::types::{ObjectState, LinkType};
+use veritas_kernel::types::{LinkType, ObjectState};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 fn unique_wal_path() -> String {
@@ -25,9 +25,7 @@ impl EngineSnapshot {
         let object_ids: HashSet<u64> = engine.list_object_ids().into_iter().collect();
         let mut object_states: Vec<(u64, ObjectState)> = object_ids
             .iter()
-            .filter_map(|&id| {
-                engine.get_object_state(id).map(|s| (id, s))
-            })
+            .filter_map(|&id| engine.get_object_state(id).map(|s| (id, s)))
             .collect();
         object_states.sort_by_key(|(id, _)| *id);
 
@@ -95,9 +93,15 @@ fn assert_recovery_equivalence(operations: &[&dyn Fn(&Kernel)]) {
 
 fn commit_birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
-    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap() {
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
@@ -107,63 +111,98 @@ fn commit_birth(kernel: &Kernel) -> u64 {
 
 fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
     let mut tx = kernel.test_begin_in_object(from);
-    kernel.handle(&mut tx, KernelCall::CapabilityGrant {
-        grantee: from, capability_type: "link".to_string(), resource: to,
-    }).unwrap();
-    kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityGrant {
+                grantor: from,
+                grantee: from,
+                capability_type: "link".to_string(),
+                resource: to,
+            },
+        )
+        .unwrap();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectLink {
+                from,
+                to,
+                link_type: lt,
+            },
+        )
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn commit_death(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
-    kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
+    kernel
+        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn commit_freeze(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
-    kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
+    kernel
+        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 /// P29.3: Single object birth → recovery equivalence
 #[test]
 fn equivalence_single_birth() {
-    assert_recovery_equivalence(&[
-        &|e| { commit_birth(e); },
-    ]);
+    assert_recovery_equivalence(&[&|e| {
+        commit_birth(e);
+    }]);
 }
 
 /// P29.3: Two objects + link → recovery equivalence
 #[test]
 fn equivalence_birth_and_link() {
-    assert_recovery_equivalence(&[
-        &|e| { let a = commit_birth(e); let b = commit_birth(e); commit_link(e, a, b, LinkType::Owns); },
-    ]);
+    assert_recovery_equivalence(&[&|e| {
+        let a = commit_birth(e);
+        let b = commit_birth(e);
+        commit_link(e, a, b, LinkType::Owns);
+    }]);
 }
 
 /// P29.3: Birth → freeze → death → recovery equivalence
 #[test]
 fn equivalence_full_lifecycle() {
-    assert_recovery_equivalence(&[
-        &|e| { let id = commit_birth(e); commit_freeze(e, id); commit_death(e, id); },
-    ]);
+    assert_recovery_equivalence(&[&|e| {
+        let id = commit_birth(e);
+        commit_freeze(e, id);
+        commit_death(e, id);
+    }]);
 }
 
 /// P29.3: Multi-object topology → recovery equivalence
 #[test]
 fn equivalence_multi_object_topology() {
-    assert_recovery_equivalence(&[
-        &|e| { let a = commit_birth(e); let b = commit_birth(e); let c = commit_birth(e); commit_link(e, a, b, LinkType::Owns); commit_link(e, a, c, LinkType::DependsOn); commit_link(e, b, c, LinkType::References); },
-    ]);
+    assert_recovery_equivalence(&[&|e| {
+        let a = commit_birth(e);
+        let b = commit_birth(e);
+        let c = commit_birth(e);
+        commit_link(e, a, b, LinkType::Owns);
+        commit_link(e, a, c, LinkType::DependsOn);
+        commit_link(e, b, c, LinkType::References);
+    }]);
 }
 
 /// P29.3: Death cascade → recovery equivalence
 #[test]
 fn equivalence_death_cascade() {
-    assert_recovery_equivalence(&[
-        &|e| { let a = commit_birth(e); let b = commit_birth(e); let c = commit_birth(e); commit_link(e, a, b, LinkType::Owns); commit_link(e, b, c, LinkType::Owns); commit_death(e, a); },
-    ]);
+    assert_recovery_equivalence(&[&|e| {
+        let a = commit_birth(e);
+        let b = commit_birth(e);
+        let c = commit_birth(e);
+        commit_link(e, a, b, LinkType::Owns);
+        commit_link(e, b, c, LinkType::Owns);
+        commit_death(e, a);
+    }]);
 }
 
 /// Cross-tx unlink-then-death: tx1 link, tx2 unlink, tx3 death.
@@ -189,7 +228,9 @@ fn cross_tx_unlink_then_death_no_cascade() {
     commit_link(&kernel, a, b, LinkType::Owns);
     {
         let mut tx = kernel.test_begin_in_object(a);
-        kernel.handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b }).unwrap();
+        kernel
+            .handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b })
+            .unwrap();
         kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     }
     commit_death(&kernel, a); // kill A
@@ -235,7 +276,10 @@ fn cross_tx_link_then_death_cascade() {
 
     // Recovery
     let recovered = Kernel::with_wal_path(wal_path.clone());
-    assert!(recovered.test_engine().is_object_dead(a), "A should be dead");
+    assert!(
+        recovered.test_engine().is_object_dead(a),
+        "A should be dead"
+    );
     assert!(
         recovered.test_engine().is_object_dead(b),
         "B must be dead: linked when A died, cascade applies"

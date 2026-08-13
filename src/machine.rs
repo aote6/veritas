@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use crate::ObjectId;
-use crate::program::Program;
-use crate::memory::Memory;
-use crate::verifier::Verifier;
-use crate::types::{TransactionContext, VeritasError, AbortReason};
 use crate::instruction::Instruction;
+use crate::memory::Memory;
+use crate::program::Program;
+use crate::types::{AbortReason, TransactionContext, VeritasError};
+use crate::verifier::Verifier;
+use crate::ObjectId;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MachineStatus {
@@ -32,7 +32,12 @@ pub struct FlagsRegister {
 
 impl FlagsRegister {
     pub fn new() -> Self {
-        Self { zero: false, negative: false, overflow: false, carry: false }
+        Self {
+            zero: false,
+            negative: false,
+            overflow: false,
+            carry: false,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -47,7 +52,9 @@ pub struct RegisterFile {
 
 impl RegisterFile {
     pub fn new() -> Self {
-        Self { regs: std::array::from_fn(|_| RegisterValue::Empty) }
+        Self {
+            regs: std::array::from_fn(|_| RegisterValue::Empty),
+        }
     }
 
     pub fn reset(&mut self) {
@@ -70,7 +77,6 @@ impl RegisterFile {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionConfig {
     pub max_cycles: u64,
@@ -78,7 +84,9 @@ pub struct ExecutionConfig {
 
 impl Default for ExecutionConfig {
     fn default() -> Self {
-        Self { max_cycles: 1_000_000 }
+        Self {
+            max_cycles: 1_000_000,
+        }
     }
 }
 
@@ -113,24 +121,37 @@ pub struct Machine {
 }
 
 impl Machine {
-    fn record_trace(&mut self, pc_before: usize, regs_before: [u64; 8], instruction: &crate::instruction::Instruction, _consumed: usize) {
+    fn record_trace(
+        &mut self,
+        pc_before: usize,
+        regs_before: [u64; 8],
+        instruction: &crate::instruction::Instruction,
+        _consumed: usize,
+    ) {
         let regs_after = [
-            self.registers.get_u64(0), self.registers.get_u64(1),
-            self.registers.get_u64(2), self.registers.get_u64(3),
-            self.registers.get_u64(4), self.registers.get_u64(5),
-            self.registers.get_u64(6), self.registers.get_u64(7),
+            self.registers.get_u64(0),
+            self.registers.get_u64(1),
+            self.registers.get_u64(2),
+            self.registers.get_u64(3),
+            self.registers.get_u64(4),
+            self.registers.get_u64(5),
+            self.registers.get_u64(6),
+            self.registers.get_u64(7),
         ];
-        self.execution.record_instruction(crate::trace::InstructionTrace {
-            pc: pc_before,
-            opcode: instruction.opcode() as u8,
-            instruction: instruction.clone(),
-            registers_before: regs_before,
-            registers_after: regs_after,
-            state_reads: vec![],
-            state_writes: vec![],
-        });
+        self.execution
+            .record_instruction(crate::trace::InstructionTrace {
+                pc: pc_before,
+                opcode: instruction.opcode() as u8,
+                instruction: instruction.clone(),
+                registers_before: regs_before,
+                registers_after: regs_after,
+                state_reads: vec![],
+                state_writes: vec![],
+            });
     }
-    pub fn set_pc(&mut self, pc: usize) { self.pc = pc; }
+    pub fn set_pc(&mut self, pc: usize) {
+        self.pc = pc;
+    }
 
     fn resolve_operand(&self, op: &crate::instruction::Operand) -> u64 {
         match op {
@@ -138,14 +159,18 @@ impl Machine {
             crate::instruction::Operand::Register(r) => self.registers.get_u64(*r),
         }
     }
-    pub fn current_object(&self) -> ObjectId { self.ctx.current_object }
+    pub fn current_object(&self) -> ObjectId {
+        self.ctx.current_object
+    }
     /// Set the execution identity for subsequent instructions (CALL/Read/Write).
     /// Used by tests and by future TRAP-based context switch paths.
     pub fn set_execution_object(&mut self, object_id: ObjectId) {
         self.ctx.enter_object(object_id);
         self.ctx.capability_context = object_id;
     }
-    pub fn ram_mut(&mut self) -> &mut Memory { &mut self.ram }
+    pub fn ram_mut(&mut self) -> &mut Memory {
+        &mut self.ram
+    }
 
     pub fn new(kernel: Arc<crate::kernel::Kernel>) -> Self {
         let ctx = kernel.begin();
@@ -166,15 +191,22 @@ impl Machine {
 
     pub fn step(&mut self) -> Result<(), VeritasError> {
         match self.status {
-            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_) => return Ok(()),
+            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_) => {
+                return Ok(())
+            }
             MachineStatus::Ready => self.status = MachineStatus::Running,
             MachineStatus::Running => {}
         }
 
         if self.pc >= self.ram.len() {
-            let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+            let reason = crate::types::TrapReason::MemoryFault {
+                addr: self.pc,
+                size: 1,
+            };
             self.trap_frame = Some(crate::types::TrapFrame {
-                pc: self.pc, reason: reason.clone(), cycles: 0,
+                pc: self.pc,
+                reason: reason.clone(),
+                cycles: 0,
             });
             self.status = MachineStatus::Trapped(reason);
             return Ok(());
@@ -183,9 +215,14 @@ impl Machine {
         let stream = match self.ram.slice_from(self.pc) {
             Ok(s) => s,
             Err(_) => {
-                let reason = crate::types::TrapReason::MemoryFault { addr: self.pc, size: 1 };
+                let reason = crate::types::TrapReason::MemoryFault {
+                    addr: self.pc,
+                    size: 1,
+                };
                 self.trap_frame = Some(crate::types::TrapFrame {
-                    pc: self.pc, reason: reason.clone(), cycles: 0,
+                    pc: self.pc,
+                    reason: reason.clone(),
+                    cycles: 0,
                 });
                 self.status = MachineStatus::Trapped(reason);
                 return Ok(());
@@ -194,10 +231,14 @@ impl Machine {
 
         let pc_before = self.pc;
         let regs_before = [
-            self.registers.get_u64(0), self.registers.get_u64(1),
-            self.registers.get_u64(2), self.registers.get_u64(3),
-            self.registers.get_u64(4), self.registers.get_u64(5),
-            self.registers.get_u64(6), self.registers.get_u64(7),
+            self.registers.get_u64(0),
+            self.registers.get_u64(1),
+            self.registers.get_u64(2),
+            self.registers.get_u64(3),
+            self.registers.get_u64(4),
+            self.registers.get_u64(5),
+            self.registers.get_u64(6),
+            self.registers.get_u64(7),
         ];
 
         let (instruction, consumed) = match crate::instruction::Instruction::decode(stream) {
@@ -205,14 +246,17 @@ impl Machine {
             Err(_) => {
                 let reason = crate::types::TrapReason::InvalidEncoding { pc: self.pc };
                 self.trap_frame = Some(crate::types::TrapFrame {
-                    pc: self.pc, reason: reason.clone(), cycles: 0,
+                    pc: self.pc,
+                    reason: reason.clone(),
+                    cycles: 0,
                 });
                 self.status = MachineStatus::Trapped(reason);
                 return Ok(());
             }
         };
 
-        self.execution.begin_instruction(pc_before, regs_before, instruction.clone());
+        self.execution
+            .begin_instruction(pc_before, regs_before, instruction.clone());
 
         // P13.1: 本地指令直接在 Machine 内部消化
         // Clone instruction for record_trace before destructuring moves fields
@@ -220,8 +264,8 @@ impl Machine {
         match instruction {
             crate::instruction::Instruction::LoadConst { reg, val } => {
                 self.registers.set(reg, RegisterValue::U64(val));
-        
-        self.pc += consumed;
+
+                self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
@@ -236,8 +280,8 @@ impl Machine {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = false;
-        
-        self.pc += consumed;
+
+                self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
@@ -251,8 +295,8 @@ impl Machine {
                 self.flags.zero = res == 0;
                 self.flags.overflow = overflow;
                 self.flags.negative = v1 < v2;
-        
-        self.pc += consumed;
+
+                self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
@@ -264,8 +308,8 @@ impl Machine {
                 self.flags.zero = v1 == v2;
                 self.flags.negative = v1 < v2;
                 self.flags.overflow = false;
-        
-        self.pc += consumed;
+
+                self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
@@ -292,27 +336,31 @@ impl Machine {
                 if let Some(&cap_id) = self.execution.capability_ids.first() {
                     self.ctx.capabilities.push(cap_id);
                 }
-                self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
+                self.kernel
+                    .write(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload.clone());
-        
-        self.pc += consumed;
+
+                self.pc += consumed;
                 if self.pc >= self.ram.len() {
                     self.status = MachineStatus::Halted;
                 }
                 return Ok(());
             }
             Instruction::Nop => {
-        
-        self.pc += consumed;
+                self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Commit => {
                 let _receipt = self.kernel.commit(&mut self.ctx)?;
-        self.pc += consumed;
+                self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Abort { reason } => {
@@ -320,16 +368,21 @@ impl Machine {
                 let r = reason;
                 let call = crate::kernel::KernelCall::Abort { reason: r };
                 self.kernel.handle(&mut self.ctx, call)?;
-        self.pc += consumed;
+                self.pc += consumed;
                 self.status = MachineStatus::Aborted(r);
                 return Ok(());
             }
-            Instruction::CapabilityGrant { holder, permission, resource } => {
+            Instruction::CapabilityGrant {
+                holder,
+                permission,
+                resource,
+            } => {
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 let h = self.resolve_operand(&holder);
                 let p = permission;
                 let r = self.resolve_operand(&resource);
                 let call = crate::kernel::KernelCall::CapabilityGrant {
+                    grantor: self.ctx.current_object,
                     grantee: h,
                     capability_type: p.clone(),
                     resource: r,
@@ -338,37 +391,44 @@ impl Machine {
                 if let crate::kernel::TrapResult::CapabilityId(cap_id) = result {
                     self.registers.set(0, RegisterValue::U64(cap_id));
                 }
-        self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Effect { payload } => {
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 let p = payload;
                 let _key = self.kernel.effect(&mut self.ctx, p)?;
-        self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Savepoint { name } => {
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 let n = name;
                 self.kernel.savepoint(&mut self.ctx, &n)?;
-        self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::RollbackTo { name } => {
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 let n = name;
                 self.kernel.rollback_to(&mut self.ctx, &n)?;
-        self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                self.pc += consumed;
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Halt => {
-        
-        self.pc += consumed;
+                self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 self.status = MachineStatus::Halted;
                 return Ok(());
@@ -381,21 +441,42 @@ impl Machine {
                 return Ok(());
             }
             Instruction::Jz { target } => {
-                if self.flags.zero { self.pc = target; } else { self.pc += consumed; }
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.flags.zero {
+                    self.pc = target;
+                } else {
+                    self.pc += consumed;
+                }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Jnz { target } => {
-                if !self.flags.zero { self.pc = target; } else { self.pc += consumed; }
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if !self.flags.zero {
+                    self.pc = target;
+                } else {
+                    self.pc += consumed;
+                }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Jn { target } => {
-                if self.flags.negative { self.pc = target; } else { self.pc += consumed; }
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.flags.negative {
+                    self.pc = target;
+                } else {
+                    self.pc += consumed;
+                }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
-            Instruction::Call { object_id, entry_pc } => {
+            Instruction::Call {
+                object_id,
+                entry_pc,
+            } => {
                 // P3: CALL enters AccessIntent path — same authorize entry as
                 // Read/Write/Link/... (commit-time verify_capability).
                 let object_id = self.resolve_operand(&object_id);
@@ -412,8 +493,7 @@ impl Machine {
                 }
                 // Record for commit-time AccessIntent coverage (self-call is
                 // exempt inside authorize_intent but still harmless to record).
-                if object_id != self.ctx.current_object
-                    && object_id != self.ctx.capability_context
+                if object_id != self.ctx.current_object && object_id != self.ctx.capability_context
                 {
                     self.ctx.pending_calls.push(object_id);
                 }
@@ -429,7 +509,9 @@ impl Machine {
                 self.ctx.capability_context = object_id;
                 self.ctx.current_object = object_id;
                 self.pc = entry_pc;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Return => {
@@ -445,7 +527,9 @@ impl Machine {
                         return Ok(());
                     }
                 }
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Trap { service_id } => {
@@ -459,9 +543,10 @@ impl Machine {
                     let call = match crate::kernel::KernelCall::decode(service_id, r0, r1, r2) {
                         Ok(call) => call,
                         Err(_) => {
-                            self.status = MachineStatus::Trapped(
-                                crate::types::TrapReason::InvalidEncoding { pc: self.pc }
-                            );
+                            self.status =
+                                MachineStatus::Trapped(crate::types::TrapReason::InvalidEncoding {
+                                    pc: self.pc,
+                                });
                             return Ok(());
                         }
                     };
@@ -484,7 +569,9 @@ impl Machine {
                     }
                 }
                 self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::HostCall { call_id } => {
@@ -492,14 +579,17 @@ impl Machine {
                 match call_id {
                     0..=3 => { /* valid, handled by host */ }
                     _ => {
-                        self.status = MachineStatus::Trapped(
-                            crate::types::TrapReason::InvalidEncoding { pc: self.pc }
-                        );
+                        self.status =
+                            MachineStatus::Trapped(crate::types::TrapReason::InvalidEncoding {
+                                pc: self.pc,
+                            });
                         return Ok(());
                     }
                 }
                 self.pc += consumed;
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Read { state_id } => {
@@ -508,16 +598,21 @@ impl Machine {
                 self.registers.set(0, RegisterValue::Bytes(bytes));
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::Write { state_id, payload } => {
                 let state_id = self.resolve_operand(&state_id);
-                self.kernel.write(&mut self.ctx, state_id, payload.clone())?;
+                self.kernel
+                    .write(&mut self.ctx, state_id, payload.clone())?;
                 self.execution.record_write(state_id, payload);
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::ObjectBirth { object_id: _ } => {
@@ -540,16 +635,22 @@ impl Machine {
                     // 现在的修法：不切换身份，而是把新对象的 self-AdminCap
                     // 显式 attach 到本事务 ctx，让 CALL 这条唯一合法的身份切换
                     // 入口能够真正走通 authorize_intent 审计——而不是绕开它。
-                    if let Some(grant) = self.ctx.pending_capabilities.iter().find(|g| {
-                        g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
-                    }) {
+                    if let Some(grant) =
+                        self.ctx.pending_capabilities.iter().find(|g| {
+                            g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
+                        })
+                    {
                         let cap_id = grant.capability_id;
-                        self.kernel.engine().attach_capability(&mut self.ctx, cap_id);
+                        self.kernel
+                            .engine()
+                            .attach_capability(&mut self.ctx, cap_id);
                     }
                 }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::ObjectDeath { object_id } => {
@@ -558,7 +659,9 @@ impl Machine {
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::ObjectFreeze { object_id } => {
@@ -567,7 +670,9 @@ impl Machine {
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::ObjectLink { from, to, relation } => {
@@ -584,7 +689,9 @@ impl Machine {
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
             Instruction::ObjectUnlink { from, to } => {
@@ -594,7 +701,9 @@ impl Machine {
                 self.kernel.handle(&mut self.ctx, call)?;
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() { self.status = MachineStatus::Halted; }
+                if self.pc >= self.ram.len() {
+                    self.status = MachineStatus::Halted;
+                }
                 return Ok(());
             }
         }
@@ -608,26 +717,29 @@ impl Machine {
 
         // P1a: execute_kernel_instruction removed — all kernel ops now via KernelCall
 
-
-
         self.pc += consumed;
 
         // P19.1: 记录指令执行 trace
         let regs_after = [
-            self.registers.get_u64(0), self.registers.get_u64(1),
-            self.registers.get_u64(2), self.registers.get_u64(3),
-            self.registers.get_u64(4), self.registers.get_u64(5),
-            self.registers.get_u64(6), self.registers.get_u64(7),
+            self.registers.get_u64(0),
+            self.registers.get_u64(1),
+            self.registers.get_u64(2),
+            self.registers.get_u64(3),
+            self.registers.get_u64(4),
+            self.registers.get_u64(5),
+            self.registers.get_u64(6),
+            self.registers.get_u64(7),
         ];
-        self.execution.record_instruction(crate::trace::InstructionTrace {
-            pc: self.pc.saturating_sub(consumed),
-            opcode: instruction.opcode() as u8,
-            instruction: instruction.clone(),
-            registers_before: regs_before,
-            registers_after: regs_after,
-            state_reads: vec![],
-            state_writes: vec![],
-        });
+        self.execution
+            .record_instruction(crate::trace::InstructionTrace {
+                pc: self.pc.saturating_sub(consumed),
+                opcode: instruction.opcode() as u8,
+                instruction: instruction.clone(),
+                registers_before: regs_before,
+                registers_after: regs_after,
+                state_reads: vec![],
+                state_writes: vec![],
+            });
 
         if self.pc >= self.ram.len() {
             self.status = MachineStatus::Halted;
@@ -636,7 +748,7 @@ impl Machine {
         Ok(())
     }
 
-// P1a: execute_kernel_instruction removed — KernelCall is the sole dispatch path
+    // P1a: execute_kernel_instruction removed — KernelCall is the sole dispatch path
 
     pub fn run(&mut self) -> Result<(), VeritasError> {
         while self.status == MachineStatus::Ready || self.status == MachineStatus::Running {
@@ -645,7 +757,10 @@ impl Machine {
         Ok(())
     }
 
-    pub fn run_with_config(&mut self, config: ExecutionConfig) -> Result<ExecutionResult, VeritasError> {
+    pub fn run_with_config(
+        &mut self,
+        config: ExecutionConfig,
+    ) -> Result<ExecutionResult, VeritasError> {
         let mut cycles = 0;
         while self.status == MachineStatus::Running || self.status == MachineStatus::Ready {
             if cycles >= config.max_cycles {
@@ -685,7 +800,8 @@ impl Machine {
         let mut addr = 0usize;
         for inst in &image.instructions {
             let encoded = inst.encode()?;
-            self.ram.write_bytes(addr, &encoded)
+            self.ram
+                .write_bytes(addr, &encoded)
                 .map_err(|e| VeritasError::EngineError(e))?;
             addr += encoded.len();
         }
@@ -693,38 +809,48 @@ impl Machine {
         self.pc = image.entry_point as usize;
         self.status = MachineStatus::Running;
         self.trap_frame = None;
-        self.execution = crate::execution::ExecutionContext::new(
-            prog_hash,
-            self.kernel.state_root(),
-        );
+        self.execution =
+            crate::execution::ExecutionContext::new(prog_hash, self.kernel.state_root());
         Ok(())
     }
-
 
     pub fn boot_bytes(&mut self, bytes: &[u8]) -> Result<(), VeritasError> {
         let image = crate::program::ProgramImage::decode(bytes)?;
         self.boot(image)
     }
 
-    pub fn registers(&self) -> &RegisterFile { &self.registers }
+    pub fn registers(&self) -> &RegisterFile {
+        &self.registers
+    }
 
-    pub fn flags(&self) -> &FlagsRegister { &self.flags }
+    pub fn flags(&self) -> &FlagsRegister {
+        &self.flags
+    }
 
     pub fn status(&self) -> &MachineStatus {
         &self.status
     }
 
-    pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> { self.trap_frame.as_ref() }
+    pub fn trap_frame(&self) -> Option<&crate::types::TrapFrame> {
+        self.trap_frame.as_ref()
+    }
 
-    pub fn trace_hash(&self) -> u64 { self.execution.trace.trace_hash() }
+    pub fn trace_hash(&self) -> u64 {
+        self.execution.trace.trace_hash()
+    }
 
     pub fn execution_receipt(&self) -> crate::receipt::ExecutionReceipt {
         crate::receipt::ReceiptBuilder::build(&self.execution, self.state_root())
     }
 
-    pub fn state_root(&self) -> u64 { self.kernel.state_root() }
+    pub fn state_root(&self) -> u64 {
+        self.kernel.state_root()
+    }
 
     pub fn is_halted(&self) -> bool {
-        matches!(self.status, MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_))
+        matches!(
+            self.status,
+            MachineStatus::Halted | MachineStatus::Aborted(_) | MachineStatus::Trapped(_)
+        )
     }
 }

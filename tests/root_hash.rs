@@ -1,5 +1,5 @@
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{LinkType, ObjectType};
 
 mod common;
@@ -34,9 +34,15 @@ fn root_hash_changes_on_birth() {
     let before = tk.kernel.test_engine().root_hash();
 
     let mut tx = tk.kernel.test_begin();
-    let result = tk.kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap();
+    let result = tk
+        .kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap();
     let _new_id = match result {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -54,9 +60,15 @@ fn root_hash_changes_on_link() {
 
     // 创建子对象
     let mut tx = tk.kernel.test_begin();
-    let result = tk.kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap();
+    let result = tk
+        .kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap();
     let child = match result {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -67,14 +79,27 @@ fn root_hash_changes_on_link() {
 
     // 建立 Link
     let mut tx2 = tk.kernel.test_begin_in_object(root);
-    tk.kernel.handle(&mut tx2, KernelCall::CapabilityGrant {
-        grantee: root, capability_type: "link".to_string(), resource: child,
-    }).unwrap();
-    tk.kernel.handle(&mut tx2, KernelCall::ObjectLink {
-        from: root,
-        to: child,
-        link_type: LinkType::Owns,
-    }).unwrap();
+    tk.kernel
+        .handle(
+            &mut tx2,
+            KernelCall::CapabilityGrant {
+                grantor: root,
+                grantee: root,
+                capability_type: "link".to_string(),
+                resource: child,
+            },
+        )
+        .unwrap();
+    tk.kernel
+        .handle(
+            &mut tx2,
+            KernelCall::ObjectLink {
+                from: root,
+                to: child,
+                link_type: LinkType::Owns,
+            },
+        )
+        .unwrap();
     tk.kernel.test_commit(&mut tx2).unwrap();
 
     let after = tk.kernel.test_engine().root_hash();

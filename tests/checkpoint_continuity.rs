@@ -1,17 +1,40 @@
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
 
 fn birth(kernel: &Kernel, ctx: &mut TransactionContext) -> ObjectId {
-    match kernel.handle(ctx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject }).unwrap() {
+    match kernel
+        .handle(
+            ctx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     }
 }
-fn grant(kernel: &Kernel, ctx: &mut TransactionContext, grantee: ObjectId, resource: ObjectId, cap_type: &str) -> CapabilityId {
-    match kernel.handle(ctx, KernelCall::CapabilityGrant {
-        grantee, capability_type: cap_type.to_string(), resource,
-    }).unwrap() {
+fn grant(
+    kernel: &Kernel,
+    ctx: &mut TransactionContext,
+    grantee: ObjectId,
+    resource: ObjectId,
+    cap_type: &str,
+) -> CapabilityId {
+    match kernel
+        .handle(
+            ctx,
+            KernelCall::CapabilityGrant {
+                grantor: grantee,
+                grantee,
+                capability_type: cap_type.to_string(),
+                resource,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
     }
@@ -29,7 +52,11 @@ fn checkpoint_restore_world_continuity() {
     k_cont.handle(&mut ctxw, KernelCall::Commit).unwrap();
     let root1 = k_cont.state_root();
     let meta = k_cont.create_checkpoint();
-    let (gv1, oid1, gs1) = (meta.global_version, meta.object_id_counter, meta.grant_sequence);
+    let (gv1, oid1, gs1) = (
+        meta.global_version,
+        meta.object_id_counter,
+        meta.grant_sequence,
+    );
 
     let mut ctx2 = k_cont.test_begin();
     let o2 = birth(&k_cont, &mut ctx2);
@@ -85,11 +112,19 @@ fn capability_identity_survives_checkpoint_restore() {
     assert_ne!(cap_a, cap_b);
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
     let snap = kernel.create_checkpoint();
-    let ids_before: Vec<_> = snap.capability_records.iter().map(|r| r.capability_id).collect();
+    let ids_before: Vec<_> = snap
+        .capability_records
+        .iter()
+        .map(|r| r.capability_id)
+        .collect();
     assert!(ids_before.contains(&cap_a) && ids_before.contains(&cap_b));
     kernel.restore_checkpoint(&snap);
     let snap2 = kernel.create_checkpoint();
-    let ids_after: Vec<_> = snap2.capability_records.iter().map(|r| r.capability_id).collect();
+    let ids_after: Vec<_> = snap2
+        .capability_records
+        .iter()
+        .map(|r| r.capability_id)
+        .collect();
     assert_eq!(ids_before, ids_after);
     assert!(kernel.holds_capability(cap_a, o1));
     assert!(kernel.holds_capability(cap_b, o1));
@@ -102,19 +137,33 @@ fn object_death_no_ghost_state_after_checkpoint() {
     let oid = birth(&kernel, &mut ctx);
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
     let mut ctx2 = kernel.test_begin_in_object(oid);
-    kernel.test_write(&mut ctx2, 7, b"ghost-bait".to_vec()).unwrap();
+    kernel
+        .test_write(&mut ctx2, 7, b"ghost-bait".to_vec())
+        .unwrap();
     kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
     let root_alive = kernel.state_root();
     let mut ctx3 = kernel.test_begin_in_object(oid);
-    kernel.handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid }).unwrap();
+    kernel
+        .handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid })
+        .unwrap();
     kernel.handle(&mut ctx3, KernelCall::Commit).unwrap();
     let snap_dead = kernel.create_checkpoint();
-    assert!(!snap_dead.state_entries.iter().any(|(a, _)| a.object_id == oid));
-    assert!(snap_dead.objects.iter().any(|o| o.id == oid && o.lifecycle_state == ObjectState::Dead));
+    assert!(!snap_dead
+        .state_entries
+        .iter()
+        .any(|(a, _)| a.object_id == oid));
+    assert!(snap_dead
+        .objects
+        .iter()
+        .any(|o| o.id == oid && o.lifecycle_state == ObjectState::Dead));
     let root_dead = kernel.state_root();
     assert_ne!(root_alive, root_dead);
     kernel.restore_checkpoint(&snap_dead);
-    assert!(!kernel.create_checkpoint().state_entries.iter().any(|(a, _)| a.object_id == oid));
+    assert!(!kernel
+        .create_checkpoint()
+        .state_entries
+        .iter()
+        .any(|(a, _)| a.object_id == oid));
     assert_eq!(kernel.state_root(), root_dead);
 }
 
@@ -128,8 +177,17 @@ fn checkpoint_preserves_state_entry_versions() {
     kernel.test_write(&mut ctx2, 1, b"v1".to_vec()).unwrap();
     kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
     let snap = kernel.create_checkpoint();
-    let v_before: Vec<_> = snap.state_entries.iter().map(|(a, e)| (*a, e.version)).collect();
+    let v_before: Vec<_> = snap
+        .state_entries
+        .iter()
+        .map(|(a, e)| (*a, e.version))
+        .collect();
     kernel.restore_checkpoint(&snap);
-    let v_after: Vec<_> = kernel.create_checkpoint().state_entries.iter().map(|(a, e)| (*a, e.version)).collect();
+    let v_after: Vec<_> = kernel
+        .create_checkpoint()
+        .state_entries
+        .iter()
+        .map(|(a, e)| (*a, e.version))
+        .collect();
     assert_eq!(v_before, v_after);
 }

@@ -6,7 +6,6 @@
 use crate::engine::VeritasEngine;
 use crate::types::*;
 
-
 /// Kernel wraps VeritasEngine and serves as the world state authority.
 ///
 /// In Phase 1, this is a thin pass-through wrapper. Machine accesses
@@ -43,6 +42,7 @@ pub enum KernelCall {
         reason: AbortReason,
     },
     CapabilityGrant {
+        grantor: ObjectId,
         grantee: ObjectId,
         capability_type: String,
         resource: ObjectId,
@@ -98,17 +98,18 @@ impl KernelCall {
                     crate::types::ObjectType::ModuleObject
                 },
             }),
-            1 => Ok(KernelCall::ObjectDeath {
-                object_id: r0,
-            }),
+            1 => Ok(KernelCall::ObjectDeath { object_id: r0 }),
             2 => {
                 let link_type = match r2 as u8 {
                     0 => crate::types::LinkType::DependsOn,
                     1 => crate::types::LinkType::Owns,
                     2 => crate::types::LinkType::References,
-                    _ => return Err(crate::types::VeritasError::EngineError(
-                        format!("Invalid LinkType: {}", r2)
-                    )),
+                    _ => {
+                        return Err(crate::types::VeritasError::EngineError(format!(
+                            "Invalid LinkType: {}",
+                            r2
+                        )))
+                    }
                 };
                 Ok(KernelCall::ObjectLink {
                     from: r0,
@@ -116,24 +117,23 @@ impl KernelCall {
                     link_type,
                 })
             }
-            3 => Ok(KernelCall::ObjectUnlink {
-                from: r0,
-                to: r1,
-            }),
-            4 => Ok(KernelCall::ObjectFreeze {
-                object_id: r0,
-            }),
+            3 => Ok(KernelCall::ObjectUnlink { from: r0, to: r1 }),
+            4 => Ok(KernelCall::ObjectFreeze { object_id: r0 }),
             5 => Ok(KernelCall::Commit),
             6 => Ok(KernelCall::Effect { payload: vec![] }),
-            7 => Ok(KernelCall::Savepoint { name: String::new() }),
-            8 => Ok(KernelCall::RollbackTo { name: String::new() }),
-            _ => Err(crate::types::VeritasError::EngineError(
-                format!("Unknown kernel service_id: {}", service_id)
-            )),
+            7 => Ok(KernelCall::Savepoint {
+                name: String::new(),
+            }),
+            8 => Ok(KernelCall::RollbackTo {
+                name: String::new(),
+            }),
+            _ => Err(crate::types::VeritasError::EngineError(format!(
+                "Unknown kernel service_id: {}",
+                service_id
+            ))),
         }
     }
 }
-
 
 /// TrapResult is returned by Kernel::handle() after processing a KernelCall.
 /// The result is written to register r0 by Machine.
@@ -145,7 +145,6 @@ pub enum TrapResult {
     EffectKey(String),
     Success,
 }
-
 
 pub struct Kernel {
     engine: VeritasEngine,
@@ -174,8 +173,8 @@ impl Kernel {
     /// 从空 WorldState 出发，不保留引擎用于后续操作。
     /// 用于验证 WAL 的确定性——Replay(WAL) == 原始执行结束时的 root_hash()。
     pub fn replay(wal_path: &str) -> u64 {
-        let (records, _) = crate::wal::RecoveryManager::recover(wal_path)
-            .unwrap_or_else(|_| (vec![], 0));
+        let (records, _) =
+            crate::wal::RecoveryManager::recover(wal_path).unwrap_or_else(|_| (vec![], 0));
         let ordered_deltas = crate::wal::build_ordered_deltas(&records);
         let engine = VeritasEngine::empty();
         for delta in &ordered_deltas {
@@ -195,7 +194,9 @@ impl Kernel {
         call: KernelCall,
     ) -> Result<TrapResult, VeritasError> {
         match call {
-            KernelCall::ObjectBirth { object_type: _object_type } => {
+            KernelCall::ObjectBirth {
+                object_type: _object_type,
+            } => {
                 // Step 3/ObjectId: Kernel allocates ObjectId internally
                 let id = self.engine.next_object_id();
                 self.engine.object_birth(ctx, id)?;
@@ -205,7 +206,11 @@ impl Kernel {
                 self.engine.object_death(ctx, object_id)?;
                 Ok(TrapResult::Success)
             }
-            KernelCall::ObjectLink { from, to, link_type } => {
+            KernelCall::ObjectLink {
+                from,
+                to,
+                link_type,
+            } => {
                 self.engine.object_link(ctx, from, to, link_type)?;
                 Ok(TrapResult::Success)
             }
@@ -217,8 +222,19 @@ impl Kernel {
                 self.engine.object_freeze(ctx, object_id)?;
                 Ok(TrapResult::Success)
             }
-            KernelCall::CapabilityGrant { grantee, capability_type, resource } => {
-                let cap_id = self.engine.capability_grant(ctx, grantee, &capability_type, resource)?;
+            KernelCall::CapabilityGrant {
+                grantor,
+                grantee,
+                capability_type,
+                resource,
+            } => {
+                let cap_id = self.engine.capability_grant(
+                    ctx,
+                    grantor,
+                    grantee,
+                    &capability_type,
+                    resource,
+                )?;
                 Ok(TrapResult::CapabilityId(cap_id))
             }
             KernelCall::CapabilityRevoke {
@@ -226,12 +242,8 @@ impl Kernel {
                 holder,
                 cascade_override,
             } => {
-                self.engine.capability_revoke(
-                    ctx,
-                    capability_id,
-                    holder,
-                    cascade_override,
-                )?;
+                self.engine
+                    .capability_revoke(ctx, capability_id, holder, cascade_override)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::CapabilityDelegate {
@@ -240,13 +252,8 @@ impl Kernel {
                 to,
                 cascade_on_revoke,
             } => {
-                self.engine.capability_delegate(
-                    ctx,
-                    capability_id,
-                    from,
-                    to,
-                    cascade_on_revoke,
-                )?;
+                self.engine
+                    .capability_delegate(ctx, capability_id, from, to, cascade_on_revoke)?;
                 Ok(TrapResult::Success)
             }
             KernelCall::MemoryAlloc { .. } => {
@@ -275,8 +282,6 @@ impl Kernel {
             }
         }
     }
-
-
 
     // Each method delegates directly to the corresponding VeritasEngine method.
 
@@ -317,8 +322,6 @@ impl Kernel {
         self.engine.snapshot_links()
     }
 
-
-
     pub fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
     }
@@ -326,7 +329,6 @@ impl Kernel {
     pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         self.engine.restore_checkpoint(snap)
     }
-
 
     pub fn state_root(&self) -> u64 {
         self.engine.state_root()
@@ -377,7 +379,10 @@ impl Kernel {
         self.engine.effect(ctx, payload)
     }
 
-    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
+    pub(crate) fn commit(
+        &self,
+        ctx: &mut TransactionContext,
+    ) -> Result<TransactionReceipt, VeritasError> {
         self.engine.commit(ctx)
     }
 
@@ -417,7 +422,6 @@ mod kernel_tests {
         let ctx = kernel.begin();
         assert_eq!(ctx.tx_id, 1);
     }
-
 
     // ===== Phase 1 Step 5: Kernel ABI boundary tests =====
     // These test the public TRAP -> KernelCall -> Kernel::handle() path.
@@ -503,7 +507,9 @@ mod kernel_tests {
     fn abi_trap_object_birth_via_handle() {
         let kernel = Kernel::new();
         let mut ctx = kernel.begin();
-        let call = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let result = kernel.handle(&mut ctx, call).unwrap();
         let id = match result {
             TrapResult::ObjectId(id) => id,
@@ -520,7 +526,9 @@ mod kernel_tests {
 
         // Create object A
         let mut ctx_a = kernel.begin();
-        let call_a = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call_a = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let id_a = match kernel.handle(&mut ctx_a, call_a).unwrap() {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
@@ -529,7 +537,9 @@ mod kernel_tests {
 
         // Create object B
         let mut ctx_b = kernel.begin();
-        let call_b = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call_b = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let id_b = match kernel.handle(&mut ctx_b, call_b).unwrap() {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
@@ -537,9 +547,14 @@ mod kernel_tests {
         let _receipt = kernel.commit(&mut ctx_b).unwrap();
 
         let mut ctx_link = kernel.begin_in_object(id_a);
-        let _cap = kernel.engine.capability_grant(&mut ctx_link, id_a, "link", id_b).unwrap();
+        let _cap = kernel
+            .engine
+            .capability_grant(&mut ctx_link, id_a, id_a, "link", id_b)
+            .unwrap();
         let call_link = KernelCall::ObjectLink {
-            from: id_a, to: id_b, link_type: LinkType::DependsOn,
+            from: id_a,
+            to: id_b,
+            link_type: LinkType::DependsOn,
         };
         let result = kernel.handle(&mut ctx_link, call_link).unwrap();
         assert!(matches!(result, TrapResult::Success));
@@ -552,7 +567,9 @@ mod kernel_tests {
     fn abi_trap_object_freeze_via_handle() {
         let kernel = Kernel::new();
         let mut ctx1 = kernel.begin();
-        let call = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let id = match kernel.handle(&mut ctx1, call).unwrap() {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
@@ -560,7 +577,9 @@ mod kernel_tests {
         let _receipt = kernel.commit(&mut ctx1).unwrap();
 
         let mut ctx2 = kernel.begin_in_object(id);
-        let result = kernel.handle(&mut ctx2, KernelCall::ObjectFreeze { object_id: id }).unwrap();
+        let result = kernel
+            .handle(&mut ctx2, KernelCall::ObjectFreeze { object_id: id })
+            .unwrap();
         assert!(matches!(result, TrapResult::Success));
         let _receipt = kernel.commit(&mut ctx2).unwrap();
 
@@ -571,7 +590,9 @@ mod kernel_tests {
     fn abi_trap_object_death_via_handle() {
         let kernel = Kernel::new();
         let mut ctx1 = kernel.begin();
-        let call = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let id = match kernel.handle(&mut ctx1, call).unwrap() {
             TrapResult::ObjectId(id) => id,
             _ => panic!("Expected ObjectId"),
@@ -579,7 +600,9 @@ mod kernel_tests {
         let _receipt = kernel.commit(&mut ctx1).unwrap();
 
         let mut ctx2 = kernel.begin_in_object(id);
-        let result = kernel.handle(&mut ctx2, KernelCall::ObjectDeath { object_id: id }).unwrap();
+        let result = kernel
+            .handle(&mut ctx2, KernelCall::ObjectDeath { object_id: id })
+            .unwrap();
         assert!(matches!(result, TrapResult::Success));
         let _receipt = kernel.commit(&mut ctx2).unwrap();
 
@@ -597,7 +620,9 @@ mod kernel_tests {
     fn abi_trap_result_writes_to_register_r0() {
         let kernel = Kernel::new();
         let mut ctx = kernel.begin();
-        let call = KernelCall::ObjectBirth { object_type: ObjectType::StateObject };
+        let call = KernelCall::ObjectBirth {
+            object_type: ObjectType::StateObject,
+        };
         let result = kernel.handle(&mut ctx, call).unwrap();
         match result {
             TrapResult::ObjectId(id) => assert!(id > 0),
@@ -732,7 +757,10 @@ mod kernel_tests {
             let _receipt = kernel.commit(&mut ctx).unwrap();
 
             let mut ctx2 = kernel.begin();
-            kernel.engine.capability_grant(&mut ctx2, 10, "read", 10).unwrap();
+            kernel
+                .engine
+                .capability_grant(&mut ctx2, 10, 10, "read", 10)
+                .unwrap();
             let _receipt = kernel.commit(&mut ctx2).unwrap();
         }
 
@@ -740,8 +768,10 @@ mod kernel_tests {
         {
             let _m2 = crate::machine::Machine::new(Arc::clone(&kernel));
             // Object 10 holds a capability on itself (AdminCap from birth + read grant)
-            assert!(kernel.holds_capability(kernel.capability_sequence(), 10)
-                || kernel.get_object_state(10) == Some(ObjectState::Alive));
+            assert!(
+                kernel.holds_capability(kernel.capability_sequence(), 10)
+                    || kernel.get_object_state(10) == Some(ObjectState::Alive)
+            );
         }
     }
 
@@ -759,9 +789,15 @@ mod kernel_tests {
         };
         assert_eq!(id1, 1, "first allocated ObjectId must be 1");
 
-        let id2 = match kernel.handle(&mut ctx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap() {
+        let id2 = match kernel
+            .handle(
+                &mut ctx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap()
+        {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
         };

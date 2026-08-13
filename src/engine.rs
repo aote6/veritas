@@ -6,16 +6,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::capability::CapabilityGraph;
-use crate::scope_registry::ScopeRegistry;
-use crate::lock::LockManager;
-use crate::tx_manager::TransactionManager;
 use crate::controller::TransactionController;
-use std::sync::Arc;
-use crate::view::TransactionObjectView;
 use crate::guard::ObjectGuard;
-use crate::types::*;
-use crate::wal::{RecoveryManager, WalEntry, WalWriter};
+use crate::lock::LockManager;
+use crate::scope_registry::ScopeRegistry;
 use crate::store::StateStore;
+use crate::tx_manager::TransactionManager;
+use crate::types::*;
+use crate::view::TransactionObjectView;
+use crate::wal::{RecoveryManager, WalEntry, WalWriter};
+use std::sync::Arc;
 
 #[allow(dead_code)]
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
@@ -24,7 +24,6 @@ fn bytes_to_u64(bytes: &[u8]) -> u64 {
     arr[..len].copy_from_slice(&bytes[..len]);
     u64::from_le_bytes(arr)
 }
-
 
 pub struct VeritasEngine {
     global_version: AtomicU64,
@@ -46,7 +45,6 @@ pub struct VeritasEngine {
     /// Test probe: DependencyInvalidated pairs from last commit. Not for production use.
     last_dep_inv: std::sync::Mutex<Vec<(crate::types::ObjectId, crate::types::ObjectId)>>,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectOperation {
@@ -70,12 +68,17 @@ impl crate::types::ObjectState {
 impl VeritasEngine {
     /// Test probe: last commit's DependencyInvalidated pairs.
     /// Production consumers must use Effect/WAL path, not this API.
-    pub fn last_dependency_invalidations(&self) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
+    pub fn last_dependency_invalidations(
+        &self,
+    ) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
         self.last_dep_inv.lock().unwrap().clone()
     }
 
     /// 宪法级 API：查询指定 Object 的当前生命周期状态
-    pub fn get_object_state(&self, object_id: crate::types::ObjectId) -> Option<crate::types::ObjectState> {
+    pub fn get_object_state(
+        &self,
+        object_id: crate::types::ObjectId,
+    ) -> Option<crate::types::ObjectState> {
         let registry = self.object_registry.lock().unwrap();
         registry.get(&object_id).map(|r| r.state)
     }
@@ -89,7 +92,8 @@ impl VeritasEngine {
     /// Used by recovery equivalence tests to compare engine states.
     pub fn list_object_ids(&self) -> Vec<crate::types::ObjectId> {
         let registry = self.object_registry.lock().unwrap();
-        registry.iter()
+        registry
+            .iter()
             .filter(|(_, r)| !r.is_dead())
             .map(|(id, _)| *id)
             .collect()
@@ -100,14 +104,12 @@ impl VeritasEngine {
         let registry = self.object_registry.lock().unwrap();
         let mut result: Vec<crate::types::ObjectSnapshot> = registry
             .iter()
-            .map(|(id, record)| {
-                crate::types::ObjectSnapshot {
-                    id: *id,
-                    object_type: record.object_type,
-                    lifecycle_state: record.state,
-                    metadata: vec![],
-                    payload: Self::serialize_object_body(&record.body),
-                }
+            .map(|(id, record)| crate::types::ObjectSnapshot {
+                id: *id,
+                object_type: record.object_type,
+                lifecycle_state: record.state,
+                metadata: vec![],
+                payload: Self::serialize_object_body(&record.body),
             })
             .collect();
         result.sort_by_key(|o| o.id);
@@ -146,7 +148,9 @@ impl VeritasEngine {
                     Some(rule) => {
                         buf.push(0x01);
                         buf.extend_from_slice(&rule.max_instances.unwrap_or(0).to_le_bytes());
-                        buf.extend_from_slice(&(rule.allow_instructions.len() as u32).to_le_bytes());
+                        buf.extend_from_slice(
+                            &(rule.allow_instructions.len() as u32).to_le_bytes(),
+                        );
                         buf.extend_from_slice(&rule.allow_instructions);
                     }
                 }
@@ -164,12 +168,15 @@ impl VeritasEngine {
         let mut registry = self.object_registry.lock().unwrap();
         registry.clear();
         for snap in snapshots {
-            registry.insert(snap.id, crate::types::ObjectRecord {
-                id: snap.id,
-                object_type: snap.object_type,
-                state: snap.lifecycle_state,
-                body: Self::deserialize_object_body(&snap.payload),
-            });
+            registry.insert(
+                snap.id,
+                crate::types::ObjectRecord {
+                    id: snap.id,
+                    object_type: snap.object_type,
+                    state: snap.lifecycle_state,
+                    body: Self::deserialize_object_body(&snap.payload),
+                },
+            );
         }
     }
 
@@ -183,32 +190,64 @@ impl VeritasEngine {
             0x01 => {
                 let mut pos = 1;
                 // code_section
-                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                let len = u32::from_le_bytes([
+                    payload[pos],
+                    payload[pos + 1],
+                    payload[pos + 2],
+                    payload[pos + 3],
+                ]) as usize;
                 pos += 4;
-                let code_section = payload[pos..pos+len].to_vec();
+                let code_section = payload[pos..pos + len].to_vec();
                 pos += len;
                 // import_section
-                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                let len = u32::from_le_bytes([
+                    payload[pos],
+                    payload[pos + 1],
+                    payload[pos + 2],
+                    payload[pos + 3],
+                ]) as usize;
                 pos += 4;
                 let mut import_section = Vec::new();
                 for _ in 0..len {
                     let id = u64::from_le_bytes([
-                        payload[pos], payload[pos+1], payload[pos+2], payload[pos+3],
-                        payload[pos+4], payload[pos+5], payload[pos+6], payload[pos+7],
+                        payload[pos],
+                        payload[pos + 1],
+                        payload[pos + 2],
+                        payload[pos + 3],
+                        payload[pos + 4],
+                        payload[pos + 5],
+                        payload[pos + 6],
+                        payload[pos + 7],
                     ]);
                     import_section.push(id);
                     pos += 8;
                 }
                 // export_section
-                let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                let len = u32::from_le_bytes([
+                    payload[pos],
+                    payload[pos + 1],
+                    payload[pos + 2],
+                    payload[pos + 3],
+                ]) as usize;
                 pos += 4;
                 let mut export_section = std::collections::HashMap::new();
                 for _ in 0..len {
-                    let name_len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                    let name_len = u32::from_le_bytes([
+                        payload[pos],
+                        payload[pos + 1],
+                        payload[pos + 2],
+                        payload[pos + 3],
+                    ]) as usize;
                     pos += 4;
-                    let name = String::from_utf8(payload[pos..pos+name_len].to_vec()).unwrap_or_default();
+                    let name = String::from_utf8(payload[pos..pos + name_len].to_vec())
+                        .unwrap_or_default();
                     pos += name_len;
-                    let idx = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                    let idx = u32::from_le_bytes([
+                        payload[pos],
+                        payload[pos + 1],
+                        payload[pos + 2],
+                        payload[pos + 3],
+                    ]) as usize;
                     pos += 4;
                     export_section.insert(name, idx);
                 }
@@ -217,13 +256,27 @@ impl VeritasEngine {
                     0x00 => None,
                     0x01 => {
                         pos += 1;
-                        let max_instances = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]);
+                        let max_instances = u32::from_le_bytes([
+                            payload[pos],
+                            payload[pos + 1],
+                            payload[pos + 2],
+                            payload[pos + 3],
+                        ]);
                         pos += 4;
-                        let len = u32::from_le_bytes([payload[pos], payload[pos+1], payload[pos+2], payload[pos+3]]) as usize;
+                        let len = u32::from_le_bytes([
+                            payload[pos],
+                            payload[pos + 1],
+                            payload[pos + 2],
+                            payload[pos + 3],
+                        ]) as usize;
                         pos += 4;
-                        let allow_instructions = payload[pos..pos+len].to_vec();
+                        let allow_instructions = payload[pos..pos + len].to_vec();
                         Some(crate::types::VerificationRule {
-                            max_instances: if max_instances == 0 { None } else { Some(max_instances) },
+                            max_instances: if max_instances == 0 {
+                                None
+                            } else {
+                                Some(max_instances)
+                            },
                             allow_instructions,
                         })
                     }
@@ -251,7 +304,12 @@ impl VeritasEngine {
                 link_type: edge.link_type,
             })
             .collect();
-        result.sort_by(|a, b| a.from.cmp(&b.from).then(a.to.cmp(&b.to)).then((a.link_type as u8).cmp(&(b.link_type as u8))));
+        result.sort_by(|a, b| {
+            a.from
+                .cmp(&b.from)
+                .then(a.to.cmp(&b.to))
+                .then((a.link_type as u8).cmp(&(b.link_type as u8)))
+        });
         result
     }
 
@@ -269,7 +327,11 @@ impl VeritasEngine {
     }
 
     /// 只读查询：某个 holder 是否持有某个 cap_id 且该 cap 有效。测试与外部诊断用。
-    pub fn holds_capability(&self, cap_id: crate::types::CapabilityId, holder: crate::types::ObjectId) -> bool {
+    pub fn holds_capability(
+        &self,
+        cap_id: crate::types::CapabilityId,
+        holder: crate::types::ObjectId,
+    ) -> bool {
         let cap_graph = self.capability_graph.lock().unwrap();
         cap_graph.is_capability_valid(cap_id) && cap_graph.holds(cap_id, holder)
     }
@@ -286,7 +348,9 @@ impl VeritasEngine {
         topo.iter().any(|edge| edge.from == from && edge.to == to)
     }
 
-    fn collect_access_intents(ctx: &crate::types::TransactionContext) -> Vec<crate::types::AccessIntent> {
+    fn collect_access_intents(
+        ctx: &crate::types::TransactionContext,
+    ) -> Vec<crate::types::AccessIntent> {
         let mut intents = Vec::new();
         for addr in ctx.read_set.states.keys() {
             intents.push(crate::types::AccessIntent::Read(addr.object_id));
@@ -362,7 +426,10 @@ impl VeritasEngine {
         Ok(())
     }
 
-    fn verify_capability(&self, ctx: &crate::types::TransactionContext) -> Result<(), crate::types::VeritasError> {
+    fn verify_capability(
+        &self,
+        ctx: &crate::types::TransactionContext,
+    ) -> Result<(), crate::types::VeritasError> {
         // 结构性豁免 + AccessIntent 全覆盖（Read/Write/Link/Unlink/Destroy/Freeze/Call）
         for intent in &Self::collect_access_intents(ctx) {
             self.authorize_intent(ctx, intent)?;
@@ -376,7 +443,11 @@ impl VeritasEngine {
         let state_entries = self.state_store.snapshot();
         let objects = self.snapshot_objects();
         let links = self.snapshot_links();
-        let capability_records = self.capability_graph.lock().unwrap().snapshot_capabilities();
+        let capability_records = self
+            .capability_graph
+            .lock()
+            .unwrap()
+            .snapshot_capabilities();
         let scopes = self.scope_registry.snapshot_all_scopes();
 
         // commitment_hash 直接用 engine 已有的 root_hash，不另写算法
@@ -407,8 +478,10 @@ impl VeritasEngine {
 
     /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
     pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
-        self.global_version.store(snap.global_version, Ordering::SeqCst);
-        self.object_id_counter.store(snap.object_id_counter, Ordering::SeqCst);
+        self.global_version
+            .store(snap.global_version, Ordering::SeqCst);
+        self.object_id_counter
+            .store(snap.object_id_counter, Ordering::SeqCst);
         {
             let mut cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.set_grant_sequence(snap.grant_sequence);
@@ -494,11 +567,12 @@ impl VeritasEngine {
             topo.clone()
         };
         edges.sort_by(|a, b| {
-            a.from.cmp(&b.from)
+            a.from
+                .cmp(&b.from)
                 .then(a.to.cmp(&b.to))
                 .then((a.link_type as u8).cmp(&(b.link_type as u8)))
         });
-        
+
         let h3 = Self::hash_each(&edges, |e, buf| {
             buf.extend_from_slice(&e.from.to_le_bytes());
             buf.extend_from_slice(&e.to.to_le_bytes());
@@ -508,10 +582,16 @@ impl VeritasEngine {
         // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
         let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
             let cap_graph = self.capability_graph.lock().unwrap();
-            cap_graph.all_grants()
+            cap_graph
+                .all_grants()
                 .into_iter()
                 .map(|(_, info)| {
-                    (info.granted_by, info.root_holder, info.resource, info.capability_type)
+                    (
+                        info.granted_by,
+                        info.root_holder,
+                        info.resource,
+                        info.capability_type,
+                    )
                 })
                 .collect()
         };
@@ -574,7 +654,8 @@ impl VeritasEngine {
             topo.clone()
         };
         edges.sort_by(|a, b| {
-            a.from.cmp(&b.from)
+            a.from
+                .cmp(&b.from)
                 .then(a.to.cmp(&b.to))
                 .then((a.link_type as u8).cmp(&(b.link_type as u8)))
         });
@@ -587,10 +668,16 @@ impl VeritasEngine {
         // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
         let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
             let cap_graph = self.capability_graph.lock().unwrap();
-            cap_graph.all_grants()
+            cap_graph
+                .all_grants()
                 .into_iter()
                 .map(|(_, info)| {
-                    (info.granted_by, info.root_holder, info.resource, info.capability_type)
+                    (
+                        info.granted_by,
+                        info.root_holder,
+                        info.resource,
+                        info.capability_type,
+                    )
                 })
                 .collect()
         };
@@ -625,14 +712,14 @@ impl VeritasEngine {
     /// 创建完全空的引擎，不读 WAL，不恢复。
     /// 仅用于 Replay 和测试。
     pub(crate) fn empty() -> Self {
+        use crate::capability::CapabilityGraph;
+        use crate::controller::TransactionController;
+        use crate::lock::LockManager;
+        use crate::scope_registry::ScopeRegistry;
+        use crate::store::StateStore;
+        use crate::tx_manager::TransactionManager;
         use std::sync::atomic::AtomicU64;
         use std::sync::{Arc, Mutex};
-        use crate::lock::LockManager;
-        use crate::tx_manager::TransactionManager;
-        use crate::controller::TransactionController;
-        use crate::capability::CapabilityGraph;
-                use crate::store::StateStore;
-        use crate::scope_registry::ScopeRegistry;
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(1));
         let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
@@ -660,20 +747,24 @@ impl VeritasEngine {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = format!("wal_{}_{:?}_{}.log", std::process::id(), std::thread::current().id(), n);
+        let path = format!(
+            "wal_{}_{:?}_{}.log",
+            std::process::id(),
+            std::thread::current().id(),
+            n
+        );
         let _ = std::fs::remove_file(&path);
         Self::with_wal_path(path)
     }
 
     pub(crate) fn with_wal_path(wal_path: String) -> Self {
-        let (records, recovered_version) = RecoveryManager::recover(&wal_path)
-            .unwrap_or_else(|e| {
+        let (records, recovered_version) =
+            RecoveryManager::recover(&wal_path).unwrap_or_else(|e| {
                 eprintln!("[WARN] WAL recovery failed: {}, starting fresh", e);
                 (Vec::new(), 0)
             });
 
-        let (pending_effects, max_tx_id) =
-            RecoveryManager::apply_records(&records);
+        let (pending_effects, max_tx_id) = RecoveryManager::apply_records(&records);
 
         let tx_mgr = Arc::new(TransactionManager::with_start_id(max_tx_id + 1));
         let lock_mgr = Arc::new(LockManager::new(Arc::clone(&tx_mgr)));
@@ -748,7 +839,9 @@ impl VeritasEngine {
     /// Bootstrap-only: allowed only when the world is empty (no objects, version 0).
     /// Runtime state writes must go through Transaction → Commit → Apply.
     pub(crate) fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
-        let version = self.global_version.load(std::sync::atomic::Ordering::Acquire);
+        let version = self
+            .global_version
+            .load(std::sync::atomic::Ordering::Acquire);
         let object_count = self.object_registry.lock().unwrap().len();
         assert!(
             version == 0 && object_count == 0,
@@ -764,7 +857,8 @@ impl VeritasEngine {
     }
 
     pub(crate) fn peek_state(&self, state_id: StateId) -> Option<StateEntry> {
-        self.state_store.read(crate::types::Address::new(0, state_id))
+        self.state_store
+            .read(crate::types::Address::new(0, state_id))
     }
 
     pub(crate) fn init_state_in_tx(
@@ -791,9 +885,6 @@ impl VeritasEngine {
         let snapshot_version = self.global_version.load(Ordering::Acquire);
         self.controller.begin(snapshot_version)
     }
-
-
-
 
     pub(crate) fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
         let mut ctx = self.begin();
@@ -861,7 +952,10 @@ impl VeritasEngine {
         let addr = crate::types::Address::new(ctx.current_object, state_id);
 
         if !ctx.read_set.states.contains_key(&addr) {
-            if let Some(entry) = self.state_store.read(crate::types::Address::new(ctx.current_object, state_id)) {
+            if let Some(entry) = self
+                .state_store
+                .read(crate::types::Address::new(ctx.current_object, state_id))
+            {
                 ctx.read_set.states.insert(addr, entry.version);
             }
         }
@@ -898,7 +992,8 @@ impl VeritasEngine {
             ctx.pending_unlinks.iter().copied().collect();
 
         let mut queue = ctx.pending_deaths.clone();
-        let mut seen: std::collections::HashSet<crate::types::ObjectId> = queue.iter().copied().collect();
+        let mut seen: std::collections::HashSet<crate::types::ObjectId> =
+            queue.iter().copied().collect();
         let mut i = 0;
 
         while i < queue.len() {
@@ -930,7 +1025,10 @@ impl VeritasEngine {
         ctx.pending_deaths = queue;
     }
 
-    pub(crate) fn commit(&self, ctx: &mut TransactionContext) -> Result<TransactionReceipt, VeritasError> {
+    pub(crate) fn commit(
+        &self,
+        ctx: &mut TransactionContext,
+    ) -> Result<TransactionReceipt, VeritasError> {
         let _lock = self.commit_lock.lock().unwrap();
 
         // F-007: 事务生命周期准入检查必须在 commit serialization 临界区内
@@ -959,7 +1057,6 @@ impl VeritasEngine {
         let requested_deaths = ctx.pending_deaths.clone();
 
         let commit_version = self.global_version.load(Ordering::Acquire) + 1;
-
 
         // P8.1: OWNS 死亡闭包——from 死亡则 owned 对象一并进入 pending_deaths
         self.expand_owns_death_closure(ctx);
@@ -1102,7 +1199,10 @@ impl VeritasEngine {
         {
             let mut registry = self.object_registry.lock().unwrap();
             for object_id in &delta.births {
-                registry.insert(*object_id, crate::types::ObjectRecord::new_state(*object_id));
+                registry.insert(
+                    *object_id,
+                    crate::types::ObjectRecord::new_state(*object_id),
+                );
             }
         }
 
@@ -1163,10 +1263,7 @@ impl VeritasEngine {
             while i < queue.len() {
                 let id = queue[i];
                 for edge in topo.iter() {
-                    if edge.from == id
-                        && edge.link_type == LinkType::Owns
-                        && seen.insert(edge.to)
-                    {
+                    if edge.from == id && edge.link_type == LinkType::Owns && seen.insert(edge.to) {
                         queue.push(edge.to);
                     }
                 }
@@ -1195,7 +1292,9 @@ impl VeritasEngine {
         // 8. Topology cleanup: remove edges involving dead objects
         {
             let mut topo = self.topology.lock().unwrap();
-            topo.retain(|edge| !full_death_set.contains(&edge.from) && !full_death_set.contains(&edge.to));
+            topo.retain(|edge| {
+                !full_death_set.contains(&edge.from) && !full_death_set.contains(&edge.to)
+            });
         }
 
         // 9. Capability revoke for dead holders
@@ -1235,13 +1334,15 @@ impl VeritasEngine {
         }
 
         // Global version update
-        self.global_version.store(delta.commit_version, Ordering::SeqCst);
+        self.global_version
+            .store(delta.commit_version, Ordering::SeqCst);
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权
     pub(crate) fn capability_grant(
         &self,
         ctx: &mut TransactionContext,
+        grantor: ObjectId,
         grantee: ObjectId,
         capability_type: &str,
         resource: StateId,
@@ -1261,16 +1362,17 @@ impl VeritasEngine {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64
         };
-        let cap_id = crate::capability::capability_id_of(grantee, grantee, resource, seq);
+        let cap_id = crate::capability::capability_id_of(grantor, grantee, resource, seq);
 
-        ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
-            capability_id: cap_id,
-            grant_sequence: seq,
-            grantor: grantee,
-            grantee,
-            resource,
-            cap_type: capability_type.to_string(),
-        });
+        ctx.pending_capabilities
+            .push(crate::types::PendingCapabilityGrant {
+                capability_id: cap_id,
+                grant_sequence: seq,
+                grantor,
+                grantee,
+                resource,
+                cap_type: capability_type.to_string(),
+            });
         Ok(cap_id)
     }
 
@@ -1313,11 +1415,12 @@ impl VeritasEngine {
             }
         }
 
-        ctx.pending_capability_revokes.push(crate::types::PendingCapabilityRevoke {
-            capability_id,
-            holder,
-            cascade_override,
-        });
+        ctx.pending_capability_revokes
+            .push(crate::types::PendingCapabilityRevoke {
+                capability_id,
+                holder,
+                cascade_override,
+            });
         Ok(())
     }
 
@@ -1344,11 +1447,14 @@ impl VeritasEngine {
         let from_holds = {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.holds(capability_id, from)
-        } || ctx.pending_capabilities.iter().any(|g| {
-            g.capability_id == capability_id && g.grantee == from
-        }) || ctx.pending_delegates.iter().any(|d| {
-            d.capability_id == capability_id && d.to == from
-        });
+        } || ctx
+            .pending_capabilities
+            .iter()
+            .any(|g| g.capability_id == capability_id && g.grantee == from)
+            || ctx
+                .pending_delegates
+                .iter()
+                .any(|d| d.capability_id == capability_id && d.to == from);
         if !from_holds {
             return Err(VeritasError::EngineError(format!(
                 "CapabilityDelegate: from {} does not hold capability {}",
@@ -1361,11 +1467,14 @@ impl VeritasEngine {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.caps_for_holder(to).contains(&capability_id)
                 || cap_graph.holds(capability_id, to)
-        } || ctx.pending_capabilities.iter().any(|g| {
-            g.capability_id == capability_id && g.grantee == to
-        }) || ctx.pending_delegates.iter().any(|d| {
-            d.capability_id == capability_id && d.to == to
-        });
+        } || ctx
+            .pending_capabilities
+            .iter()
+            .any(|g| g.capability_id == capability_id && g.grantee == to)
+            || ctx
+                .pending_delegates
+                .iter()
+                .any(|d| d.capability_id == capability_id && d.to == to);
         // holders.contains is the authoritative forest check; holds only covers active.
         // Use a direct graph probe for any prior holder record:
         let to_already = {
@@ -1473,14 +1582,20 @@ impl VeritasEngine {
 
         // P8.2: 死亡检查——源或目标已死则拒绝
         let reg = self.object_registry.lock().unwrap();
-        let from_dead = reg.get(&from).map(|r| r.is_dead()).unwrap_or(false) || ctx.pending_deaths.contains(&from);
-        let to_dead = reg.get(&to).map(|r| r.is_dead()).unwrap_or(false) || ctx.pending_deaths.contains(&to);
+        let from_dead = reg.get(&from).map(|r| r.is_dead()).unwrap_or(false)
+            || ctx.pending_deaths.contains(&from);
+        let to_dead =
+            reg.get(&to).map(|r| r.is_dead()).unwrap_or(false) || ctx.pending_deaths.contains(&to);
         drop(reg);
         if from_dead || to_dead {
             return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
-        ctx.pending_links.push(LinkEdge { from, to, link_type: relation });
+        ctx.pending_links.push(LinkEdge {
+            from,
+            to,
+            link_type: relation,
+        });
         Ok(())
     }
 
@@ -1498,7 +1613,10 @@ impl VeritasEngine {
         // P5.x.1: 检查边是否存在（全局 topology 或当前事务 pending_links）
         let topo = self.topology.lock().unwrap();
         let exists_in_topo = topo.iter().any(|e| e.from == from && e.to == to);
-        let exists_in_pending = ctx.pending_links.iter().any(|e| e.from == from && e.to == to);
+        let exists_in_pending = ctx
+            .pending_links
+            .iter()
+            .any(|e| e.from == from && e.to == to);
         drop(topo);
 
         if !exists_in_topo && !exists_in_pending {
@@ -1542,35 +1660,39 @@ impl VeritasEngine {
             (id, seq)
         };
 
-        ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
-            capability_id: admin_cap_id,
-            grant_sequence: admin_seq,
-            cap_type: "AdminCap".into(),
-            grantor: object_id,
-            grantee: object_id,
-            resource: object_id,
-        });
+        ctx.pending_capabilities
+            .push(crate::types::PendingCapabilityGrant {
+                capability_id: admin_cap_id,
+                grant_sequence: admin_seq,
+                cap_type: "AdminCap".into(),
+                grantor: object_id,
+                grantee: object_id,
+                resource: object_id,
+            });
 
         // Constitution kernel.md §6: "Object 创建时，创建者自动获得该 Object 的 AdminCap"
         // If the creator is not the new object itself, grant the creator AdminCap too.
         if ctx.current_object != object_id && ctx.current_object != 0 {
             let (creator_cap_id, creator_seq) = {
                 let cap_graph = self.capability_graph.lock().unwrap();
-                let seq = cap_graph.current_sequence() + 1
-                    + ctx.pending_capabilities.len() as u64;
+                let seq = cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64;
                 let id = crate::capability::capability_id_of(
-                    ctx.current_object, object_id, object_id, seq,
+                    ctx.current_object,
+                    object_id,
+                    object_id,
+                    seq,
                 );
                 (id, seq)
             };
-            ctx.pending_capabilities.push(crate::types::PendingCapabilityGrant {
-                capability_id: creator_cap_id,
-                grant_sequence: creator_seq,
-                cap_type: "AdminCap".into(),
-                grantor: object_id,
-                grantee: ctx.current_object,
-                resource: object_id,
-            });
+            ctx.pending_capabilities
+                .push(crate::types::PendingCapabilityGrant {
+                    capability_id: creator_cap_id,
+                    grant_sequence: creator_seq,
+                    cap_type: "AdminCap".into(),
+                    grantor: object_id,
+                    grantee: ctx.current_object,
+                    resource: object_id,
+                });
         }
 
         Ok(())
@@ -1673,9 +1795,7 @@ impl VeritasEngine {
             .savepoints
             .iter()
             .rposition(|s| s.name == name)
-            .ok_or_else(|| {
-                VeritasError::EngineError(format!("savepoint '{}' not found", name))
-            })?;
+            .ok_or_else(|| VeritasError::EngineError(format!("savepoint '{}' not found", name)))?;
 
         let sp = ctx.savepoints[index].clone();
 
@@ -1685,8 +1805,10 @@ impl VeritasEngine {
         ctx.pending_objects.truncate(sp.pending_objects_len);
         ctx.pending_links.truncate(sp.pending_links_len);
         ctx.pending_deaths.truncate(sp.pending_deaths_len);
-        ctx.pending_capabilities.truncate(sp.pending_capabilities_len);
-        ctx.pending_capability_revokes.truncate(sp.pending_capability_revokes_len);
+        ctx.pending_capabilities
+            .truncate(sp.pending_capabilities_len);
+        ctx.pending_capability_revokes
+            .truncate(sp.pending_capability_revokes_len);
         ctx.pending_delegates.truncate(sp.pending_delegates_len);
         ctx.pending_calls.truncate(sp.pending_calls_len);
 
@@ -1695,8 +1817,6 @@ impl VeritasEngine {
         Ok(())
     }
 }
-
-
 
 #[cfg(test)]
 mod bootstrap_tests {

@@ -1,15 +1,20 @@
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::engine::VeritasEngine;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
-use veritas_kernel::types::{ObjectState, LinkType, AbortReason};
-
+use veritas_kernel::types::{AbortReason, LinkType, ObjectState};
 
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
-    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap() {
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
@@ -19,28 +24,51 @@ fn birth(kernel: &Kernel) -> u64 {
 
 fn death(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
-    kernel.handle(&mut tx, KernelCall::ObjectDeath { object_id: id }).unwrap();
+    kernel
+        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn freeze(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
-    kernel.handle(&mut tx, KernelCall::ObjectFreeze { object_id: id }).unwrap();
+    kernel
+        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
     let mut tx = kernel.test_begin_in_object(from);
-    kernel.handle(&mut tx, KernelCall::CapabilityGrant {
-        grantee: from, capability_type: "link".to_string(), resource: to,
-    }).unwrap();
-    kernel.handle(&mut tx, KernelCall::ObjectLink { from, to, link_type: lt }).unwrap();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityGrant {
+                grantor: from,
+                grantee: from,
+                capability_type: "link".to_string(),
+                resource: to,
+            },
+        )
+        .unwrap();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectLink {
+                from,
+                to,
+                link_type: lt,
+            },
+        )
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
 fn unlink(kernel: &Kernel, from: u64, to: u64) {
     let mut tx = kernel.test_begin_in_object(from);
-    kernel.handle(&mut tx, KernelCall::ObjectUnlink { from, to }).unwrap();
+    kernel
+        .handle(&mut tx, KernelCall::ObjectUnlink { from, to })
+        .unwrap();
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
@@ -55,15 +83,32 @@ fn recovery_invariant_birth_then_death() {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         let obj = birth(&kernel);
         death(&kernel, obj);
-        assert!(kernel.test_engine().is_object_dead(obj), "object must be dead before crash");
+        assert!(
+            kernel.test_engine().is_object_dead(obj),
+            "object must be dead before crash"
+        );
     }
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        let obj = kernel.test_engine().list_object_ids().into_iter().find(|id| *id != 0).unwrap_or(1);
-        assert!(kernel.test_engine().is_object_dead(obj), "object must be dead after recovery");
-        assert_ne!(kernel.test_engine().get_object_state(obj), Some(ObjectState::Alive));
-        assert_ne!(kernel.test_engine().get_object_state(obj), Some(ObjectState::Frozen));
+        let obj = kernel
+            .test_engine()
+            .list_object_ids()
+            .into_iter()
+            .find(|id| *id != 0)
+            .unwrap_or(1);
+        assert!(
+            kernel.test_engine().is_object_dead(obj),
+            "object must be dead after recovery"
+        );
+        assert_ne!(
+            kernel.test_engine().get_object_state(obj),
+            Some(ObjectState::Alive)
+        );
+        assert_ne!(
+            kernel.test_engine().get_object_state(obj),
+            Some(ObjectState::Frozen)
+        );
     }
 
     let _ = std::fs::remove_file(&wal_path);
@@ -73,7 +118,10 @@ fn recovery_invariant_birth_then_death() {
 /// After recovery, final state must be Dead (not Frozen).
 #[test]
 fn recovery_invariant_birth_freeze_then_death() {
-    let wal_path = format!("target/test_inv_birth_freeze_death_{}.wal", std::process::id());
+    let wal_path = format!(
+        "target/test_inv_birth_freeze_death_{}.wal",
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal_path);
 
     {
@@ -81,13 +129,24 @@ fn recovery_invariant_birth_freeze_then_death() {
         let obj = birth(&kernel);
         freeze(&kernel, obj);
         death(&kernel, obj);
-        assert!(kernel.test_engine().is_object_dead(obj), "must be dead before crash");
+        assert!(
+            kernel.test_engine().is_object_dead(obj),
+            "must be dead before crash"
+        );
     }
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        let obj = kernel.test_engine().list_object_ids().into_iter().find(|id| *id != 0).unwrap_or(1);
-        assert!(kernel.test_engine().is_object_dead(obj), "must be dead after recovery");
+        let obj = kernel
+            .test_engine()
+            .list_object_ids()
+            .into_iter()
+            .find(|id| *id != 0)
+            .unwrap_or(1);
+        assert!(
+            kernel.test_engine().is_object_dead(obj),
+            "must be dead after recovery"
+        );
         assert_eq!(
             kernel.test_engine().get_object_state(obj),
             Some(ObjectState::Dead),
@@ -114,14 +173,26 @@ fn recovery_invariant_link_then_unlink() {
         b = birth(&kernel);
         link(&kernel, a, b, LinkType::Owns);
         unlink(&kernel, a, b);
-        assert!(!kernel.test_engine().has_link(a, b), "link must be removed before crash");
+        assert!(
+            !kernel.test_engine().has_link(a, b),
+            "link must be removed before crash"
+        );
     }
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        assert_eq!(kernel.test_engine().get_object_state(a), Some(ObjectState::Alive));
-        assert_eq!(kernel.test_engine().get_object_state(b), Some(ObjectState::Alive));
-        assert!(!kernel.test_engine().has_link(a, b), "link must not exist after recovery");
+        assert_eq!(
+            kernel.test_engine().get_object_state(a),
+            Some(ObjectState::Alive)
+        );
+        assert_eq!(
+            kernel.test_engine().get_object_state(b),
+            Some(ObjectState::Alive)
+        );
+        assert!(
+            !kernel.test_engine().has_link(a, b),
+            "link must not exist after recovery"
+        );
     }
 
     let _ = std::fs::remove_file(&wal_path);
@@ -143,19 +214,35 @@ fn recovery_invariant_owner_death_removes_link() {
         owned = birth(&kernel);
         link(&kernel, owner, owned, LinkType::Owns);
         death(&kernel, owner);
-        assert!(kernel.test_engine().is_object_dead(owner), "owner must be dead");
-        assert!(kernel.test_engine().is_object_dead(owned), "owned must cascade to dead");
-        assert!(!kernel.test_engine().has_link(owner, owned), "link must be removed");
+        assert!(
+            kernel.test_engine().is_object_dead(owner),
+            "owner must be dead"
+        );
+        assert!(
+            kernel.test_engine().is_object_dead(owned),
+            "owned must cascade to dead"
+        );
+        assert!(
+            !kernel.test_engine().has_link(owner, owned),
+            "link must be removed"
+        );
     }
 
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
-        assert!(kernel.test_engine().is_object_dead(owner), "owner dead after recovery");
-        assert!(kernel.test_engine().is_object_dead(owned), "owned dead after recovery");
-        assert!(!kernel.test_engine().has_link(owner, owned), "no dangling link after recovery");
+        assert!(
+            kernel.test_engine().is_object_dead(owner),
+            "owner dead after recovery"
+        );
+        assert!(
+            kernel.test_engine().is_object_dead(owned),
+            "owned dead after recovery"
+        );
+        assert!(
+            !kernel.test_engine().has_link(owner, owned),
+            "no dangling link after recovery"
+        );
     }
 
     let _ = std::fs::remove_file(&wal_path);
 }
-
-

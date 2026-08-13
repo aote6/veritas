@@ -1,10 +1,10 @@
 //! P3: CALL → AccessIntent unification tests.
 
 use std::sync::Arc;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::instruction::Instruction;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::machine::{Machine, MachineStatus};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{AccessIntent, ObjectType, TrapReason};
 
 fn temp_wal(name: &str) -> String {
@@ -38,6 +38,7 @@ fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
+                grantor: grantee,
                 grantee,
                 capability_type: "call".to_string(),
                 resource,
@@ -272,7 +273,10 @@ fn call_intent_collected_in_verify_path() {
     ctx.pending_calls.push(callee);
     // commit goes through verify_capability
     let res = kernel.handle(&mut ctx, KernelCall::Commit);
-    assert!(res.is_err(), "commit with unauthorized Call intent must fail");
+    assert!(
+        res.is_err(),
+        "commit with unauthorized Call intent must fail"
+    );
 }
 
 /// Self-call is exempt (structural)

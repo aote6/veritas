@@ -1,7 +1,7 @@
 //! P2: CapabilityRevoke Kernel → Engine → Graph → WAL/Checkpoint closure.
 
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 
 fn birth(kernel: &Kernel) -> u64 {
@@ -21,7 +21,6 @@ fn birth(kernel: &Kernel) -> u64 {
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     id
 }
-
 
 fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
     let mut tx = kernel.test_begin();
@@ -45,6 +44,7 @@ fn grant(kernel: &Kernel, grantee: u64, cap_type: &str, resource: u64) -> u64 {
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
+                grantor: grantee,
                 grantee,
                 capability_type: cap_type.to_string(),
                 resource,
@@ -62,7 +62,11 @@ fn grant(kernel: &Kernel, grantee: u64, cap_type: &str, resource: u64) -> u64 {
 /// Test 1: cascade revoke of intermediate holder removes downstream.
 #[test]
 fn kernel_capability_revoke_cascade_downstream() {
-    let wal = format!("{}/test_cap_revoke_cascade_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal = format!(
+        "{}/test_cap_revoke_cascade_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal);
     let kernel = Kernel::with_wal_path(wal);
 
@@ -100,7 +104,11 @@ fn kernel_capability_revoke_cascade_downstream() {
 /// Test 2: non-cascade revoke keeps downstream active.
 #[test]
 fn kernel_capability_revoke_non_cascade_preserves_downstream() {
-    let wal = format!("{}/test_cap_revoke_noncascade_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal = format!(
+        "{}/test_cap_revoke_noncascade_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal);
     let kernel = Kernel::with_wal_path(wal);
 
@@ -137,7 +145,11 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
 /// Test 3: revoke result is visible in checkpoint restore.
 #[test]
 fn kernel_capability_revoke_survives_checkpoint() {
-    let wal = format!("{}/test_cap_revoke_ckpt_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal = format!(
+        "{}/test_cap_revoke_ckpt_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal);
     let kernel = Kernel::with_wal_path(wal);
 
@@ -164,7 +176,11 @@ fn kernel_capability_revoke_survives_checkpoint() {
     assert!(!kernel.test_engine().holds_capability(cap, o2));
 
     let snap = kernel.create_checkpoint();
-    let wal2 = format!("{}/test_cap_revoke_ckpt2_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal2 = format!(
+        "{}/test_cap_revoke_ckpt2_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal2);
     let kernel2 = Kernel::with_wal_path(wal2);
     assert!(kernel2.restore_checkpoint(&snap));
@@ -176,7 +192,11 @@ fn kernel_capability_revoke_survives_checkpoint() {
 /// Test 4: WAL recovery re-applies CapabilityRevoke (root grant only, WAL-recorded).
 #[test]
 fn kernel_capability_revoke_wal_replay() {
-    let wal = format!("{}/test_cap_revoke_wal_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal = format!(
+        "{}/test_cap_revoke_wal_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal);
     let kernel = Kernel::with_wal_path(wal.clone());
 
@@ -210,7 +230,11 @@ fn kernel_capability_revoke_wal_replay() {
 /// Revoke of non-holder fails before commit.
 #[test]
 fn kernel_capability_revoke_not_holder_errors() {
-    let wal = format!("{}/test_cap_revoke_err_{}.wal", std::env::temp_dir().display(), std::process::id());
+    let wal = format!(
+        "{}/test_cap_revoke_err_{}.wal",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&wal);
     let kernel = Kernel::with_wal_path(wal);
 

@@ -21,7 +21,12 @@ use veritas_kernel::types::{LinkType, ObjectType};
 fn birth_under(kernel: &veritas_kernel::kernel::Kernel, creator: u64) -> u64 {
     let mut tx = kernel.test_begin_in_object(creator);
     let id = match kernel
-        .handle(&mut tx, KernelCall::ObjectBirth { object_type: ObjectType::StateObject })
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
         .unwrap()
     {
         TrapResult::ObjectId(id) => id,
@@ -50,10 +55,17 @@ fn object_link_without_capability_on_target_is_rejected() {
     let mut tx = tk.kernel.test_begin_in_object(a);
     let handle_result = tk.kernel.handle(
         &mut tx,
-        KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns },
+        KernelCall::ObjectLink {
+            from: a,
+            to: b,
+            link_type: LinkType::Owns,
+        },
     );
     // ObjectLink 本身只是 push 到 pending_links，预期这一步不报错
-    assert!(handle_result.is_ok(), "object_link staging should not itself error");
+    assert!(
+        handle_result.is_ok(),
+        "object_link staging should not itself error"
+    );
 
     // 真正的授权检查发生在 commit
     let commit_result = tk.kernel.handle(&mut tx, KernelCall::Commit);
@@ -86,6 +98,7 @@ fn object_link_with_proper_capability_succeeds() {
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
+                grantor: a,
                 grantee: a,
                 capability_type: "link".to_string(),
                 resource: b,
@@ -93,11 +106,21 @@ fn object_link_with_proper_capability_succeeds() {
         )
         .unwrap();
     tk.kernel
-        .handle(&mut tx, KernelCall::ObjectLink { from: a, to: b, link_type: LinkType::Owns })
+        .handle(
+            &mut tx,
+            KernelCall::ObjectLink {
+                from: a,
+                to: b,
+                link_type: LinkType::Owns,
+            },
+        )
         .unwrap();
 
     let commit_result = tk.kernel.handle(&mut tx, KernelCall::Commit);
-    assert!(commit_result.is_ok(), "commit should succeed when caller holds capability on target");
+    assert!(
+        commit_result.is_ok(),
+        "commit should succeed when caller holds capability on target"
+    );
 
     assert!(
         tk.kernel.has_link(a, b),
