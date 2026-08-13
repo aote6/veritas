@@ -1275,6 +1275,47 @@ CapabilityGrant 是 Ver 的计算机权限原语，Forge 消失后它依然应�
 
 ---
 
+## P0 CapabilityGrant 链闭合完成 — 2026-08-13
+
+### 已完成（两个 commit）
+
+1. `e2dc91b` fix: CapabilityGrant 闭合 grantor 语义链
+   - Engine::capability_grant 增加 grantor 参数
+   - KernelCall::CapabilityGrant 增加 grantor 字段
+   - Machine::CapabilityGrant 从 ctx.current_object 取 grantor
+   - 17 处测试调用点对齐（16 处 grantor=grantee 保持原语义，
+     checkpoint_roundtrip.rs 跨对象场景 grantor=1）
+
+2. `a3affad` test: 新增 CapabilityGrant 跨对象授权回归测试
+   - engine.rs 添加 snapshot_capabilities_for_test 只读转发
+   - test_api.rs 添加 test_capability_records 测试专用接口
+   - 新测试验证 A grant B → granted_by=A, holder=B, A!=B
+   - 未授权时 B 操作被拒绝，授权后成功
+
+### grantor 传递链路（最终状态）
+
+Machine: self.ctx.current_object
+  → KernelCall::CapabilityGrant { grantor, grantee, ... }
+  → Kernel::handle 透传
+  → Engine::capability_grant(grantor, grantee, ...)
+  → PendingCapabilityGrant { grantor, grantee }
+  → CapabilityGraph::grant / restore_grant
+  → CapabilityInfo { granted_by: grantor, root_holder: grantee }
+
+### 验证结果
+
+- cargo test 全量通过：103 + 1 = 104 passed, 0 failed
+- 跨对象授权回归测试单独通过
+- WAL recovery 语义未被破坏（已有测试覆盖）
+
+### 未做（P1/P2 后续）
+
+- veritasd 未暴露 tx_capability_grant 命令（P1）
+- Forge adapter/session 未添加 grant 方法（P2）
+- 按架构边界：先闭合 Ver 内部，再暴露 veritasd，最后 Forge 薄适配
+
+---
+
 ## 架构债：Session/Machine 身份管理统一 — 待执行
 
 ### 问题
