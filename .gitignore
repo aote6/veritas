@@ -10,3 +10,4 @@ target_tmp/
 *.wal
 .test_wal_*.log
 test_output.log
+STATUS.md.bak.*
