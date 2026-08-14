@@ -1,3 +1,9 @@
+//! Replay 确定性：相同 WAL 多次 replay 产生相同状态根与结果。
+//!
+//! 验证内容：replay 过程对同一输入序列输出完全一致的状态。
+//! 对应 VERIFICATION_MAP：replay_determinism.rs
+//! 若失败，意味着确定性执行承诺被破坏，状态不可独立验证。
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;

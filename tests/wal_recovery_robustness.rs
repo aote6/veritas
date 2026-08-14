@@ -1,3 +1,9 @@
+//! WAL recovery 鲁棒性：截断与损坏 WAL 的处理。
+//!
+//! 验证内容：末尾截断或中间/早期字节损坏的 WAL 被正确检测或安全处理，不产生非法状态。
+//! 对应 VERIFICATION_MAP：wal_recovery_robustness.rs
+//! 若失败，意味着损坏 WAL 可导致静默错误状态或崩溃，破坏恢复安全性。
+
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::types::ObjectType;
@@ -159,26 +165,36 @@ fn empty_wal_recovery_succeeds() {
 
 // ===== Tests =====
 
+/// 截断最后 10 字节的 WAL 被正确处理。
+/// 失败意味着短截断未被检测。
 #[test]
 fn truncated_wal_last_10_bytes() {
     test_truncated_wal(10);
 }
 
+/// 截断最后 50 字节的 WAL 被正确处理。
+/// 失败意味着中等截断未被检测。
 #[test]
 fn truncated_wal_last_50_bytes() {
     test_truncated_wal(50);
 }
 
+/// 截断最后 200 字节的 WAL 被正确处理。
+/// 失败意味着大截断未被检测。
 #[test]
 fn truncated_wal_last_200_bytes() {
     test_truncated_wal(200);
 }
 
+/// 中间字节损坏的 WAL 被正确处理。
+/// 失败意味着中间损坏可导致非法恢复。
 #[test]
 fn corrupted_wal_middle_byte() {
     test_corrupted_wal(20, 0xFF);
 }
 
+/// 早期字节损坏的 WAL 被正确处理。
+/// 失败意味着早期损坏可导致非法恢复。
 #[test]
 fn corrupted_wal_early_byte() {
     test_corrupted_wal(5, 0x00);

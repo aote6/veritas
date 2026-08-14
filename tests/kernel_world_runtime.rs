@@ -1,3 +1,9 @@
+//! Kernel World Runtime：跨 Module 通过 Runtime 执行可见性。
+//!
+//! 验证内容：Module A 的 Object 通过 runtime execute 对 Module B 可见。
+//! 对应 VERIFICATION_MAP：kernel_world_runtime.rs
+//! 若失败，意味着跨模块运行时可见性或执行路径断裂。
+
 use std::sync::Arc;
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::instruction::Instruction;
@@ -18,6 +24,8 @@ fn make_birth_module() -> ModuleImage {
     ModuleImage::new("birth", ModuleVersion::new(1, 0, 0), image)
 }
 
+/// Module A 对象经 runtime execute 对 Module B 可见。
+/// 失败意味着跨模块执行/可见性不变量被破坏。
 #[test]
 fn module_a_object_visible_to_module_b_through_runtime_execute() {
     let kernel = Arc::new(Kernel::new());

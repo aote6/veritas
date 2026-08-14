@@ -1,8 +1,16 @@
+//! Receipt：before/after root hash 与 replay 一致性。
+//!
+//! 验证内容：receipt.after 匹配实际 root hash；before/after 一致；replay 后 receipt 一致。
+//! 对应 VERIFICATION_MAP：receipt.rs
+//! 若失败，意味着 receipt 与状态根承诺不一致，破坏可验证性。
+
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
 
+/// Receipt 的 after_root 必须匹配实际 world root hash。
+/// 失败意味着 receipt 与状态根脱节。
 #[test]
 fn receipt_after_matches_root_hash() {
     let wal_path = format!("target/test_rcpt1_{}.wal", std::process::id());
@@ -29,6 +37,8 @@ fn receipt_after_matches_root_hash() {
     assert_eq!(receipt.after_root, k.test_engine().root_hash());
 }
 
+/// Receipt before/after 与实际状态变化一致。
+/// 失败意味着 receipt 记录了错误的状态边界。
 #[test]
 fn receipt_before_after_consistency() {
     let wal_path = format!("target/test_rcpt2_{}.wal", std::process::id());
@@ -58,6 +68,8 @@ fn receipt_before_after_consistency() {
     assert_eq!(receipt.after_root, k.test_engine().root_hash());
 }
 
+/// Replay 后生成的 receipt 与原始一致。
+/// 失败意味着 replay 路径 receipt 计算分歧。
 #[test]
 fn receipt_replay_consistency() {
     let wal_path = format!("target/test_rcpt3_{}.wal", std::process::id());

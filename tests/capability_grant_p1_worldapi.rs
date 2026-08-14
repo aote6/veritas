@@ -1,11 +1,21 @@
-// P1: veritasd 外部接口暴露 tx_capability_grant —— WorldService 层集成测试。
-// 验证：A grant B link capability on C → commit → B 新 session 对 C 的 link 成功；
-// 未授权的 B 操作在 commit 时仍然失败；grantor 语义保持真实（A != B）。
+//! P1: WorldService 外部接口暴露 tx_capability_grant 的集成测试。
+//!
+//! 验证内容：
+//! - A 通过 WorldService 授予 B 对 C 的 link 能力后，B 新 session 可成功 commit link。
+//! - 未授权时 commit 拒绝。
+//! - grantor 语义真实（granted_by = A, holder = B, A != B）。
+//!
+//! 对应 VERIFICATION_MAP：capability_grant_p1_worldapi.rs / tx_capability_grant_external_interface_end_to_end
+//!
+//! 若失败，意味着 WorldApi 层 CapabilityGrant 未正确贯通到 Kernel 授权与 capability graph，破坏外部接口与内核一致性不变量。
+
 use std::sync::Arc;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::world_api::WorldService;
 
+/// WorldService 端到端：A 授予 B 对 C 的 link 能力，验证授权成功、未授权拒绝、grantor 归因正确。
+/// 失败意味着外部接口与 Kernel 授权检查或 capability graph 不一致。
 #[test]
 fn tx_capability_grant_external_interface_end_to_end() {
     let kernel = Arc::new(Kernel::new());

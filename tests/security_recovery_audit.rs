@@ -987,6 +987,8 @@ fn audit_wal_replay_committed_delta_idempotent() {
 // Part 4: freeze/death still pre-auth (control contrast already above)
 // =============================================================================
 
+/// 跨对象 write 在无 capability 时仍被拒绝（审计回归）。
+/// 失败意味着 write 授权检查被绕过。
 #[test]
 fn audit_write_cross_object_still_denied() {
     let (wal, kernel, world) = world_pair("write_x");
@@ -1567,6 +1569,8 @@ fn base_delta() -> TransactionDelta {
     }
 }
 
+/// 相同 delta 的 canonical identity 相等。
+/// 失败意味着 identity 计算非确定性或字段遗漏。
 #[test]
 fn audit_canonical_identity_same_delta_equal() {
     let a = base_delta();
@@ -1579,6 +1583,8 @@ fn audit_canonical_identity_same_delta_equal() {
     assert_eq!(a.content_hash(), b.content_hash());
 }
 
+/// Canonical identity 排除 tx_id（非语义字段）。
+/// 失败意味着 identity 混入了瞬时字段。
 #[test]
 fn audit_canonical_identity_excludes_tx_id() {
     let mut a = base_delta();
@@ -1592,6 +1598,8 @@ fn audit_canonical_identity_excludes_tx_id() {
     );
 }
 
+/// Canonical identity 排除 commit_version。
+/// 失败意味着 identity 混入了版本瞬时字段。
 #[test]
 fn audit_canonical_identity_excludes_commit_version() {
     let mut a = base_delta();
@@ -1605,6 +1613,8 @@ fn audit_canonical_identity_excludes_commit_version() {
     );
 }
 
+/// Canonical identity 包含 actor_id。
+/// 失败意味着归因信息丢失。
 #[test]
 fn audit_canonical_identity_includes_actor_id() {
     let mut a = base_delta();
@@ -1618,6 +1628,8 @@ fn audit_canonical_identity_includes_actor_id() {
     );
 }
 
+/// Vec 字段顺序影响 canonical identity。
+/// 失败意味着顺序被错误规范化或忽略。
 #[test]
 fn audit_canonical_identity_vec_order_matters() {
     let mut a = base_delta();
@@ -1631,6 +1643,8 @@ fn audit_canonical_identity_vec_order_matters() {
     );
 }
 
+/// String 边界在 canonical identity 中安全（无歧义）。
+/// 失败意味着编码存在边界碰撞。
 #[test]
 fn audit_canonical_identity_string_boundary_safe() {
     let mut a = empty_delta(1, 1);
@@ -1651,6 +1665,8 @@ fn audit_canonical_identity_string_boundary_safe() {
     assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
 }
 
+/// 空 Vec 与非空 Vec 的 identity 不同。
+/// 失败意味着空集合被错误处理。
 #[test]
 fn audit_canonical_identity_empty_vs_nonempty_vec() {
     let mut a = empty_delta(1, 1);
@@ -1664,6 +1680,8 @@ fn audit_canonical_identity_empty_vs_nonempty_vec() {
     );
 }
 
+/// Option Some/None 在 identity 中可区分。
+/// 失败意味着 Option 编码丢失信息。
 #[test]
 fn audit_canonical_identity_option_some_none() {
     let mut a = empty_delta(1, 1);
@@ -1693,6 +1711,8 @@ fn audit_canonical_identity_option_some_none() {
     assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
 }
 
+/// Enum 不同 variant 产生不同 identity。
+/// 失败意味着 variant 区分失败。
 #[test]
 fn audit_canonical_identity_enum_variants() {
     let mut a = empty_delta(1, 1);
@@ -1712,6 +1732,8 @@ fn audit_canonical_identity_enum_variants() {
     assert_ne!(c.canonical_identity_bytes(), d.canonical_identity_bytes());
 }
 
+/// 每个语义字段都影响 canonical identity。
+/// 失败意味着某些语义字段被遗漏。
 #[test]
 fn audit_canonical_identity_every_semantic_field() {
     let empty = empty_delta(1, 1);
@@ -1812,6 +1834,8 @@ fn audit_canonical_identity_every_semantic_field() {
     assert_eq!(ver_only.canonical_identity_bytes(), base);
 }
 
+/// Genesis 时 last_applied_delta_hash 为零。
+/// 失败意味着初始 hash 状态错误。
 #[test]
 fn audit_last_applied_delta_hash_genesis_is_zero() {
     let (wal, kernel, _world) = world_pair("lah_genesis");
@@ -1824,6 +1848,8 @@ fn audit_last_applied_delta_hash_genesis_is_zero() {
     cleanup(&wal);
 }
 
+/// Apply delta 后 last_applied_delta_hash 更新。
+/// 失败意味着 hash 链未推进。
 #[test]
 fn audit_last_applied_delta_hash_updates_on_apply() {
     let (wal, kernel, _world) = world_pair("lah_apply");
@@ -1838,6 +1864,8 @@ fn audit_last_applied_delta_hash_updates_on_apply() {
     cleanup(&wal);
 }
 
+/// Checkpoint 保留 last_applied_delta_hash。
+/// 失败意味着 hash 链在 checkpoint 丢失。
 #[test]
 fn audit_checkpoint_preserves_last_applied_delta_hash() {
     let (wal, kernel, _world) = world_pair("lah_ckpt");
@@ -1866,6 +1894,8 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
     cleanup(&wal);
 }
 
+/// Checkpoint roundtrip 后 identity 连续。
+/// 失败意味着 identity 在持久化路径上漂移。
 #[test]
 fn audit_checkpoint_roundtrip_identity_continuity() {
     let (wal, kernel, _world) = world_pair("lah_roundtrip");

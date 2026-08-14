@@ -1,8 +1,19 @@
-// P1 JSONL e2e: 验证真实的 JSON request -> veritasd -> WorldApi -> Kernel -> Engine
-// -> CapabilityGraph 全链路，而不仅是 Rust 内部函数调用。
+//! P1 JSONL e2e：验证真实 JSON request → veritasd → WorldApi → Kernel → Engine → CapabilityGraph 全链路。
+//!
+//! 验证内容：
+//! - 未授权跨对象 link 在 commit 被拒绝。
+//! - 通过外部 tx_capability_grant 原语授予后，被授权者可成功 link。
+//! - 全链路不依赖 Rust 内部直接调用，而是真实进程间 JSONL 协议。
+//!
+//! 对应 VERIFICATION_MAP：capability_grant_p1_jsonlines.rs / tx_capability_grant_jsonl_end_to_end
+//!
+//! 若失败，意味着外部接口 CapabilityGrant 未正确贯通到 Kernel 授权检查，或 JSONL 路径绕过了安全不变量。
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+/// JSONL 端到端：A 授予 B 对 C 的 link 能力后，B 可成功 commit link；未授权时 commit 失败。
+/// 失败意味着外部 CapabilityGrant 原语未正确生效或授权检查被绕过。
 #[test]
 fn tx_capability_grant_jsonl_end_to_end() {
     let veritasd_path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_veritasd"));

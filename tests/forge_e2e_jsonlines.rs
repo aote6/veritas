@@ -1,3 +1,9 @@
+//! Forge-like JSONL 端到端：启动 veritasd，驱动完整 JSON-Lines 协议，验证全链路。
+//!
+//! 验证内容：真实进程间协议下的对象创建、授权、link、commit 等核心路径。
+//! 对应 VERIFICATION_MAP：forge_e2e_jsonlines.rs
+//! 若失败，意味着外部 JSONL 接口与 Kernel 行为不一致或 e2e 链路断裂。
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 

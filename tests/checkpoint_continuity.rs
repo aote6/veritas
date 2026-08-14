@@ -1,3 +1,15 @@
+//! Checkpoint 连续性：restore 后世界状态、capability 身份、对象死亡与 state entry 版本保持连续一致。
+//!
+//! 验证内容：
+//! - checkpoint restore 后世界拓扑与 capability 可继续使用。
+//! - capability 身份（id）在 restore 后不变。
+//! - 对象死亡后不会出现 ghost state。
+//! - state entry 版本在 checkpoint 后保持。
+//!
+//! 对应 VERIFICATION_MAP：checkpoint_continuity.rs
+//!
+//! 若失败，意味着 checkpoint 路径破坏了状态连续性或身份稳定性不变量。
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
@@ -40,6 +52,8 @@ fn grant(
     }
 }
 
+/// Checkpoint restore 后世界状态连续，可继续执行并保持拓扑一致。
+/// 失败意味着 restore 丢失了 live 状态或破坏了连续性不变量。
 #[test]
 fn checkpoint_restore_world_continuity() {
     let k_cont = Kernel::new();
@@ -101,6 +115,8 @@ fn checkpoint_restore_world_continuity() {
     assert_eq!(final_rest.grant_sequence, final_cont.grant_sequence);
 }
 
+/// Capability 身份（capability_id）在 checkpoint restore 后保持不变。
+/// 失败意味着身份在持久化/恢复路径上被重新分配，破坏可归因性。
 #[test]
 fn capability_identity_survives_checkpoint_restore() {
     let kernel = Kernel::new();
@@ -130,6 +146,8 @@ fn capability_identity_survives_checkpoint_restore() {
     assert!(kernel.holds_capability(cap_b, o1));
 }
 
+/// 对象死亡后经 checkpoint restore 不应留下 ghost state。
+/// 失败意味着死亡状态未正确持久化，破坏生命周期不变量。
 #[test]
 fn object_death_no_ghost_state_after_checkpoint() {
     let kernel = Kernel::new();
@@ -167,6 +185,8 @@ fn object_death_no_ghost_state_after_checkpoint() {
     assert_eq!(kernel.state_root(), root_dead);
 }
 
+/// Checkpoint 保留 state entry 的版本号，restore 后版本连续。
+/// 失败意味着版本信息丢失，破坏乐观并发/一致性不变量。
 #[test]
 fn checkpoint_preserves_state_entry_versions() {
     let kernel = Kernel::new();

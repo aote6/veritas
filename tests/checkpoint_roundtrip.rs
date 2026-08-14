@@ -1,3 +1,16 @@
+//! Checkpoint 完整 roundtrip：五组件序列化/反序列化、继续执行、幂等、root hash、counter。
+//!
+//! 验证内容：
+//! - 全量 checkpoint 写出再 restore 后状态等价。
+//! - restore 后可继续执行。
+//! - 多次 restore 幂等。
+//! - root hash 一致。
+//! - counter 正确 roundtrip。
+//!
+//! 对应 VERIFICATION_MAP：checkpoint_roundtrip.rs
+//!
+//! 若失败，意味着 checkpoint 序列化格式或恢复逻辑破坏了状态等价性不变量。
+
 use veritas_kernel::kernel::{Kernel, KernelCall};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
@@ -60,6 +73,8 @@ fn build_world(kernel: &Kernel) {
 
 // ========== 1. 五组件 roundtrip ==========
 
+/// 全量五组件 checkpoint roundtrip 后状态与 live 等价。
+/// 失败意味着序列化/反序列化丢失关键状态。
 #[test]
 fn checkpoint_full_roundtrip_all_five_components() {
     let kernel = Kernel::new();
@@ -81,6 +96,8 @@ fn checkpoint_full_roundtrip_all_five_components() {
 
 // ========== 2. Restore 后可继续执行 ==========
 
+/// Checkpoint restore 后可继续正常执行新事务。
+/// 失败意味着 restore 后运行时处于不可用状态。
 #[test]
 fn checkpoint_restore_then_continue_execution() {
     let kernel = Kernel::new();
@@ -114,6 +131,8 @@ fn checkpoint_restore_then_continue_execution() {
 
 // ========== 3. 多次 restore 幂等 ==========
 
+/// 多次 checkpoint restore 结果幂等，状态不漂移。
+/// 失败意味着 restore 非幂等，破坏确定性。
 #[test]
 fn checkpoint_restore_idempotent() {
     let kernel = Kernel::new();
@@ -135,6 +154,8 @@ fn checkpoint_restore_idempotent() {
 
 // ========== 4. root_hash 一致性 ==========
 
+/// Checkpoint roundtrip 后 root hash 与原始一致。
+/// 失败意味着状态根计算或持久化不一致。
 #[test]
 fn checkpoint_root_hash_consistent() {
     let kernel = Kernel::new();
@@ -158,6 +179,8 @@ fn checkpoint_root_hash_consistent() {
 
 // ========== 5. 计数器 roundtrip（Stage 2 任务4） ==========
 
+/// Checkpoint 正确保存并恢复内部 counter。
+/// 失败意味着计数器状态丢失，可能影响 id 分配。
 #[test]
 fn checkpoint_counter_roundtrip() {
     let kernel = Kernel::new();

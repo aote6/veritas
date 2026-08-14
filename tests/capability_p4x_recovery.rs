@@ -1,3 +1,14 @@
+//! P4.x: CapabilityGrant 在 commit / crash-recovery / abort 路径上的可见性与不泄漏不变量。
+//!
+//! 验证内容：
+//! - Object 创建时授予的 AdminCap 在 commit 后正确写入 capability graph。
+//! - AdminCap 在 crash + restart（WAL recovery）后仍然存在。
+//! - abort 后 AdminCap 不能残留。
+//!
+//! 对应 VERIFICATION_MAP：capability_p4x_recovery.rs
+//!
+//! 若失败，意味着 CapabilityGrant 在持久化或恢复路径上丢失/泄漏，破坏能力拓扑与事务原子性不变量。
+
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::capability::capability_id_of;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};

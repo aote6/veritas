@@ -1,8 +1,16 @@
+//! Commitment domain：live vs recovery 组件诊断与 self-access 不扩展 capability graph。
+//!
+//! 验证内容：live 与 recovery 路径组件一致性；self access 不导致 capability graph 增长。
+//! 对应 VERIFICATION_MAP：commitment_domain.rs
+//! 若失败，意味着 commitment 域边界或 self-access 规则被破坏。
+
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
 
+/// 诊断 live 与 recovery 路径关键组件是否一致。
+/// 失败意味着两条路径产生分歧，破坏可恢复性。
 #[test]
 fn diagnose_live_vs_recovery_components() {
     let wal_path = format!("target/test_diag_{}.wal", std::process::id());
@@ -35,6 +43,8 @@ fn diagnose_live_vs_recovery_components() {
     assert_eq!(live, recovery, "All five components must match between live and recovery");
 }
 
+/// Self access 不应导致 capability graph 增长。
+/// 失败意味着 self-access 错误地创建了额外 grant，破坏最小授权不变量。
 #[test]
 fn self_access_does_not_grow_capability_graph() {
     let wal_path = format!("target/test_nogrow_{}.wal", std::process::id());

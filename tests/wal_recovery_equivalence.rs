@@ -1,3 +1,9 @@
+//! WAL recovery 与 live / checkpoint 路径的状态等价性。
+//!
+//! 验证内容：从同一 WAL 恢复出的世界状态与原始 live 状态在关键组件上等价。
+//! 对应 VERIFICATION_MAP：wal_recovery_equivalence.rs
+//! 若失败，意味着 recovery 路径与正常执行路径产生分歧，破坏可恢复性不变量。
+
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use veritas_kernel::engine::VeritasEngine;

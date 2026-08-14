@@ -1,3 +1,9 @@
+//! Snapshot restore roundtrip：Body/CapGraph/Scope/Topology 序列化往返。
+//!
+//! 验证内容：各组件 empty 与有数据情况下的 serde roundtrip 正确。
+//! 对应 VERIFICATION_MAP：snapshot_restore_roundtrip.rs
+//! 若失败，意味着 snapshot 格式或 serde 实现丢失信息。
+
 // PR3: 第一批 snapshot/restore 可逆性单元测试
 // 只测试已有公开 API 的组件：ObjectBody serde, CapabilityGraph, ScopeRegistry, Topology(空)
 // ObjectRegistry/StateStore 属于集成测试，等 Engine Checkpoint 接通后再补
@@ -6,6 +12,8 @@ use veritas_kernel::types::*;
 
 // ========== 1. ObjectBody serialize/deserialize ==========
 
+/// Body state 组件 serde roundtrip 正确。
+/// 失败意味着 state 序列化丢失。
 #[test]
 fn body_serde_state() {
     let body = ObjectBody::State;
@@ -14,6 +22,8 @@ fn body_serde_state() {
     assert_eq!(body, restored);
 }
 
+/// Body module 空 rule serde roundtrip。
+/// 失败意味着 module 空规则序列化错误。
 #[test]
 fn body_serde_module_empty_rule() {
     let body = ObjectBody::Module {
@@ -29,6 +39,8 @@ fn body_serde_module_empty_rule() {
     assert_eq!(body, restored);
 }
 
+/// Body module 有 rule 时 serde roundtrip。
+/// 失败意味着 rule 序列化丢失。
 #[test]
 fn body_serde_module_with_rule() {
     let body = ObjectBody::Module {
@@ -47,6 +59,8 @@ fn body_serde_module_with_rule() {
 
 // ========== 2. CapabilityGraph roundtrip ==========
 
+/// 空 CapGraph serde roundtrip。
+/// 失败意味着空 capability graph 序列化错误。
 #[test]
 fn cap_graph_roundtrip_empty() {
     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
@@ -56,6 +70,8 @@ fn cap_graph_roundtrip_empty() {
     assert_eq!(a, b);
 }
 
+/// 有 grants 的 CapGraph serde roundtrip。
+/// 失败意味着 grant 信息在序列化中丢失。
 #[test]
 fn cap_graph_roundtrip_with_grants() {
     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
@@ -69,6 +85,8 @@ fn cap_graph_roundtrip_with_grants() {
 
 // ========== 3. ScopeRegistry roundtrip ==========
 
+/// 空 Scope serde roundtrip。
+/// 失败意味着空 scope 序列化错误。
 #[test]
 fn scope_roundtrip_empty() {
     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
@@ -78,6 +96,8 @@ fn scope_roundtrip_empty() {
     assert_eq!(a, b);
 }
 
+/// 有数据的 Scope serde roundtrip。
+/// 失败意味着 scope 数据丢失。
 #[test]
 fn scope_roundtrip_with_data() {
     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
@@ -94,6 +114,8 @@ fn scope_roundtrip_with_data() {
 
 // ========== 4. Topology roundtrip (仅空) ==========
 
+/// 空 Topology serde roundtrip。
+/// 失败意味着空拓扑序列化错误。
 #[test]
 fn topology_roundtrip_empty() {
     let engine = veritas_kernel::test_api::empty_engine();

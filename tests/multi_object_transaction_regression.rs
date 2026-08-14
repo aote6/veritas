@@ -12,6 +12,8 @@ fn temp_wal(name: &str) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// 多对象事务 abort 后不留下 partial state。
+/// 失败意味着事务原子性被破坏。
 #[test]
 fn test_a_multi_object_abort_leaves_no_partial_state() {
     let wal_path = temp_wal("test_a_abort");
@@ -38,6 +40,8 @@ fn test_a_multi_object_abort_leaves_no_partial_state() {
     assert!(!ids.contains(&b));
 }
 
+/// 跨 session 的 capability 隔离：一个 session 的 grant 不影响另一 session 的未授权状态。
+/// 失败意味着 session 隔离或 capability 作用域泄漏。
 #[test]
 fn test_b_cross_session_capability_isolation() {
     let wal_path = temp_wal("test_b_isolation");
@@ -55,6 +59,8 @@ fn test_b_cross_session_capability_isolation() {
     let _ = world.tx_abort(sid_b);
 }
 
+/// WAL recovery 后多对象 link 不重复。
+/// 失败意味着 recovery 路径重复应用 link，破坏拓扑一致性。
 #[test]
 fn test_c_wal_recovery_multi_object_link_no_duplication() {
     let wal_path = temp_wal("test_c_recovery");

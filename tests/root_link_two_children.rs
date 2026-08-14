@@ -27,6 +27,8 @@ fn assert_not_trapped(machine: &Machine, step_name: &str) {
     }
 }
 
+/// Root 可对两个自己 birth 的 child 直接 link（无需 CALL 切换）。
+/// 失败意味着 self-birthed 对象的 link 授权路径被错误限制。
 #[test]
 fn root_can_link_two_self_birthed_children_without_call() {
     let kernel = Kernel::with_wal_path(temp_wal("root_link_two_children"));

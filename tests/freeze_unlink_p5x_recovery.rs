@@ -1,3 +1,9 @@
+//! P5.x: Freeze / Unlink 在 WAL recovery 与 checkpoint 路径上的拓扑恢复等价性。
+//!
+//! 验证内容：freeze/unlink 后的对象状态与 link 拓扑在 crash-recovery 后与 live 一致。
+//! 对应 VERIFICATION_MAP：freeze_unlink_p5x_recovery.rs
+//! 若失败，意味着 ObjectFreeze/Unlink 的持久化或恢复丢失状态，破坏拓扑一致性不变量。
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{LinkType, ObjectState, ObjectType};

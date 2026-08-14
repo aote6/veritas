@@ -1,4 +1,15 @@
-// P0 回归测试：验证 grantor 语义真实生效——A 授权 B，而非 grantee 自授。
+//! P0 回归：CapabilityGrant 的 grantor 语义必须真实生效。
+//!
+//! 验证内容：
+//! - 授权记录中的 granted_by 必须是真实发起授权的对象（A），而非 grantee 自授。
+//! - 未持有 capability 时跨对象 ObjectLink 在 commit 被拒绝。
+//! - 持有正确 grant 后，被授权者可成功 link 目标资源。
+//!
+//! 对应 VERIFICATION_MAP：capability_grant_cross_object.rs / grantor_is_real_authorizer_not_self_grant
+//!
+//! 若本测试失败，意味着 CapabilityGrant 的授权者身份可被伪造或被 grantee 冒充，
+//! 破坏“授权可归因、不可自授”的安全不变量。
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{LinkType, ObjectType};
@@ -16,6 +27,9 @@ fn birth(kernel: &Kernel) -> u64 {
     id
 }
 
+/// 验证 grantor 是真实授权者而非自授：A 授权 B 对 C 的 link 能力后，
+/// capability 记录中 granted_by=A、holder=B，且 B 随后可成功 link C。
+/// 失败意味着授权归因可被伪造，破坏 CapabilityGrant 的安全不变量。
 #[test]
 fn grantor_is_real_authorizer_not_self_grant() {
     let kernel = Kernel::new();

@@ -1,0 +1,893 @@
+diff -u /tmp/veritas-main/tests/capability_grant_cross_object.rs /tmp/work/veritas/tests/capability_grant_cross_object.rs
+--- /tmp/veritas-main/tests/capability_grant_cross_object.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/capability_grant_cross_object.rs	2026-08-14 05:05:48.340659207 +0000
+@@ -1,4 +1,15 @@
+-// P0 回归测试：验证 grantor 语义真实生效——A 授权 B，而非 grantee 自授。
++//! P0 回归：CapabilityGrant 的 grantor 语义必须真实生效。
++//!
++//! 验证内容：
++//! - 授权记录中的 granted_by 必须是真实发起授权的对象（A），而非 grantee 自授。
++//! - 未持有 capability 时跨对象 ObjectLink 在 commit 被拒绝。
++//! - 持有正确 grant 后，被授权者可成功 link 目标资源。
++//!
++//! 对应 VERIFICATION_MAP：capability_grant_cross_object.rs / grantor_is_real_authorizer_not_self_grant
++//!
++//! 若本测试失败，意味着 CapabilityGrant 的授权者身份可被伪造或被 grantee 冒充，
++//! 破坏“授权可归因、不可自授”的安全不变量。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::{LinkType, ObjectType};
+@@ -16,6 +27,9 @@
+     id
+ }
+ 
++/// 验证 grantor 是真实授权者而非自授：A 授权 B 对 C 的 link 能力后，
++/// capability 记录中 granted_by=A、holder=B，且 B 随后可成功 link C。
++/// 失败意味着授权归因可被伪造，破坏 CapabilityGrant 的安全不变量。
+ #[test]
+ fn grantor_is_real_authorizer_not_self_grant() {
+     let kernel = Kernel::new();
+diff -u /tmp/veritas-main/tests/capability_grant_p1_jsonlines.rs /tmp/work/veritas/tests/capability_grant_p1_jsonlines.rs
+--- /tmp/veritas-main/tests/capability_grant_p1_jsonlines.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/capability_grant_p1_jsonlines.rs	2026-08-14 05:06:23.472660727 +0000
+@@ -1,8 +1,19 @@
+-// P1 JSONL e2e: 验证真实的 JSON request -> veritasd -> WorldApi -> Kernel -> Engine
+-// -> CapabilityGraph 全链路，而不仅是 Rust 内部函数调用。
++//! P1 JSONL e2e：验证真实 JSON request → veritasd → WorldApi → Kernel → Engine → CapabilityGraph 全链路。
++//!
++//! 验证内容：
++//! - 未授权跨对象 link 在 commit 被拒绝。
++//! - 通过外部 tx_capability_grant 原语授予后，被授权者可成功 link。
++//! - 全链路不依赖 Rust 内部直接调用，而是真实进程间 JSONL 协议。
++//!
++//! 对应 VERIFICATION_MAP：capability_grant_p1_jsonlines.rs / tx_capability_grant_jsonl_end_to_end
++//!
++//! 若失败，意味着外部接口 CapabilityGrant 未正确贯通到 Kernel 授权检查，或 JSONL 路径绕过了安全不变量。
++
+ use std::io::{BufRead, BufReader, Write};
+ use std::process::{Command, Stdio};
+ 
++/// JSONL 端到端：A 授予 B 对 C 的 link 能力后，B 可成功 commit link；未授权时 commit 失败。
++/// 失败意味着外部 CapabilityGrant 原语未正确生效或授权检查被绕过。
+ #[test]
+ fn tx_capability_grant_jsonl_end_to_end() {
+     let veritasd_path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_veritasd"));
+diff -u /tmp/veritas-main/tests/capability_grant_p1_worldapi.rs /tmp/work/veritas/tests/capability_grant_p1_worldapi.rs
+--- /tmp/veritas-main/tests/capability_grant_p1_worldapi.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/capability_grant_p1_worldapi.rs	2026-08-14 05:06:23.472660727 +0000
+@@ -1,11 +1,21 @@
+-// P1: veritasd 外部接口暴露 tx_capability_grant —— WorldService 层集成测试。
+-// 验证：A grant B link capability on C → commit → B 新 session 对 C 的 link 成功；
+-// 未授权的 B 操作在 commit 时仍然失败；grantor 语义保持真实（A != B）。
++//! P1: WorldService 外部接口暴露 tx_capability_grant 的集成测试。
++//!
++//! 验证内容：
++//! - A 通过 WorldService 授予 B 对 C 的 link 能力后，B 新 session 可成功 commit link。
++//! - 未授权时 commit 拒绝。
++//! - grantor 语义真实（granted_by = A, holder = B, A != B）。
++//!
++//! 对应 VERIFICATION_MAP：capability_grant_p1_worldapi.rs / tx_capability_grant_external_interface_end_to_end
++//!
++//! 若失败，意味着 WorldApi 层 CapabilityGrant 未正确贯通到 Kernel 授权与 capability graph，破坏外部接口与内核一致性不变量。
++
+ use std::sync::Arc;
+ use veritas_kernel::kernel::Kernel;
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::world_api::WorldService;
+ 
++/// WorldService 端到端：A 授予 B 对 C 的 link 能力，验证授权成功、未授权拒绝、grantor 归因正确。
++/// 失败意味着外部接口与 Kernel 授权检查或 capability graph 不一致。
+ #[test]
+ fn tx_capability_grant_external_interface_end_to_end() {
+     let kernel = Arc::new(Kernel::new());
+diff -u /tmp/veritas-main/tests/capability_p4x_recovery.rs /tmp/work/veritas/tests/capability_p4x_recovery.rs
+--- /tmp/veritas-main/tests/capability_p4x_recovery.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/capability_p4x_recovery.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,14 @@
++//! P4.x: CapabilityGrant 在 commit / crash-recovery / abort 路径上的可见性与不泄漏不变量。
++//!
++//! 验证内容：
++//! - Object 创建时授予的 AdminCap 在 commit 后正确写入 capability graph。
++//! - AdminCap 在 crash + restart（WAL recovery）后仍然存在。
++//! - abort 后 AdminCap 不能残留。
++//!
++//! 对应 VERIFICATION_MAP：capability_p4x_recovery.rs
++//!
++//! 若失败，意味着 CapabilityGrant 在持久化或恢复路径上丢失/泄漏，破坏能力拓扑与事务原子性不变量。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::capability::capability_id_of;
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+diff -u /tmp/veritas-main/tests/checkpoint_continuity.rs /tmp/work/veritas/tests/checkpoint_continuity.rs
+--- /tmp/veritas-main/tests/checkpoint_continuity.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/checkpoint_continuity.rs	2026-08-14 05:06:40.720661473 +0000
+@@ -1,3 +1,15 @@
++//! Checkpoint 连续性：restore 后世界状态、capability 身份、对象死亡与 state entry 版本保持连续一致。
++//!
++//! 验证内容：
++//! - checkpoint restore 后世界拓扑与 capability 可继续使用。
++//! - capability 身份（id）在 restore 后不变。
++//! - 对象死亡后不会出现 ghost state。
++//! - state entry 版本在 checkpoint 后保持。
++//!
++//! 对应 VERIFICATION_MAP：checkpoint_continuity.rs
++//!
++//! 若失败，意味着 checkpoint 路径破坏了状态连续性或身份稳定性不变量。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::*;
+@@ -40,6 +52,8 @@
+     }
+ }
+ 
++/// Checkpoint restore 后世界状态连续，可继续执行并保持拓扑一致。
++/// 失败意味着 restore 丢失了 live 状态或破坏了连续性不变量。
+ #[test]
+ fn checkpoint_restore_world_continuity() {
+     let k_cont = Kernel::new();
+@@ -101,6 +115,8 @@
+     assert_eq!(final_rest.grant_sequence, final_cont.grant_sequence);
+ }
+ 
++/// Capability 身份（capability_id）在 checkpoint restore 后保持不变。
++/// 失败意味着身份在持久化/恢复路径上被重新分配，破坏可归因性。
+ #[test]
+ fn capability_identity_survives_checkpoint_restore() {
+     let kernel = Kernel::new();
+@@ -130,6 +146,8 @@
+     assert!(kernel.holds_capability(cap_b, o1));
+ }
+ 
++/// 对象死亡后经 checkpoint restore 不应留下 ghost state。
++/// 失败意味着死亡状态未正确持久化，破坏生命周期不变量。
+ #[test]
+ fn object_death_no_ghost_state_after_checkpoint() {
+     let kernel = Kernel::new();
+@@ -167,6 +185,8 @@
+     assert_eq!(kernel.state_root(), root_dead);
+ }
+ 
++/// Checkpoint 保留 state entry 的版本号，restore 后版本连续。
++/// 失败意味着版本信息丢失，破坏乐观并发/一致性不变量。
+ #[test]
+ fn checkpoint_preserves_state_entry_versions() {
+     let kernel = Kernel::new();
+diff -u /tmp/veritas-main/tests/checkpoint_roundtrip.rs /tmp/work/veritas/tests/checkpoint_roundtrip.rs
+--- /tmp/veritas-main/tests/checkpoint_roundtrip.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/checkpoint_roundtrip.rs	2026-08-14 05:06:57.680662207 +0000
+@@ -1,3 +1,16 @@
++//! Checkpoint 完整 roundtrip：五组件序列化/反序列化、继续执行、幂等、root hash、counter。
++//!
++//! 验证内容：
++//! - 全量 checkpoint 写出再 restore 后状态等价。
++//! - restore 后可继续执行。
++//! - 多次 restore 幂等。
++//! - root hash 一致。
++//! - counter 正确 roundtrip。
++//!
++//! 对应 VERIFICATION_MAP：checkpoint_roundtrip.rs
++//!
++//! 若失败，意味着 checkpoint 序列化格式或恢复逻辑破坏了状态等价性不变量。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::*;
+@@ -60,6 +73,8 @@
+ 
+ // ========== 1. 五组件 roundtrip ==========
+ 
++/// 全量五组件 checkpoint roundtrip 后状态与 live 等价。
++/// 失败意味着序列化/反序列化丢失关键状态。
+ #[test]
+ fn checkpoint_full_roundtrip_all_five_components() {
+     let kernel = Kernel::new();
+@@ -81,6 +96,8 @@
+ 
+ // ========== 2. Restore 后可继续执行 ==========
+ 
++/// Checkpoint restore 后可继续正常执行新事务。
++/// 失败意味着 restore 后运行时处于不可用状态。
+ #[test]
+ fn checkpoint_restore_then_continue_execution() {
+     let kernel = Kernel::new();
+@@ -114,6 +131,8 @@
+ 
+ // ========== 3. 多次 restore 幂等 ==========
+ 
++/// 多次 checkpoint restore 结果幂等，状态不漂移。
++/// 失败意味着 restore 非幂等，破坏确定性。
+ #[test]
+ fn checkpoint_restore_idempotent() {
+     let kernel = Kernel::new();
+@@ -135,6 +154,8 @@
+ 
+ // ========== 4. root_hash 一致性 ==========
+ 
++/// Checkpoint roundtrip 后 root hash 与原始一致。
++/// 失败意味着状态根计算或持久化不一致。
+ #[test]
+ fn checkpoint_root_hash_consistent() {
+     let kernel = Kernel::new();
+@@ -158,6 +179,8 @@
+ 
+ // ========== 5. 计数器 roundtrip（Stage 2 任务4） ==========
+ 
++/// Checkpoint 正确保存并恢复内部 counter。
++/// 失败意味着计数器状态丢失，可能影响 id 分配。
+ #[test]
+ fn checkpoint_counter_roundtrip() {
+     let kernel = Kernel::new();
+diff -u /tmp/veritas-main/tests/commitment_domain.rs /tmp/work/veritas/tests/commitment_domain.rs
+--- /tmp/veritas-main/tests/commitment_domain.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/commitment_domain.rs	2026-08-14 05:07:29.700663592 +0000
+@@ -1,8 +1,16 @@
++//! Commitment domain：live vs recovery 组件诊断与 self-access 不扩展 capability graph。
++//!
++//! 验证内容：live 与 recovery 路径组件一致性；self access 不导致 capability graph 增长。
++//! 对应 VERIFICATION_MAP：commitment_domain.rs
++//! 若失败，意味着 commitment 域边界或 self-access 规则被破坏。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::kernel::Kernel;
+ use veritas_kernel::types::ObjectType;
+ use veritas_kernel::kernel::KernelCall;
+ 
++/// 诊断 live 与 recovery 路径关键组件是否一致。
++/// 失败意味着两条路径产生分歧，破坏可恢复性。
+ #[test]
+ fn diagnose_live_vs_recovery_components() {
+     let wal_path = format!("target/test_diag_{}.wal", std::process::id());
+@@ -35,6 +43,8 @@
+     assert_eq!(live, recovery, "All five components must match between live and recovery");
+ }
+ 
++/// Self access 不应导致 capability graph 增长。
++/// 失败意味着 self-access 错误地创建了额外 grant，破坏最小授权不变量。
+ #[test]
+ fn self_access_does_not_grow_capability_graph() {
+     let wal_path = format!("target/test_nogrow_{}.wal", std::process::id());
+Common subdirectories: /tmp/veritas-main/tests/common and /tmp/work/veritas/tests/common
+diff -u /tmp/veritas-main/tests/forge_e2e_jsonlines.rs /tmp/work/veritas/tests/forge_e2e_jsonlines.rs
+--- /tmp/veritas-main/tests/forge_e2e_jsonlines.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/forge_e2e_jsonlines.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! Forge-like JSONL 端到端：启动 veritasd，驱动完整 JSON-Lines 协议，验证全链路。
++//!
++//! 验证内容：真实进程间协议下的对象创建、授权、link、commit 等核心路径。
++//! 对应 VERIFICATION_MAP：forge_e2e_jsonlines.rs
++//! 若失败，意味着外部 JSONL 接口与 Kernel 行为不一致或 e2e 链路断裂。
++
+ use std::io::{BufRead, BufReader, Write};
+ use std::process::{Command, Stdio};
+ 
+diff -u /tmp/veritas-main/tests/freeze_unlink_p5x_recovery.rs /tmp/work/veritas/tests/freeze_unlink_p5x_recovery.rs
+--- /tmp/veritas-main/tests/freeze_unlink_p5x_recovery.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/freeze_unlink_p5x_recovery.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! P5.x: Freeze / Unlink 在 WAL recovery 与 checkpoint 路径上的拓扑恢复等价性。
++//!
++//! 验证内容：freeze/unlink 后的对象状态与 link 拓扑在 crash-recovery 后与 live 一致。
++//! 对应 VERIFICATION_MAP：freeze_unlink_p5x_recovery.rs
++//! 若失败，意味着 ObjectFreeze/Unlink 的持久化或恢复丢失状态，破坏拓扑一致性不变量。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::{LinkType, ObjectState, ObjectType};
+diff -u /tmp/veritas-main/tests/kernel_world_runtime.rs /tmp/work/veritas/tests/kernel_world_runtime.rs
+--- /tmp/veritas-main/tests/kernel_world_runtime.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/kernel_world_runtime.rs	2026-08-14 05:07:29.700663592 +0000
+@@ -1,3 +1,9 @@
++//! Kernel World Runtime：跨 Module 通过 Runtime 执行可见性。
++//!
++//! 验证内容：Module A 的 Object 通过 runtime execute 对 Module B 可见。
++//! 对应 VERIFICATION_MAP：kernel_world_runtime.rs
++//! 若失败，意味着跨模块运行时可见性或执行路径断裂。
++
+ use std::sync::Arc;
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::instruction::Instruction;
+@@ -18,6 +24,8 @@
+     ModuleImage::new("birth", ModuleVersion::new(1, 0, 0), image)
+ }
+ 
++/// Module A 对象经 runtime execute 对 Module B 可见。
++/// 失败意味着跨模块执行/可见性不变量被破坏。
+ #[test]
+ fn module_a_object_visible_to_module_b_through_runtime_execute() {
+     let kernel = Arc::new(Kernel::new());
+Common subdirectories: /tmp/veritas-main/tests/machine and /tmp/work/veritas/tests/machine
+diff -u /tmp/veritas-main/tests/machine.rs /tmp/work/veritas/tests/machine.rs
+--- /tmp/veritas-main/tests/machine.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/machine.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! Machine 层基础测试入口（子模块 machine/basic.rs）。
++//!
++//! 验证内容：Machine 执行、指令调度、基础运行时行为。
++//! 对应 VERIFICATION_MAP：machine.rs
++//! 子模块测试覆盖指令级正确性；本文件仅作模块组织。
++
+ mod common;
+ 
+ #[path = "machine/basic.rs"]
+diff -u /tmp/veritas-main/tests/multi_object_transaction_regression.rs /tmp/work/veritas/tests/multi_object_transaction_regression.rs
+--- /tmp/veritas-main/tests/multi_object_transaction_regression.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/multi_object_transaction_regression.rs	2026-08-14 05:07:29.704663592 +0000
+@@ -12,6 +12,8 @@
+     p.to_string_lossy().into_owned()
+ }
+ 
++/// 多对象事务 abort 后不留下 partial state。
++/// 失败意味着事务原子性被破坏。
+ #[test]
+ fn test_a_multi_object_abort_leaves_no_partial_state() {
+     let wal_path = temp_wal("test_a_abort");
+@@ -38,6 +40,8 @@
+     assert!(!ids.contains(&b));
+ }
+ 
++/// 跨 session 的 capability 隔离：一个 session 的 grant 不影响另一 session 的未授权状态。
++/// 失败意味着 session 隔离或 capability 作用域泄漏。
+ #[test]
+ fn test_b_cross_session_capability_isolation() {
+     let wal_path = temp_wal("test_b_isolation");
+@@ -55,6 +59,8 @@
+     let _ = world.tx_abort(sid_b);
+ }
+ 
++/// WAL recovery 后多对象 link 不重复。
++/// 失败意味着 recovery 路径重复应用 link，破坏拓扑一致性。
+ #[test]
+ fn test_c_wal_recovery_multi_object_link_no_duplication() {
+     let wal_path = temp_wal("test_c_recovery");
+Common subdirectories: /tmp/veritas-main/tests/object and /tmp/work/veritas/tests/object
+diff -u /tmp/veritas-main/tests/object.rs /tmp/work/veritas/tests/object.rs
+--- /tmp/veritas-main/tests/object.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/object.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! Object 生命周期测试入口（子模块 object/birth.rs, lifecycle.rs, memory.rs）。
++//!
++//! 验证内容：ObjectBirth、生命周期状态机、内存与状态一致性。
++//! 对应 VERIFICATION_MAP：object.rs
++//! 子模块测试覆盖对象创建到死亡的核心不变量。
++
+ mod common;
+ 
+ #[path = "object/birth.rs"]
+diff -u /tmp/veritas-main/tests/receipt.rs /tmp/work/veritas/tests/receipt.rs
+--- /tmp/veritas-main/tests/receipt.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/receipt.rs	2026-08-14 05:07:29.704663592 +0000
+@@ -1,8 +1,16 @@
++//! Receipt：before/after root hash 与 replay 一致性。
++//!
++//! 验证内容：receipt.after 匹配实际 root hash；before/after 一致；replay 后 receipt 一致。
++//! 对应 VERIFICATION_MAP：receipt.rs
++//! 若失败，意味着 receipt 与状态根承诺不一致，破坏可验证性。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::kernel::Kernel;
+ use veritas_kernel::types::ObjectType;
+ use veritas_kernel::kernel::KernelCall;
+ 
++/// Receipt 的 after_root 必须匹配实际 world root hash。
++/// 失败意味着 receipt 与状态根脱节。
+ #[test]
+ fn receipt_after_matches_root_hash() {
+     let wal_path = format!("target/test_rcpt1_{}.wal", std::process::id());
+@@ -29,6 +37,8 @@
+     assert_eq!(receipt.after_root, k.test_engine().root_hash());
+ }
+ 
++/// Receipt before/after 与实际状态变化一致。
++/// 失败意味着 receipt 记录了错误的状态边界。
+ #[test]
+ fn receipt_before_after_consistency() {
+     let wal_path = format!("target/test_rcpt2_{}.wal", std::process::id());
+@@ -58,6 +68,8 @@
+     assert_eq!(receipt.after_root, k.test_engine().root_hash());
+ }
+ 
++/// Replay 后生成的 receipt 与原始一致。
++/// 失败意味着 replay 路径 receipt 计算分歧。
+ #[test]
+ fn receipt_replay_consistency() {
+     let wal_path = format!("target/test_rcpt3_{}.wal", std::process::id());
+diff -u /tmp/veritas-main/tests/replay.rs /tmp/work/veritas/tests/replay.rs
+--- /tmp/veritas-main/tests/replay.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/replay.rs	2026-08-14 05:07:54.624664671 +0000
+@@ -1,8 +1,16 @@
++//! Replay：空 WAL、与 recovery 等价、确定性、不同 ops 产生不同 hash。
++//!
++//! 验证内容：replay 空 WAL 返回非零；replay 结果与 recovery idle 等价；确定性；不同操作序列 hash 不同。
++//! 对应 VERIFICATION_MAP：replay.rs
++//! 若失败，意味着 replay 引擎确定性或与 recovery 路径一致性被破坏。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::kernel::Kernel;
+ use veritas_kernel::types::ObjectType;
+ use veritas_kernel::kernel::KernelCall;
+ 
++/// 空 WAL replay 返回非零（有意义的结果/状态）。
++/// 失败意味着空路径处理错误。
+ #[test]
+ fn replay_empty_wal_returns_nonzero() {
+     let wal_path = format!("target/test_replay_empty_{}.wal", std::process::id());
+@@ -19,6 +27,8 @@
+         "Replay of empty WAL must equal idle Recovery root_hash");
+ }
+ 
++/// Replay 结果与 recovery idle 状态等价。
++/// 失败意味着两条恢复路径分歧。
+ #[test]
+ fn replay_equals_recovery_idle() {
+     let wal_path = format!("target/test_replay_idle_{}.wal", std::process::id());
+@@ -54,6 +64,8 @@
+     assert_eq!(replay_hash, recovery_hash);
+ }
+ 
++/// 相同输入多次 replay 结果完全一致。
++/// 失败意味着确定性执行承诺被破坏。
+ #[test]
+ fn replay_is_deterministic() {
+     let wal_path = format!("target/test_replay_det_{}.wal", std::process::id());
+@@ -82,6 +94,8 @@
+     assert_eq!(h1, h2);
+ }
+ 
++/// 不同操作序列产生不同 root hash。
++/// 失败意味着 hash 碰撞或未正确反映状态变化。
+ #[test]
+ fn replay_different_ops_different_hash() {
+     let wal1 = format!("target/test_replay_diff1_{}.wal", std::process::id());
+diff -u /tmp/veritas-main/tests/replay_determinism.rs /tmp/work/veritas/tests/replay_determinism.rs
+--- /tmp/veritas-main/tests/replay_determinism.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/replay_determinism.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! Replay 确定性：相同 WAL 多次 replay 产生相同状态根与结果。
++//!
++//! 验证内容：replay 过程对同一输入序列输出完全一致的状态。
++//! 对应 VERIFICATION_MAP：replay_determinism.rs
++//! 若失败，意味着确定性执行承诺被破坏，状态不可独立验证。
++
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+diff -u /tmp/veritas-main/tests/replay_engine_test.rs /tmp/work/veritas/tests/replay_engine_test.rs
+--- /tmp/veritas-main/tests/replay_engine_test.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/replay_engine_test.rs	2026-08-14 05:07:54.624664671 +0000
+@@ -1,3 +1,9 @@
++//! Replay Engine：能正确看到 birth 与 capability 事件。
++//!
++//! 验证内容：replay engine 观察到 ObjectBirth 与 Capability 相关事件。
++//! 对应 VERIFICATION_MAP：replay_engine_test.rs
++//! 若失败，意味着 replay 事件提取或引擎观察路径缺失。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::types::ObjectType;
+@@ -14,6 +20,8 @@
+     id
+ }
+ 
++/// Replay engine 正确观察到 ObjectBirth 事件。
++/// 失败意味着 birth 未进入 replay 可见事件流。
+ #[test]
+ fn replay_engine_sees_births() {
+     let wal_path = format!("target/test_replay_birth_{}.wal", std::process::id());
+@@ -38,6 +46,8 @@
+     let _ = std::fs::remove_file(&wal_path);
+ }
+ 
++/// Replay engine 正确观察到 Capability 相关事件。
++/// 失败意味着 capability 事件未进入 replay 可见事件流。
+ #[test]
+ fn replay_engine_sees_capability() {
+     let wal_path = format!("target/test_replay_cap_{}.wal", std::process::id());
+diff -u /tmp/veritas-main/tests/root_hash.rs /tmp/work/veritas/tests/root_hash.rs
+--- /tmp/veritas-main/tests/root_hash.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/root_hash.rs	2026-08-14 05:07:54.628664671 +0000
+@@ -1,9 +1,17 @@
++//! Root Hash：空世界确定性、write/birth/link 改变 hash、顺序无关。
++//!
++//! 验证内容：空世界 root hash 确定；状态变更改变 hash；同内容不同顺序 hash 相同。
++//! 对应 VERIFICATION_MAP：root_hash.rs
++//! 若失败，意味着状态根计算不正确或非确定性，破坏可验证承诺。
++
+ use veritas_kernel::kernel::{KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::{LinkType, ObjectType};
+ 
+ mod common;
+ 
++/// 空世界 root hash 在多次计算中保持确定。
++/// 失败意味着空状态根非确定性。
+ #[test]
+ fn empty_world_root_hash_is_deterministic() {
+     let tk1 = common::new_kernel();
+@@ -14,6 +22,8 @@
+     assert_ne!(h1, 0);
+ }
+ 
++/// Write 操作改变 root hash。
++/// 失败意味着状态变更未反映到状态根。
+ #[test]
+ fn root_hash_changes_on_write() {
+     let tk = common::new_kernel();
+@@ -28,6 +38,8 @@
+     assert_ne!(before, after);
+ }
+ 
++/// ObjectBirth 改变 root hash。
++/// 失败意味着对象创建未反映到状态根。
+ #[test]
+ fn root_hash_changes_on_birth() {
+     let tk = common::new_kernel();
+@@ -53,6 +65,8 @@
+     assert_ne!(before, after);
+ }
+ 
++/// ObjectLink 改变 root hash。
++/// 失败意味着拓扑变更未反映到状态根。
+ #[test]
+ fn root_hash_changes_on_link() {
+     let tk = common::new_kernel();
+@@ -106,6 +120,8 @@
+     assert_ne!(before, after);
+ }
+ 
++/// 相同内容不同应用顺序产生相同 root hash。
++/// 失败意味着 root hash 对顺序敏感，破坏规范承诺。
+ #[test]
+ fn root_hash_order_independent() {
+     let tk1 = common::new_kernel();
+diff -u /tmp/veritas-main/tests/root_link_two_children.rs /tmp/work/veritas/tests/root_link_two_children.rs
+--- /tmp/veritas-main/tests/root_link_two_children.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/root_link_two_children.rs	2026-08-14 05:08:17.296665652 +0000
+@@ -27,6 +27,8 @@
+     }
+ }
+ 
++/// Root 可对两个自己 birth 的 child 直接 link（无需 CALL 切换）。
++/// 失败意味着 self-birthed 对象的 link 授权路径被错误限制。
+ #[test]
+ fn root_can_link_two_self_birthed_children_without_call() {
+     let kernel = Kernel::with_wal_path(temp_wal("root_link_two_children"));
+diff -u /tmp/veritas-main/tests/security_recovery_audit.rs /tmp/work/veritas/tests/security_recovery_audit.rs
+--- /tmp/veritas-main/tests/security_recovery_audit.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/security_recovery_audit.rs	2026-08-14 05:08:34.344666389 +0000
+@@ -987,6 +987,8 @@
+ // Part 4: freeze/death still pre-auth (control contrast already above)
+ // =============================================================================
+ 
++/// 跨对象 write 在无 capability 时仍被拒绝（审计回归）。
++/// 失败意味着 write 授权检查被绕过。
+ #[test]
+ fn audit_write_cross_object_still_denied() {
+     let (wal, kernel, world) = world_pair("write_x");
+@@ -1567,6 +1569,8 @@
+     }
+ }
+ 
++/// 相同 delta 的 canonical identity 相等。
++/// 失败意味着 identity 计算非确定性或字段遗漏。
+ #[test]
+ fn audit_canonical_identity_same_delta_equal() {
+     let a = base_delta();
+@@ -1579,6 +1583,8 @@
+     assert_eq!(a.content_hash(), b.content_hash());
+ }
+ 
++/// Canonical identity 排除 tx_id（非语义字段）。
++/// 失败意味着 identity 混入了瞬时字段。
+ #[test]
+ fn audit_canonical_identity_excludes_tx_id() {
+     let mut a = base_delta();
+@@ -1592,6 +1598,8 @@
+     );
+ }
+ 
++/// Canonical identity 排除 commit_version。
++/// 失败意味着 identity 混入了版本瞬时字段。
+ #[test]
+ fn audit_canonical_identity_excludes_commit_version() {
+     let mut a = base_delta();
+@@ -1605,6 +1613,8 @@
+     );
+ }
+ 
++/// Canonical identity 包含 actor_id。
++/// 失败意味着归因信息丢失。
+ #[test]
+ fn audit_canonical_identity_includes_actor_id() {
+     let mut a = base_delta();
+@@ -1618,6 +1628,8 @@
+     );
+ }
+ 
++/// Vec 字段顺序影响 canonical identity。
++/// 失败意味着顺序被错误规范化或忽略。
+ #[test]
+ fn audit_canonical_identity_vec_order_matters() {
+     let mut a = base_delta();
+@@ -1631,6 +1643,8 @@
+     );
+ }
+ 
++/// String 边界在 canonical identity 中安全（无歧义）。
++/// 失败意味着编码存在边界碰撞。
+ #[test]
+ fn audit_canonical_identity_string_boundary_safe() {
+     let mut a = empty_delta(1, 1);
+@@ -1651,6 +1665,8 @@
+     assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
+ }
+ 
++/// 空 Vec 与非空 Vec 的 identity 不同。
++/// 失败意味着空集合被错误处理。
+ #[test]
+ fn audit_canonical_identity_empty_vs_nonempty_vec() {
+     let mut a = empty_delta(1, 1);
+@@ -1664,6 +1680,8 @@
+     );
+ }
+ 
++/// Option Some/None 在 identity 中可区分。
++/// 失败意味着 Option 编码丢失信息。
+ #[test]
+ fn audit_canonical_identity_option_some_none() {
+     let mut a = empty_delta(1, 1);
+@@ -1693,6 +1711,8 @@
+     assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
+ }
+ 
++/// Enum 不同 variant 产生不同 identity。
++/// 失败意味着 variant 区分失败。
+ #[test]
+ fn audit_canonical_identity_enum_variants() {
+     let mut a = empty_delta(1, 1);
+@@ -1712,6 +1732,8 @@
+     assert_ne!(c.canonical_identity_bytes(), d.canonical_identity_bytes());
+ }
+ 
++/// 每个语义字段都影响 canonical identity。
++/// 失败意味着某些语义字段被遗漏。
+ #[test]
+ fn audit_canonical_identity_every_semantic_field() {
+     let empty = empty_delta(1, 1);
+@@ -1812,6 +1834,8 @@
+     assert_eq!(ver_only.canonical_identity_bytes(), base);
+ }
+ 
++/// Genesis 时 last_applied_delta_hash 为零。
++/// 失败意味着初始 hash 状态错误。
+ #[test]
+ fn audit_last_applied_delta_hash_genesis_is_zero() {
+     let (wal, kernel, _world) = world_pair("lah_genesis");
+@@ -1824,6 +1848,8 @@
+     cleanup(&wal);
+ }
+ 
++/// Apply delta 后 last_applied_delta_hash 更新。
++/// 失败意味着 hash 链未推进。
+ #[test]
+ fn audit_last_applied_delta_hash_updates_on_apply() {
+     let (wal, kernel, _world) = world_pair("lah_apply");
+@@ -1838,6 +1864,8 @@
+     cleanup(&wal);
+ }
+ 
++/// Checkpoint 保留 last_applied_delta_hash。
++/// 失败意味着 hash 链在 checkpoint 丢失。
+ #[test]
+ fn audit_checkpoint_preserves_last_applied_delta_hash() {
+     let (wal, kernel, _world) = world_pair("lah_ckpt");
+@@ -1866,6 +1894,8 @@
+     cleanup(&wal);
+ }
+ 
++/// Checkpoint roundtrip 后 identity 连续。
++/// 失败意味着 identity 在持久化路径上漂移。
+ #[test]
+ fn audit_checkpoint_roundtrip_identity_continuity() {
+     let (wal, kernel, _world) = world_pair("lah_roundtrip");
+diff -u /tmp/veritas-main/tests/snapshot_restore_roundtrip.rs /tmp/work/veritas/tests/snapshot_restore_roundtrip.rs
+--- /tmp/veritas-main/tests/snapshot_restore_roundtrip.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/snapshot_restore_roundtrip.rs	2026-08-14 05:08:17.300665652 +0000
+@@ -1,3 +1,9 @@
++//! Snapshot restore roundtrip：Body/CapGraph/Scope/Topology 序列化往返。
++//!
++//! 验证内容：各组件 empty 与有数据情况下的 serde roundtrip 正确。
++//! 对应 VERIFICATION_MAP：snapshot_restore_roundtrip.rs
++//! 若失败，意味着 snapshot 格式或 serde 实现丢失信息。
++
+ // PR3: 第一批 snapshot/restore 可逆性单元测试
+ // 只测试已有公开 API 的组件：ObjectBody serde, CapabilityGraph, ScopeRegistry, Topology(空)
+ // ObjectRegistry/StateStore 属于集成测试，等 Engine Checkpoint 接通后再补
+@@ -6,6 +12,8 @@
+ 
+ // ========== 1. ObjectBody serialize/deserialize ==========
+ 
++/// Body state 组件 serde roundtrip 正确。
++/// 失败意味着 state 序列化丢失。
+ #[test]
+ fn body_serde_state() {
+     let body = ObjectBody::State;
+@@ -14,6 +22,8 @@
+     assert_eq!(body, restored);
+ }
+ 
++/// Body module 空 rule serde roundtrip。
++/// 失败意味着 module 空规则序列化错误。
+ #[test]
+ fn body_serde_module_empty_rule() {
+     let body = ObjectBody::Module {
+@@ -29,6 +39,8 @@
+     assert_eq!(body, restored);
+ }
+ 
++/// Body module 有 rule 时 serde roundtrip。
++/// 失败意味着 rule 序列化丢失。
+ #[test]
+ fn body_serde_module_with_rule() {
+     let body = ObjectBody::Module {
+@@ -47,6 +59,8 @@
+ 
+ // ========== 2. CapabilityGraph roundtrip ==========
+ 
++/// 空 CapGraph serde roundtrip。
++/// 失败意味着空 capability graph 序列化错误。
+ #[test]
+ fn cap_graph_roundtrip_empty() {
+     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
+@@ -56,6 +70,8 @@
+     assert_eq!(a, b);
+ }
+ 
++/// 有 grants 的 CapGraph serde roundtrip。
++/// 失败意味着 grant 信息在序列化中丢失。
+ #[test]
+ fn cap_graph_roundtrip_with_grants() {
+     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
+@@ -69,6 +85,8 @@
+ 
+ // ========== 3. ScopeRegistry roundtrip ==========
+ 
++/// 空 Scope serde roundtrip。
++/// 失败意味着空 scope 序列化错误。
+ #[test]
+ fn scope_roundtrip_empty() {
+     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
+@@ -78,6 +96,8 @@
+     assert_eq!(a, b);
+ }
+ 
++/// 有数据的 Scope serde roundtrip。
++/// 失败意味着 scope 数据丢失。
+ #[test]
+ fn scope_roundtrip_with_data() {
+     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
+@@ -94,6 +114,8 @@
+ 
+ // ========== 4. Topology roundtrip (仅空) ==========
+ 
++/// 空 Topology serde roundtrip。
++/// 失败意味着空拓扑序列化错误。
+ #[test]
+ fn topology_roundtrip_empty() {
+     let engine = veritas_kernel::test_api::empty_engine();
+Common subdirectories: /tmp/veritas-main/tests/transaction and /tmp/work/veritas/tests/transaction
+diff -u /tmp/veritas-main/tests/transaction.rs /tmp/work/veritas/tests/transaction.rs
+--- /tmp/veritas-main/tests/transaction.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/transaction.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! Transaction 测试入口（子模块 transaction/ 等）。
++//!
++//! 验证内容：事务 begin/commit/abort 语义与原子性。
++//! 对应 VERIFICATION_MAP：transaction.rs
++//! 子模块覆盖 commit 路径核心不变量。
++
+ mod common;
+ 
+ #[path = "transaction/commit.rs"]
+diff -u /tmp/veritas-main/tests/wal_recovery_equivalence.rs /tmp/work/veritas/tests/wal_recovery_equivalence.rs
+--- /tmp/veritas-main/tests/wal_recovery_equivalence.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/wal_recovery_equivalence.rs	2026-08-14 05:06:08.024660059 +0000
+@@ -1,3 +1,9 @@
++//! WAL recovery 与 live / checkpoint 路径的状态等价性。
++//!
++//! 验证内容：从同一 WAL 恢复出的世界状态与原始 live 状态在关键组件上等价。
++//! 对应 VERIFICATION_MAP：wal_recovery_equivalence.rs
++//! 若失败，意味着 recovery 路径与正常执行路径产生分歧，破坏可恢复性不变量。
++
+ use std::collections::HashSet;
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use veritas_kernel::engine::VeritasEngine;
+diff -u /tmp/veritas-main/tests/wal_recovery_invariants.rs /tmp/work/veritas/tests/wal_recovery_invariants.rs
+--- /tmp/veritas-main/tests/wal_recovery_invariants.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/wal_recovery_invariants.rs	2026-08-14 05:06:08.028660059 +0000
+@@ -1,3 +1,9 @@
++//! WAL recovery 过程中的安全与一致性不变量。
++//!
++//! 验证内容：recovery 后对象状态、link、capability 等满足与 live 相同的不变量。
++//! 对应 VERIFICATION_MAP：wal_recovery_invariants.rs
++//! 若失败，意味着 recovery 引入非法状态或破坏既有安全不变量。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::ObjectType;
+diff -u /tmp/veritas-main/tests/wal_recovery_object.rs /tmp/work/veritas/tests/wal_recovery_object.rs
+--- /tmp/veritas-main/tests/wal_recovery_object.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/wal_recovery_object.rs	2026-08-14 05:06:08.028660059 +0000
+@@ -1,3 +1,9 @@
++//! WAL recovery 对 Object 生命周期（birth/death/link）的正确恢复。
++//!
++//! 验证内容：Object 相关操作经 WAL 重放后状态与拓扑一致。
++//! 对应 VERIFICATION_MAP：wal_recovery_object.rs
++//! 若失败，意味着 Object 持久化或恢复路径丢失生命周期信息。
++
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::types::ObjectType;
+diff -u /tmp/veritas-main/tests/wal_recovery_robustness.rs /tmp/work/veritas/tests/wal_recovery_robustness.rs
+--- /tmp/veritas-main/tests/wal_recovery_robustness.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/wal_recovery_robustness.rs	2026-08-14 05:08:17.300665652 +0000
+@@ -1,3 +1,9 @@
++//! WAL recovery 鲁棒性：截断与损坏 WAL 的处理。
++//!
++//! 验证内容：末尾截断或中间/早期字节损坏的 WAL 被正确检测或安全处理，不产生非法状态。
++//! 对应 VERIFICATION_MAP：wal_recovery_robustness.rs
++//! 若失败，意味着损坏 WAL 可导致静默错误状态或崩溃，破坏恢复安全性。
++
+ use veritas_kernel::test_api::KernelTestExt;
+ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+ use veritas_kernel::types::ObjectType;
+@@ -159,26 +165,36 @@
+ 
+ // ===== Tests =====
+ 
++/// 截断最后 10 字节的 WAL 被正确处理。
++/// 失败意味着短截断未被检测。
+ #[test]
+ fn truncated_wal_last_10_bytes() {
+     test_truncated_wal(10);
+ }
+ 
++/// 截断最后 50 字节的 WAL 被正确处理。
++/// 失败意味着中等截断未被检测。
+ #[test]
+ fn truncated_wal_last_50_bytes() {
+     test_truncated_wal(50);
+ }
+ 
++/// 截断最后 200 字节的 WAL 被正确处理。
++/// 失败意味着大截断未被检测。
+ #[test]
+ fn truncated_wal_last_200_bytes() {
+     test_truncated_wal(200);
+ }
+ 
++/// 中间字节损坏的 WAL 被正确处理。
++/// 失败意味着中间损坏可导致非法恢复。
+ #[test]
+ fn corrupted_wal_middle_byte() {
+     test_corrupted_wal(20, 0xFF);
+ }
+ 
++/// 早期字节损坏的 WAL 被正确处理。
++/// 失败意味着早期损坏可导致非法恢复。
+ #[test]
+ fn corrupted_wal_early_byte() {
+     test_corrupted_wal(5, 0x00);
+diff -u /tmp/veritas-main/tests/world_demo.rs /tmp/work/veritas/tests/world_demo.rs
+--- /tmp/veritas-main/tests/world_demo.rs	2026-08-14 04:53:10.000000000 +0000
++++ /tmp/work/veritas/tests/world_demo.rs	2026-08-14 05:08:17.296665652 +0000
+@@ -14,6 +14,8 @@
+     p.to_string_lossy().into_owned()
+ }
+ 
++/// 多对象 birth/write/link/commit/recover 端到端演示路径正确。
++/// 失败意味着核心世界演化路径在 recovery 后不一致。
+ #[test]
+ fn world_demo_multi_object_birth_write_link_commit_recover() {
+     let wal_path = temp_wal("world_demo");

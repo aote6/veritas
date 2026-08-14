@@ -1,8 +1,16 @@
+//! Replay：空 WAL、与 recovery 等价、确定性、不同 ops 产生不同 hash。
+//!
+//! 验证内容：replay 空 WAL 返回非零；replay 结果与 recovery idle 等价；确定性；不同操作序列 hash 不同。
+//! 对应 VERIFICATION_MAP：replay.rs
+//! 若失败，意味着 replay 引擎确定性或与 recovery 路径一致性被破坏。
+
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
 
+/// 空 WAL replay 返回非零（有意义的结果/状态）。
+/// 失败意味着空路径处理错误。
 #[test]
 fn replay_empty_wal_returns_nonzero() {
     let wal_path = format!("target/test_replay_empty_{}.wal", std::process::id());
@@ -19,6 +27,8 @@ fn replay_empty_wal_returns_nonzero() {
         "Replay of empty WAL must equal idle Recovery root_hash");
 }
 
+/// Replay 结果与 recovery idle 状态等价。
+/// 失败意味着两条恢复路径分歧。
 #[test]
 fn replay_equals_recovery_idle() {
     let wal_path = format!("target/test_replay_idle_{}.wal", std::process::id());
@@ -54,6 +64,8 @@ fn replay_equals_recovery_idle() {
     assert_eq!(replay_hash, recovery_hash);
 }
 
+/// 相同输入多次 replay 结果完全一致。
+/// 失败意味着确定性执行承诺被破坏。
 #[test]
 fn replay_is_deterministic() {
     let wal_path = format!("target/test_replay_det_{}.wal", std::process::id());
@@ -82,6 +94,8 @@ fn replay_is_deterministic() {
     assert_eq!(h1, h2);
 }
 
+/// 不同操作序列产生不同 root hash。
+/// 失败意味着 hash 碰撞或未正确反映状态变化。
 #[test]
 fn replay_different_ops_different_hash() {
     let wal1 = format!("target/test_replay_diff1_{}.wal", std::process::id());

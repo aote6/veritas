@@ -1,3 +1,9 @@
+//! WAL recovery 过程中的安全与一致性不变量。
+//!
+//! 验证内容：recovery 后对象状态、link、capability 等满足与 live 相同的不变量。
+//! 对应 VERIFICATION_MAP：wal_recovery_invariants.rs
+//! 若失败，意味着 recovery 引入非法状态或破坏既有安全不变量。
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;

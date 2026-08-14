@@ -14,6 +14,8 @@ fn temp_wal(name: &str) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// 多对象 birth/write/link/commit/recover 端到端演示路径正确。
+/// 失败意味着核心世界演化路径在 recovery 后不一致。
 #[test]
 fn world_demo_multi_object_birth_write_link_commit_recover() {
     let wal_path = temp_wal("world_demo");

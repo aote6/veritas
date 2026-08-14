@@ -1,3 +1,9 @@
+//! WAL recovery 对 Object 生命周期（birth/death/link）的正确恢复。
+//!
+//! 验证内容：Object 相关操作经 WAL 重放后状态与拓扑一致。
+//! 对应 VERIFICATION_MAP：wal_recovery_object.rs
+//! 若失败，意味着 Object 持久化或恢复路径丢失生命周期信息。
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;

@@ -48,6 +48,17 @@
 
 ### capability_grant_cross_object.rs
 
+**验证内容**:
+
+- P0 回归：CapabilityGrant 的 grantor 语义必须真实生效。
+- 验证内容：
+- - 授权记录中的 granted_by 必须是真实发起授权的对象（A），而非 grantee 自授。
+- - 未持有 capability 时跨对象 ObjectLink 在 commit 被拒绝。
+- - 持有正确 grant 后，被授权者可成功 link 目标资源。
+- 对应 VERIFICATION_MAP：capability_grant_cross_object.rs / grantor_is_real_authorizer_not_self_grant
+- 若本测试失败，意味着 CapabilityGrant 的授权者身份可被伪造或被 grantee 冒充，
+- 破坏“授权可归因、不可自授”的安全不变量。
+
 **测试函数** (1 个):
 
 - grantor_is_real_authorizer_not_self_grant
@@ -55,6 +66,16 @@
 ---
 
 ### capability_grant_p1_jsonlines.rs
+
+**验证内容**:
+
+- P1 JSONL e2e：验证真实 JSON request → veritasd → WorldApi → Kernel → Engine → CapabilityGraph 全链路。
+- 验证内容：
+- - 未授权跨对象 link 在 commit 被拒绝。
+- - 通过外部 tx_capability_grant 原语授予后，被授权者可成功 link。
+- - 全链路不依赖 Rust 内部直接调用，而是真实进程间 JSONL 协议。
+- 对应 VERIFICATION_MAP：capability_grant_p1_jsonlines.rs / tx_capability_grant_jsonl_end_to_end
+- 若失败，意味着外部接口 CapabilityGrant 未正确贯通到 Kernel 授权检查，或 JSONL 路径绕过了安全不变量。
 
 **测试函数** (1 个):
 
@@ -64,6 +85,16 @@
 
 ### capability_grant_p1_worldapi.rs
 
+**验证内容**:
+
+- P1: WorldService 外部接口暴露 tx_capability_grant 的集成测试。
+- 验证内容：
+- - A 通过 WorldService 授予 B 对 C 的 link 能力后，B 新 session 可成功 commit link。
+- - 未授权时 commit 拒绝。
+- - grantor 语义真实（granted_by = A, holder = B, A != B）。
+- 对应 VERIFICATION_MAP：capability_grant_p1_worldapi.rs / tx_capability_grant_external_interface_end_to_end
+- 若失败，意味着 WorldApi 层 CapabilityGrant 未正确贯通到 Kernel 授权与 capability graph，破坏外部接口与内核一致性不变量。
+
 **测试函数** (1 个):
 
 - tx_capability_grant_external_interface_end_to_end
@@ -71,6 +102,16 @@
 ---
 
 ### capability_p4x_recovery.rs
+
+**验证内容**:
+
+- P4.x: CapabilityGrant 在 commit / crash-recovery / abort 路径上的可见性与不泄漏不变量。
+- 验证内容：
+- - Object 创建时授予的 AdminCap 在 commit 后正确写入 capability graph。
+- - AdminCap 在 crash + restart（WAL recovery）后仍然存在。
+- - abort 后 AdminCap 不能残留。
+- 对应 VERIFICATION_MAP：capability_p4x_recovery.rs
+- 若失败，意味着 CapabilityGrant 在持久化或恢复路径上丢失/泄漏，破坏能力拓扑与事务原子性不变量。
 
 **测试函数** (3 个):
 
@@ -98,6 +139,17 @@
 
 ### checkpoint_continuity.rs
 
+**验证内容**:
+
+- Checkpoint 连续性：restore 后世界状态、capability 身份、对象死亡与 state entry 版本保持连续一致。
+- 验证内容：
+- - checkpoint restore 后世界拓扑与 capability 可继续使用。
+- - capability 身份（id）在 restore 后不变。
+- - 对象死亡后不会出现 ghost state。
+- - state entry 版本在 checkpoint 后保持。
+- 对应 VERIFICATION_MAP：checkpoint_continuity.rs
+- 若失败，意味着 checkpoint 路径破坏了状态连续性或身份稳定性不变量。
+
 **测试函数** (4 个):
 
 - checkpoint_restore_world_continuity
@@ -108,6 +160,18 @@
 ---
 
 ### checkpoint_roundtrip.rs
+
+**验证内容**:
+
+- Checkpoint 完整 roundtrip：五组件序列化/反序列化、继续执行、幂等、root hash、counter。
+- 验证内容：
+- - 全量 checkpoint 写出再 restore 后状态等价。
+- - restore 后可继续执行。
+- - 多次 restore 幂等。
+- - root hash 一致。
+- - counter 正确 roundtrip。
+- 对应 VERIFICATION_MAP：checkpoint_roundtrip.rs
+- 若失败，意味着 checkpoint 序列化格式或恢复逻辑破坏了状态等价性不变量。
 
 **测试函数** (5 个):
 
@@ -121,6 +185,13 @@
 
 ### commitment_domain.rs
 
+**验证内容**:
+
+- Commitment domain：live vs recovery 组件诊断与 self-access 不扩展 capability graph。
+- 验证内容：live 与 recovery 路径组件一致性；self access 不导致 capability graph 增长。
+- 对应 VERIFICATION_MAP：commitment_domain.rs
+- 若失败，意味着 commitment 域边界或 self-access 规则被破坏。
+
 **测试函数** (2 个):
 
 - diagnose_live_vs_recovery_components
@@ -130,6 +201,13 @@
 
 ### forge_e2e_jsonlines.rs
 
+**验证内容**:
+
+- Forge-like JSONL 端到端：启动 veritasd，驱动完整 JSON-Lines 协议，验证全链路。
+- 验证内容：真实进程间协议下的对象创建、授权、link、commit 等核心路径。
+- 对应 VERIFICATION_MAP：forge_e2e_jsonlines.rs
+- 若失败，意味着外部 JSONL 接口与 Kernel 行为不一致或 e2e 链路断裂。
+
 **测试函数** (1 个):
 
 - forge_e2e_create_write_read_commit_observe
@@ -137,6 +215,13 @@
 ---
 
 ### freeze_unlink_p5x_recovery.rs
+
+**验证内容**:
+
+- P5.x: Freeze / Unlink 在 WAL recovery 与 checkpoint 路径上的拓扑恢复等价性。
+- 验证内容：freeze/unlink 后的对象状态与 link 拓扑在 crash-recovery 后与 live 一致。
+- 对应 VERIFICATION_MAP：freeze_unlink_p5x_recovery.rs
+- 若失败，意味着 ObjectFreeze/Unlink 的持久化或恢复丢失状态，破坏拓扑一致性不变量。
 
 **测试函数** (5 个):
 
@@ -150,9 +235,28 @@
 
 ### kernel_world_runtime.rs
 
+**验证内容**:
+
+- Kernel World Runtime：跨 Module 通过 Runtime 执行可见性。
+- 验证内容：Module A 的 Object 通过 runtime execute 对 Module B 可见。
+- 对应 VERIFICATION_MAP：kernel_world_runtime.rs
+- 若失败，意味着跨模块运行时可见性或执行路径断裂。
+
 **测试函数** (1 个):
 
 - module_a_object_visible_to_module_b_through_runtime_execute
+
+---
+
+### machine.rs
+
+**验证内容**:
+
+- Machine 层基础测试入口（子模块 machine/basic.rs）。
+- 验证内容：Machine 执行、指令调度、基础运行时行为。
+- 对应 VERIFICATION_MAP：machine.rs
+- 子模块测试覆盖指令级正确性；本文件仅作模块组织。
+
 
 ---
 
@@ -175,6 +279,25 @@
 
 - object_link_without_capability_on_target_is_rejected
 - object_link_with_proper_capability_succeeds
+
+---
+
+### meta_verification_comments.rs
+
+**验证内容**:
+
+- Meta-test: 强制所有测试文件有文档注释。
+- 规则:
+- 1. 每个 tests/*.rs 文件必须有 //! 文件级注释说明验证什么
+- 2. 每个 #[test] 函数上方 3 行内必须有 /// 注释
+- 为什么需要:
+- - 没有注释的测试 = 没人知道它验证什么
+- - 会导致未来会话反复质疑已验证的结论
+- - gen_verification_map.py 依赖 //! 注释生成验证地图
+
+**测试函数** (1 个):
+
+- all_test_files_have_doc_comments
 
 ---
 
@@ -227,6 +350,18 @@
 
 ---
 
+### object.rs
+
+**验证内容**:
+
+- Object 生命周期测试入口（子模块 object/birth.rs, lifecycle.rs, memory.rs）。
+- 验证内容：ObjectBirth、生命周期状态机、内存与状态一致性。
+- 对应 VERIFICATION_MAP：object.rs
+- 子模块测试覆盖对象创建到死亡的核心不变量。
+
+
+---
+
 ### object_birth_self_call.rs
 
 **验证内容**:
@@ -249,6 +384,13 @@
 
 ### receipt.rs
 
+**验证内容**:
+
+- Receipt：before/after root hash 与 replay 一致性。
+- 验证内容：receipt.after 匹配实际 root hash；before/after 一致；replay 后 receipt 一致。
+- 对应 VERIFICATION_MAP：receipt.rs
+- 若失败，意味着 receipt 与状态根承诺不一致，破坏可验证性。
+
 **测试函数** (3 个):
 
 - receipt_after_matches_root_hash
@@ -258,6 +400,13 @@
 ---
 
 ### replay.rs
+
+**验证内容**:
+
+- Replay：空 WAL、与 recovery 等价、确定性、不同 ops 产生不同 hash。
+- 验证内容：replay 空 WAL 返回非零；replay 结果与 recovery idle 等价；确定性；不同操作序列 hash 不同。
+- 对应 VERIFICATION_MAP：replay.rs
+- 若失败，意味着 replay 引擎确定性或与 recovery 路径一致性被破坏。
 
 **测试函数** (4 个):
 
@@ -270,6 +419,13 @@
 
 ### replay_determinism.rs
 
+**验证内容**:
+
+- Replay 确定性：相同 WAL 多次 replay 产生相同状态根与结果。
+- 验证内容：replay 过程对同一输入序列输出完全一致的状态。
+- 对应 VERIFICATION_MAP：replay_determinism.rs
+- 若失败，意味着确定性执行承诺被破坏，状态不可独立验证。
+
 **测试函数** (4 个):
 
 - same_wal_same_state
@@ -281,6 +437,13 @@
 
 ### replay_engine_test.rs
 
+**验证内容**:
+
+- Replay Engine：能正确看到 birth 与 capability 事件。
+- 验证内容：replay engine 观察到 ObjectBirth 与 Capability 相关事件。
+- 对应 VERIFICATION_MAP：replay_engine_test.rs
+- 若失败，意味着 replay 事件提取或引擎观察路径缺失。
+
 **测试函数** (2 个):
 
 - replay_engine_sees_births
@@ -289,6 +452,13 @@
 ---
 
 ### root_hash.rs
+
+**验证内容**:
+
+- Root Hash：空世界确定性、write/birth/link 改变 hash、顺序无关。
+- 验证内容：空世界 root hash 确定；状态变更改变 hash；同内容不同顺序 hash 相同。
+- 对应 VERIFICATION_MAP：root_hash.rs
+- 若失败，意味着状态根计算不正确或非确定性，破坏可验证承诺。
 
 **测试函数** (5 个):
 
@@ -383,6 +553,13 @@
 
 ### snapshot_restore_roundtrip.rs
 
+**验证内容**:
+
+- Snapshot restore roundtrip：Body/CapGraph/Scope/Topology 序列化往返。
+- 验证内容：各组件 empty 与有数据情况下的 serde roundtrip 正确。
+- 对应 VERIFICATION_MAP：snapshot_restore_roundtrip.rs
+- 若失败，意味着 snapshot 格式或 serde 实现丢失信息。
+
 **测试函数** (8 个):
 
 - body_serde_state
@@ -448,7 +625,26 @@
 
 ---
 
+### transaction.rs
+
+**验证内容**:
+
+- Transaction 测试入口（子模块 transaction/ 等）。
+- 验证内容：事务 begin/commit/abort 语义与原子性。
+- 对应 VERIFICATION_MAP：transaction.rs
+- 子模块覆盖 commit 路径核心不变量。
+
+
+---
+
 ### wal_recovery_equivalence.rs
+
+**验证内容**:
+
+- WAL recovery 与 live / checkpoint 路径的状态等价性。
+- 验证内容：从同一 WAL 恢复出的世界状态与原始 live 状态在关键组件上等价。
+- 对应 VERIFICATION_MAP：wal_recovery_equivalence.rs
+- 若失败，意味着 recovery 路径与正常执行路径产生分歧，破坏可恢复性不变量。
 
 **测试函数** (7 个):
 
@@ -464,6 +660,13 @@
 
 ### wal_recovery_invariants.rs
 
+**验证内容**:
+
+- WAL recovery 过程中的安全与一致性不变量。
+- 验证内容：recovery 后对象状态、link、capability 等满足与 live 相同的不变量。
+- 对应 VERIFICATION_MAP：wal_recovery_invariants.rs
+- 若失败，意味着 recovery 引入非法状态或破坏既有安全不变量。
+
 **测试函数** (4 个):
 
 - recovery_invariant_birth_then_death
@@ -475,6 +678,13 @@
 
 ### wal_recovery_object.rs
 
+**验证内容**:
+
+- WAL recovery 对 Object 生命周期（birth/death/link）的正确恢复。
+- 验证内容：Object 相关操作经 WAL 重放后状态与拓扑一致。
+- 对应 VERIFICATION_MAP：wal_recovery_object.rs
+- 若失败，意味着 Object 持久化或恢复路径丢失生命周期信息。
+
 **测试函数** (3 个):
 
 - object_birth_survives_recovery
@@ -484,6 +694,13 @@
 ---
 
 ### wal_recovery_robustness.rs
+
+**验证内容**:
+
+- WAL recovery 鲁棒性：截断与损坏 WAL 的处理。
+- 验证内容：末尾截断或中间/早期字节损坏的 WAL 被正确检测或安全处理，不产生非法状态。
+- 对应 VERIFICATION_MAP：wal_recovery_robustness.rs
+- 若失败，意味着损坏 WAL 可导致静默错误状态或崩溃，破坏恢复安全性。
 
 **测试函数** (7 个):
 
@@ -513,5 +730,5 @@
 
 ## 总数
 
-- 测试文件: 34 个
-- 测试函数: 202 个
+- 测试文件: 35 个
+- 测试函数: 203 个
