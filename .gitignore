@@ -11,3 +11,4 @@ target_tmp/
 .test_wal_*.log
 test_output.log
 STATUS.md.bak.*
+scripts/__pycache__/
