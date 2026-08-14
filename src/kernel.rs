@@ -539,8 +539,9 @@ mod kernel_tests {
         };
         let _receipt = kernel.commit(&mut ctx_a).unwrap();
 
-        // Create object B
-        let mut ctx_b = kernel.begin();
+        // Create object B under A so A receives creator AdminCap on B
+        // (STRICT CAPABILITY MODEL: CapabilityGrant requires AdminCap(resource)).
+        let mut ctx_b = kernel.begin_in_object(id_a);
         let call_b = KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         };

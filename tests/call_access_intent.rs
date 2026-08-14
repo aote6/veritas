@@ -32,13 +32,14 @@ fn birth(kernel: &Kernel) -> u64 {
     id
 }
 
-fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
-    let mut tx = kernel.test_begin();
+fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
+    // STRICT: grantor must hold AdminCap(resource). Callers must birth resource under grantor.
+    let mut tx = kernel.test_begin_in_object(grantor);
     let cap = match kernel
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
-                grantor: grantee,
+                grantor,
                 grantee,
                 capability_type: "call".to_string(),
                 resource,
@@ -51,6 +52,25 @@ fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
     };
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
     cap
+}
+
+/// Birth an object under `creator` so creator receives AdminCap on the newborn.
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
 }
 
 fn load_call_program(machine: &mut Machine, callee: u64, entry_pc: usize) {
@@ -102,8 +122,8 @@ fn call_without_capability_fails() {
 fn call_with_capability_succeeds() {
     let kernel = Kernel::with_wal_path(temp_wal("call_with_cap"));
     let caller = birth(&kernel);
-    let callee = birth(&kernel);
-    let _cap = grant(&kernel, caller, callee);
+    let callee = birth_under(&kernel, caller);
+    let _cap = grant(&kernel, caller, caller, callee);
 
     let mut machine = Machine::new(Arc::new(kernel));
     machine.set_execution_object(caller);
@@ -135,8 +155,8 @@ fn call_after_delegate_succeeds() {
     let kernel = Kernel::with_wal_path(temp_wal("call_delegate"));
     let root = birth(&kernel);
     let delegatee = birth(&kernel);
-    let callee = birth(&kernel);
-    let cap = grant(&kernel, root, callee);
+    let callee = birth_under(&kernel, root);
+    let cap = grant(&kernel, root, root, callee);
     {
         let mut tx = kernel.test_begin();
         kernel
@@ -179,8 +199,22 @@ fn call_after_delegate_succeeds() {
 fn call_after_revoke_fails() {
     let kernel = Kernel::with_wal_path(temp_wal("call_revoke"));
     let caller = birth(&kernel);
-    let callee = birth(&kernel);
-    let cap = grant(&kernel, caller, callee);
+    let callee = birth_under(&kernel, caller);
+    let cap = grant(&kernel, caller, caller, callee);
+
+    // Revoke both the "call" grant and the creator AdminCap so no capability
+    // remains on callee for authorize_intent(Call).
+    let admin_id = kernel
+        .test_capability_records()
+        .into_iter()
+        .find(|r| {
+            r.active
+                && r.holder == caller
+                && r.resource == callee
+                && r.capability_type == "AdminCap"
+        })
+        .map(|r| r.capability_id)
+        .expect("creator AdminCap");
 
     let mut tx = kernel.test_begin();
     kernel
@@ -188,6 +222,16 @@ fn call_after_revoke_fails() {
             &mut tx,
             KernelCall::CapabilityRevoke {
                 capability_id: cap,
+                holder: caller,
+                cascade_override: Some(true),
+            },
+        )
+        .unwrap();
+    kernel
+        .handle(
+            &mut tx,
+            KernelCall::CapabilityRevoke {
+                capability_id: admin_id,
                 holder: caller,
                 cascade_override: Some(true),
             },
@@ -220,8 +264,8 @@ fn call_after_revoke_fails() {
 fn call_permission_survives_checkpoint() {
     let kernel = Kernel::with_wal_path(temp_wal("call_ckpt"));
     let caller = birth(&kernel);
-    let callee = birth(&kernel);
-    let _cap = grant(&kernel, caller, callee);
+    let callee = birth_under(&kernel, caller);
+    let _cap = grant(&kernel, caller, caller, callee);
 
     let snap = kernel.create_checkpoint();
     let kernel2 = Kernel::with_wal_path(temp_wal("call_ckpt2"));
@@ -252,8 +296,8 @@ fn call_permission_survives_wal_replay() {
     let wal = temp_wal("call_wal");
     let kernel = Kernel::with_wal_path(wal.clone());
     let caller = birth(&kernel);
-    let callee = birth(&kernel);
-    let _cap = grant(&kernel, caller, callee);
+    let callee = birth_under(&kernel, caller);
+    let _cap = grant(&kernel, caller, caller, callee);
 
     let kernel2 = Kernel::with_wal_path(wal);
     let ctx = kernel2.test_begin_in_object(caller);

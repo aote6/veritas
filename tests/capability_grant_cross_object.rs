@@ -34,10 +34,26 @@ fn birth(kernel: &Kernel) -> u64 {
 fn grantor_is_real_authorizer_not_self_grant() {
     let kernel = Kernel::new();
 
-    // A、B、C 三个独立对象：A 是授权者，B 是被授权者，C 是被操作的资源
+    // A 授权者；B 被授权者；C 资源（在 A 下 birth，使 A 持有 AdminCap(C)）
     let a = birth(&kernel);
     let b = birth(&kernel);
-    let c = birth(&kernel);
+    let c = {
+        let mut tx = kernel.test_begin_in_object(a);
+        let id = match kernel
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap()
+        {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("expected ObjectId"),
+        };
+        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        id
+    };
 
     // 未授权前：B 尝试 link 到 C 应当在 commit 时失败
     {

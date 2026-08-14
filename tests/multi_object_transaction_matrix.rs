@@ -655,11 +655,9 @@ fn s11_grantor_does_not_become_holder() {
     cleanup(&wal);
 }
 
-/// 12. A grant B on C → B attempts grant on C (new root CapabilityGrant).
-/// Real architecture: CapabilityGrant does not require grantor to hold the
-/// resource; it creates a new root capability with grantor=B.
-/// CapabilityDelegate is the path that requires holding an existing cap.
-/// This test documents the actual grant-chain semantics (no invented rules).
+/// 12. STRICT CAPABILITY MODEL: B without AdminCap on C cannot mint a new root Grant on C.
+/// Only holders of active AdminCap(resource) may CapabilityGrant on that resource.
+/// CapabilityDelegate remains the path for sharing an existing CapabilityId.
 #[test]
 fn s12_grantee_further_grant_semantics() {
     let wal = temp_wal("s12");
@@ -673,44 +671,20 @@ fn s12_grantee_further_grant_semantics() {
     let d = world.tx_create_object(sid0).unwrap();
     world.tx_commit(sid0).unwrap();
 
-    // A → B on C
+    // A → B on C (A holds creator AdminCap on C)
     let sid_g = world.tx_begin(Some(a)).unwrap();
     world
         .tx_capability_grant(sid_g, a, b, "link".to_string(), c)
         .unwrap();
     world.tx_commit(sid_g).unwrap();
 
-    // B attempts a further CapabilityGrant: B as grantor, D as grantee, resource C.
-    // Per engine::capability_grant: no "grantor holds resource" check; stages pending grant.
+    // B attempts a further CapabilityGrant on C without holding AdminCap(C).
     let sid_b = world.tx_begin(Some(b)).unwrap();
     let grant_result =
         world.tx_capability_grant(sid_b, b, d, "link".to_string(), c);
     assert!(
-        grant_result.is_ok(),
-        "CapabilityGrant does not require grantor to hold resource; staging must succeed"
-    );
-    world
-        .tx_commit(sid_b)
-        .expect("B's further root grant must commit under current architecture");
-
-    let records = kernel.test_capability_records();
-    let further = records
-        .iter()
-        .find(|r| r.active && r.holder == d && r.resource == c && r.granted_by == b)
-        .expect("further grant must record grantor=B (not A)");
-    assert_eq!(further.granted_by, b, "new grantor must be B");
-    assert_eq!(further.holder, d);
-    assert_ne!(
-        further.granted_by, a,
-        "further grant must not re-attribute grantor to original A"
-    );
-
-    // Original A→B grant still intact.
-    assert!(
-        records
-            .iter()
-            .any(|r| r.active && r.holder == b && r.resource == c && r.granted_by == a),
-        "original A→B grant must remain"
+        grant_result.is_err(),
+        "CapabilityGrant requires AdminCap(resource); B must be rejected"
     );
 
     cleanup(&wal);

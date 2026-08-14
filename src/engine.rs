@@ -1418,6 +1418,13 @@ impl VeritasEngine {
     }
 
     /// P8.3: CAPABILITY_GRANT 原语——向 Alive 的 Object 授权
+    ///
+    /// STRICT CAPABILITY MODEL (Constitution §3.5 / Capability P0):
+    /// grantor must hold an active AdminCap on `resource`.
+    /// Identity authorization (authorize_intent / Call) is separate and must
+    /// already have been satisfied by the caller path (Machine / WorldService).
+    /// Self-access, current_object, capability_context, or "any capability on
+    /// resource" do **not** substitute for AdminCap.
     pub(crate) fn capability_grant(
         &self,
         ctx: &mut TransactionContext,
@@ -1437,6 +1444,16 @@ impl VeritasEngine {
             ObjectGuard::ensure_can_grant(&view, grantee)?;
         }
 
+        // STRICT: grantor holds active AdminCap(resource)
+        // Covers: committed graph (active, not pending-revoked) + same-tx pending AdminCap
+        // (ObjectBirth root AdminCaps land in pending_capabilities).
+        if !self.grantor_holds_active_admin_cap(ctx, grantor, resource) {
+            return Err(VeritasError::EngineError(format!(
+                "CapabilityGrant: grantor {} does not hold active AdminCap on resource {}",
+                grantor, resource
+            )));
+        }
+
         let seq = {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64
@@ -1453,6 +1470,52 @@ impl VeritasEngine {
                 cap_type: capability_type.to_string(),
             });
         Ok(cap_id)
+    }
+
+    /// Predicate: grantor holds an active AdminCap on the given resource.
+    ///
+    /// Sources (same authorization surface for Machine and WorldService):
+    /// 1. Committed CapabilityGraph: active holder of AdminCap on resource,
+    ///    not targeted by a same-tx pending revoke for (cap_id, grantor).
+    /// 2. Same-tx pending grants: PendingCapabilityGrant with
+    ///    cap_type=="AdminCap", resource==target, grantee==grantor
+    ///    (covers ObjectBirth self/creator root AdminCaps before commit).
+    ///
+    /// Does **not** treat self-access / current_object / any non-AdminCap as authority.
+    fn grantor_holds_active_admin_cap(
+        &self,
+        ctx: &TransactionContext,
+        grantor: ObjectId,
+        resource: ObjectId,
+    ) -> bool {
+        let cap_graph = self.capability_graph.lock().unwrap();
+
+        // 1. Committed active AdminCap held by grantor on resource
+        let committed = cap_graph.caps_for_holder(grantor).iter().any(|&cid| {
+            if !cap_graph.holds(cid, grantor) {
+                return false;
+            }
+            let Some(info) = cap_graph.info(cid) else {
+                return false;
+            };
+            if info.capability_type != "AdminCap" || info.resource != resource {
+                return false;
+            }
+            // Same-tx pending revoke of this (cap_id, grantor) deactivates authority
+            !ctx.pending_capability_revokes
+                .iter()
+                .any(|r| r.capability_id == cid && r.holder == grantor)
+        });
+        if committed {
+            return true;
+        }
+
+        // 2. Same-tx pending AdminCap (birth roots / prior grants in this tx)
+        // Pending revoke of a pending grant removes it from pending_capabilities,
+        // so presence here already means still active within the tx.
+        ctx.pending_capabilities.iter().any(|g| {
+            g.cap_type == "AdminCap" && g.resource == resource && g.grantee == grantor
+        })
     }
 
     /// CAPABILITY_REVOKE: record a pending revoke; applied on commit via apply().
