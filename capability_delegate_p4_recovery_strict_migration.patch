@@ -1,0 +1,108 @@
+diff --git a/tests/capability_delegate_p4_recovery.rs b/tests/capability_delegate_p4_recovery.rs
+index 5a83758..edf179f 100644
+--- a/tests/capability_delegate_p4_recovery.rs
++++ b/tests/capability_delegate_p4_recovery.rs
+@@ -29,13 +29,34 @@ fn birth(kernel: &Kernel) -> u64 {
+     id
+ }
+ 
+-fn grant(kernel: &Kernel, grantee: u64, resource: u64) -> u64 {
+-    let mut tx = kernel.test_begin();
++/// Birth an object under `creator` so creator receives AdminCap on the newborn.
++fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
++    let mut tx = kernel.test_begin_in_object(creator);
++    let id = match kernel
++        .handle(
++            &mut tx,
++            KernelCall::ObjectBirth {
++                object_type: ObjectType::StateObject,
++            },
++        )
++        .unwrap()
++    {
++        TrapResult::ObjectId(id) => id,
++        _ => panic!("expected ObjectId"),
++    };
++    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
++    id
++}
++
++/// STRICT: grantor must hold active AdminCap(resource).
++/// Callers must birth resource under grantor (via birth_under).
++fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
++    let mut tx = kernel.test_begin_in_object(grantor);
+     let cap_id = match kernel
+         .handle(
+             &mut tx,
+             KernelCall::CapabilityGrant {
+-                grantor: grantee,
++                grantor,
+                 grantee,
+                 capability_type: "read".into(),
+                 resource,
+@@ -88,8 +109,8 @@ fn t1_delegate_survives_checkpoint() {
+     let kernel = Kernel::with_wal_path(wal.clone());
+     let a = birth(&kernel);
+     let b = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+     delegate(&kernel, cap, a, b, true);
+ 
+     assert!(kernel.test_engine().holds_capability(cap, a));
+@@ -111,8 +132,8 @@ fn t2_multilevel_delegate_tree() {
+     let b = birth(&kernel);
+     let c = birth(&kernel);
+     let d = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+     delegate(&kernel, cap, a, b, true);
+     delegate(&kernel, cap, b, c, true);
+     delegate(&kernel, cap, c, d, false);
+@@ -152,8 +173,8 @@ fn t3_cascade_revoke() {
+     let a = birth(&kernel);
+     let b = birth(&kernel);
+     let c = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+     delegate(&kernel, cap, a, b, true);
+     delegate(&kernel, cap, b, c, true);
+     revoke(&kernel, cap, b, Some(true));
+@@ -170,8 +191,8 @@ fn t4_non_cascade_revoke() {
+     let a = birth(&kernel);
+     let b = birth(&kernel);
+     let c = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+     delegate(&kernel, cap, a, b, false);
+     delegate(&kernel, cap, b, c, true);
+     revoke(&kernel, cap, b, None);
+@@ -192,8 +213,8 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
+     let a = birth(&kernel);
+     let b = birth(&kernel);
+     let c = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+     delegate(&kernel, cap, a, b, true);
+     delegate(&kernel, cap, b, c, false);
+ 
+@@ -242,8 +263,8 @@ fn t6_rollback_drops_pending_delegate() {
+     let kernel = Kernel::with_wal_path(temp_wal("t6"));
+     let a = birth(&kernel);
+     let b = birth(&kernel);
+-    let res = birth(&kernel);
+-    let cap = grant(&kernel, a, res);
++    let res = birth_under(&kernel, a);
++    let cap = grant(&kernel, a, a, res);
+ 
+     let mut tx = kernel.test_begin();
+     kernel
