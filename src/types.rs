@@ -311,9 +311,18 @@ impl TransactionContext {
     }
 
 
-    /// 切换当前执行上下文到另一个Object。对应CALL指令跨Module调用时
-    /// 的语义(module.md第6节)：Machine切换执行上下文到被调用Object的
-    /// 代码/内存空间。
+    /// Internal state-setting primitive: sets `current_object` only.
+    ///
+    /// - Does **not** modify `capability_context`.
+    /// - Is **not** equivalent to Machine `CALL` (no authorize_intent, no CallFrame).
+    /// - Is **not** a full execution-time identity switch.
+    /// - Callers are responsible for authorization; production cross-object
+    ///   Host paths must `authorize_intent` **before** calling this.
+    /// - Must **not** be used as a new execution-time identity-switch path.
+    ///
+    /// See `docs/IDENTITY_MODEL.md` §7 (Session / Host Bootstrap).
+    /// Historical note: module.md §6 described CALL-driven context switch;
+    /// that full switch is implemented by Machine CALL, not by this primitive.
     pub fn enter_object(&mut self, object_id: ObjectId) {
         self.current_object = object_id;
     }

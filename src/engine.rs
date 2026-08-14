@@ -905,6 +905,16 @@ impl VeritasEngine {
         self.controller.begin(snapshot_version)
     }
 
+    /// Session / transaction bootstrap: create a TransactionContext and
+    /// initialize `current_object` to `object_id`.
+    ///
+    /// - This is **not** an execution-time `CALL`.
+    /// - Does **not** build a CallFrame.
+    /// - Does **not** set `capability_context` (remains default 0);
+    ///   upper-layer session APIs (e.g. WorldService `tx_begin`) decide
+    ///   whether to initialize `capability_context`.
+    ///
+    /// See `docs/IDENTITY_MODEL.md` §7.5.
     pub(crate) fn begin_in_object(&self, object_id: ObjectId) -> TransactionContext {
         let mut ctx = self.begin();
         ctx.enter_object(object_id);

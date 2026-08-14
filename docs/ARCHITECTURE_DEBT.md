@@ -52,6 +52,8 @@ Veritas **已经是一个自洽、可运行的计算机内核原型**：Transact
 - 发现 **死代码**：**是**（`Extension` trait 无实现者；部分小型模块调用面极窄）。
 - 是否发现**真正需要立即修改 Kernel 的问题**：**否**（P0 为 drift 评估项；Forge 当前主路径已走 authorize_intent；冻结安全结论不重开）。
 
+**P0 Identity Drift 收口** (2026-08-14): 经 `IDENTITY_DRIFT_AUDIT_20260814.md` 定界后，**不是 Kernel security bug**。已通过 `IDENTITY_MODEL.md` §7 + 源码定位注释 **RESOLVED BY ARCHITECTURAL DECISION / DOCUMENTATION**（未改 authorize_intent / CALL / BIRTH / capability_context 逻辑）。
+
 ---
 
 ## 1. 当前真正核心执行路径
@@ -159,14 +161,14 @@ Runtime::execute(kernel, ModuleImage)
 
 - **文件**: `src/types.rs` ~317  
 - **函数**: `TransactionContext::enter_object`  
-- **分类**: **C. LEGACY**（原语）+ 在 WorldService 中构成 **B. ACTIVE BUT DRIFTED**（见 #2）  
+- **分类**: **C. LEGACY**（原语）+ 在 WorldService 中曾构成 **B. ACTIVE BUT DRIFTED**（见 #2）  
 - **当前调用者**: `engine.begin_in_object`、`world_api` 多处、`machine.set_execution_object`、测试  
 - **当前行为**: 仅 `self.current_object = object_id`（**不**改 capability_context）  
-- **对应文档**: IDENTITY_MODEL — 唯一合法切换入口是 CALL + authorize_intent  
+- **对应文档**: IDENTITY_MODEL §7 — 执行期唯一切换入口是 CALL；`enter_object` = internal primitive  
 - **为何此分类**: 作为底层赋值原语仍需要；但作为“业务级身份切换 API”已被 CALL 取代  
 - **影响 Forge**: WorldService 路径需单独看（#2）  
-- **是否需改 Kernel**: 否（本轮）；建议标记 legacy，禁止新增无审计调用  
-- **建议**: P1 — 文档化“仅内部/已授权后使用”
+- **是否需改 Kernel**: 否  
+- **决议** (2026-08-14): **KEEP INTERNAL** — 源码注释 + IDENTITY_MODEL §7.4 已定位；禁止新执行期无审计路径。
 
 ---
 
@@ -174,23 +176,23 @@ Runtime::execute(kernel, ModuleImage)
 
 - **文件**: `src/world_api.rs` ~330–338  
 - **行为**: `tx_create_object` 在 `current_object == 0` 时对新生 id 执行 `enter_object` + `capability_context = id`  
-- **分类**: **B. ACTIVE BUT DRIFTED**  
+- **分类**: **B. ACTIVE BUT DRIFTED** → **已收口为文档化 Bootstrap Exception**  
 - **对照**: IDENTITY_MODEL / Machine 路径 — OBJECT_BIRTH **不**切换身份，只 attach self-AdminCap，由 CALL 进入  
 - **缓解**: 其它跨对象路径（tx_write / freeze / death / grant）已在 enter 前 `authorize_intent`（与 HIDDEN_ISSUES 旧描述相比已部分修复）  
-- **影响 Forge**: 可能。Forge 若依赖“create 后自动成为该 object 身份”，行为与 Machine/VASM 不一致  
-- **是否需改 Kernel**: **否**；属 WorldService 语义对齐问题  
-- **建议**: P0 **评估**（对齐 IDENTITY 或正式把“session bootstrap 身份”写入 Constitution 例外）
+- **影响 Forge**: Forge 依赖 create 后 bootstrap 为 working object；与 Machine 不同构但作用域分离  
+- **是否需改 Kernel**: **否**  
+- **决议** (2026-08-14): **DOCUMENT AS BOOTSTRAP EXCEPTION** — 见 `IDENTITY_MODEL.md` §7.3；`IDENTITY_DRIFT_AUDIT_20260814.md` Decision 1。**P0 CLOSED**。
 
 ---
 
 ### 发现 #3 — `begin_in_object` 无审计切身份
 
 - **文件**: `src/engine.rs` ~908–912；`kernel.rs` 转发  
-- **分类**: **C. LEGACY** / 引导 API  
+- **分类**: **C. LEGACY** / 引导 API → **已正式定义为 Session Bootstrap**  
 - **行为**: `begin()` 后直接 `enter_object(object_id)`，不走 CALL  
 - **调用者**: WorldService `tx_begin(Some(actor))`、kernel 内测、部分集成测试  
 - **语义**: 打开“已在该 object 身份下”的事务，而非执行中切换 — 与 CALL 不同构  
-- **建议**: P1 — 在文档中定义为 **session bootstrap**，与执行期 CALL 区分，避免再被当成漏洞误修
+- **决议** (2026-08-14): **OFFICIAL SESSION BOOTSTRAP** — IDENTITY_MODEL §7.5 + 源码注释；非 CALL、非执行期 identity switch。
 
 ---
 
@@ -388,10 +390,21 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 
 ## 8. 清理优先级（仅建议，本轮不执行）
 
-### P0（语义一致性 drift，先评估）
+### P0（语义一致性 drift）— RESOLVED BY ARCHITECTURAL DECISION / DOCUMENTATION
 
-1. WorldService `tx_create_object` 在 current_object==0 时隐式 enter vs IDENTITY_MODEL  
-2. （相关）对外文档是否承认 “session bootstrap 身份” 例外  
+**原问题**：WorldService `tx_create_object` 在 `current_object==0` 时隐式 enter，以及 `enter_object` / `begin_in_object` 与 IDENTITY_MODEL「唯一切换入口 = CALL」表述的边界不清。
+
+**审计结论**（`docs/IDENTITY_DRIFT_AUDIT_20260814.md`）：**不是 Kernel security bug**。未发现未经 `authorize_intent` 的生产执行期身份绕过。Host bootstrap 与 Machine 执行期作用域不同；原表述未覆盖 Session 层。
+
+**最终决策**（已写入 `docs/IDENTITY_MODEL.md` §7 与相关源码注释）：
+
+1. `tx_create_object(current_object == 0)` → **DOCUMENT AS BOOTSTRAP EXCEPTION**
+2. `enter_object` → **KEEP INTERNAL**（仅设 current_object；生产跨对象须先 authorize）
+3. `begin_in_object` → **OFFICIAL SESSION BOOTSTRAP**（非 CALL）
+4. `Machine::set_execution_object` → **KEEP TEST/BOOTSTRAP ONLY**
+5. `CALL` → **ONLY EXECUTION-TIME IDENTITY SWITCH**
+
+**状态**: **CLOSED**（文档 + 定位注释收口；未改 Kernel 安全逻辑）。  
 
 ### P1（双路径 / legacy 误判风险）
 
@@ -422,7 +435,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 | 子系统 | 状态 | 说明 |
 |--------|------|------|
 | Core execution | **ACTIVE** | Machine→KernelCall→Engine 主链完整 |
-| Identity | **ACTIVE**（Machine）；**DRIFT**（WorldService bootstrap） | 执行期模型已锁定；外部 API 有一处隐式 enter |
+| Identity | **ACTIVE**（Machine + 已文档化 Host bootstrap） | 执行期 CALL 锁定；Host bootstrap 已写入 IDENTITY_MODEL §7；P0 CLOSED |
 | Capability | **ACTIVE** | authorize_intent + grant/delegate/revoke + WAL |
 | Transaction | **ACTIVE** | begin/commit/abort；session 包装清晰 |
 | WAL | **ACTIVE** | 提交路径写入完整 |

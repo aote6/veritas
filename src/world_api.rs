@@ -328,9 +328,16 @@ impl WorldService {
             )?;
             match result {
                 TrapResult::ObjectId(id) => {
-                    // If the session had no acting object (current_object == 0),
-                    // switch into the newly created object so subsequent writes succeed.
-                    // When an actor is already set, keep it so creator can link/admin the child.
+                    // Host Session Bootstrap exception (IDENTITY_MODEL §7.3):
+                    // Only when the session has no acting object (current_object == 0),
+                    // the newly birthed object becomes this session's working object
+                    // (current_object = capability_context = id) so subsequent writes
+                    // have a valid address space.
+                    // - Not equivalent to Machine OBJECT_BIRTH auto-CALL (Machine never
+                    //   switches identity on birth; Host has no CALL stack here).
+                    // - Does not fire when an actor is already set.
+                    // - Not an unauthorized execution-time identity switch; session
+                    //   bootstrap only, target id was just created by this session.
                     if state.ctx.current_object == 0 {
                         state.ctx.enter_object(id);
                         state.ctx.capability_context = id;
