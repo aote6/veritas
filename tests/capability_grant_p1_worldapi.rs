@@ -18,7 +18,7 @@ use veritas_kernel::world_api::WorldService;
 /// 失败意味着外部接口与 Kernel 授权检查或 capability graph 不一致。
 /// @category: D
 /// @layer: integration
-/// @testworld: ALLOWED
+/// @testworld: NOT_USED
 /// @req: INT-01
 #[test]
 fn tx_capability_grant_external_interface_end_to_end() {

@@ -27,8 +27,8 @@
 | tests/capability_grant_admin_cap.rs::same_tx_birth_admin_cap_allows_grant | B | transaction | FORBIDDEN | TX-02 |
 | tests/capability_grant_admin_cap.rs::world_service_grant_requires_admin_cap | B | capability | FORBIDDEN | CAP-08 |
 | tests/capability_grant_cross_object.rs::grantor_is_real_authorizer_not_self_grant | B | capability | FORBIDDEN | CAP-09 |
-| tests/capability_grant_p1_jsonlines.rs::tx_capability_grant_jsonl_end_to_end | D | integration | ALLOWED | INT-01 |
-| tests/capability_grant_p1_worldapi.rs::tx_capability_grant_external_interface_end_to_end | D | integration | ALLOWED | INT-01 |
+| tests/capability_grant_p1_jsonlines.rs::tx_capability_grant_jsonl_end_to_end | D | integration | NOT_USED | INT-01 |
+| tests/capability_grant_p1_worldapi.rs::tx_capability_grant_external_interface_end_to_end | D | integration | NOT_USED | INT-01 |
 | tests/capability_p4x_recovery.rs::capability_grant_no_leak_on_abort | B | transaction | FORBIDDEN | TX-03 |
 | tests/capability_p4x_recovery.rs::capability_grant_visible_after_commit | B | transaction | FORBIDDEN | TX-03 |
 | tests/capability_p4x_recovery.rs::capability_survives_recovery | C | recovery | FORBIDDEN | REC-03 |

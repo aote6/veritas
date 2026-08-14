@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 /// 失败意味着外部 CapabilityGrant 原语未正确生效或授权检查被绕过。
 /// @category: D
 /// @layer: integration
-/// @testworld: ALLOWED
+/// @testworld: NOT_USED
 /// @req: INT-01
 #[test]
 fn tx_capability_grant_jsonl_end_to_end() {

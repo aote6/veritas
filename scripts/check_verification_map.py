@@ -9,14 +9,14 @@ from pathlib import Path
 
 VALID_CATEGORIES = {'A', 'B', 'C', 'D'}
 VALID_LAYERS = {'kernel', 'capability', 'transaction', 'recovery', 'integration'}
-VALID_TESTWORLDS = {'FORBIDDEN', 'ALLOWED', 'PREFERRED'}
+VALID_TESTWORLDS = {'FORBIDDEN', 'NOT_USED', 'ALLOWED', 'PREFERRED'}
 
 # Category 对应的 TestWorld 使用策略
 CATEGORY_TESTWORLD_POLICY = {
     'A': {'FORBIDDEN'},
     'B': {'FORBIDDEN'},
     'C': {'FORBIDDEN'},
-    'D': {'ALLOWED', 'PREFERRED', 'FORBIDDEN'}
+    'D': {'NOT_USED', 'ALLOWED', 'PREFERRED'}
 }
 
 # ==================================================
