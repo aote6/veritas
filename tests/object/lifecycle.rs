@@ -3,6 +3,24 @@ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{LinkType, ObjectState, ObjectType};
 
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -83,8 +101,8 @@ fn lifecycle_birth_freeze_dead() {
 #[test]
 fn lifecycle_frozen_rejects_link() {
     let tk = new_kernel();
-    let a = birth(&tk.kernel);
     let b = birth(&tk.kernel);
+    let a = birth_under(&tk.kernel, b);
     freeze(&tk.kernel, a);
     // Frozen object cannot receive grants; link intent recorded then rejected at commit
     // when from is frozen. Act as alive root and attempt link involving frozen a.
@@ -135,7 +153,7 @@ fn lifecycle_frozen_rejects_link() {
 fn lifecycle_owns_cascade() {
     let tk = new_kernel();
     let a = birth(&tk.kernel);
-    let b = birth(&tk.kernel);
+    let b = birth_under(&tk.kernel, a);
     link(&tk.kernel, a, b, LinkType::Owns);
     death(&tk.kernel, a);
     assert!(tk.kernel.is_object_dead(a));
@@ -146,7 +164,7 @@ fn lifecycle_owns_cascade() {
 fn lifecycle_depends_on_invalidation() {
     let tk = new_kernel();
     let a = birth(&tk.kernel);
-    let b = birth(&tk.kernel);
+    let b = birth_under(&tk.kernel, a);
     link(&tk.kernel, a, b, LinkType::DependsOn);
     death(&tk.kernel, b);
     assert!(tk.kernel.is_object_dead(b));
@@ -161,7 +179,7 @@ fn lifecycle_depends_on_invalidation() {
 fn lifecycle_references_no_cascade() {
     let tk = new_kernel();
     let a = birth(&tk.kernel);
-    let b = birth(&tk.kernel);
+    let b = birth_under(&tk.kernel, a);
     link(&tk.kernel, a, b, LinkType::References);
     death(&tk.kernel, b);
     assert!(tk.kernel.is_object_dead(b));
@@ -209,8 +227,8 @@ fn lifecycle_alive_to_dead() {
 fn lifecycle_owns_chain_cascade() {
     let tk = new_kernel();
     let a = birth(&tk.kernel);
-    let b = birth(&tk.kernel);
-    let c = birth(&tk.kernel);
+    let b = birth_under(&tk.kernel, a);
+    let c = birth_under(&tk.kernel, b);
     link(&tk.kernel, a, b, LinkType::Owns);
     link(&tk.kernel, b, c, LinkType::Owns);
     death(&tk.kernel, a);

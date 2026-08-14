@@ -72,8 +72,8 @@ fn root_hash_changes_on_link() {
     let tk = common::new_kernel();
     let root = tk.root_object;
 
-    // 创建子对象
-    let mut tx = tk.kernel.test_begin();
+    // 创建子对象（root 名下，使 root 持有 child 的 AdminCap）
+    let mut tx = tk.kernel.test_begin_in_object(root);
     let result = tk
         .kernel
         .handle(

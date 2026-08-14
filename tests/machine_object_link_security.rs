@@ -90,7 +90,7 @@ fn object_link_with_proper_capability_succeeds() {
 
     let x = tk.root_object;
     let a = birth_under(&tk.kernel, x);
-    let b = birth_under(&tk.kernel, x);
+    let b = birth_under(&tk.kernel, a);
 
     // X 以 A 的身份，先为自己在 B 上授予 link 权限，再执行 Link
     let mut tx = tk.kernel.test_begin_in_object(a);

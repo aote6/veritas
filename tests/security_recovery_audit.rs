@@ -47,6 +47,24 @@ fn world_pair(name: &str) -> (String, Arc<Kernel>, WorldService) {
     (wal, kernel, world)
 }
 
+fn birth_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth_kernel(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -771,7 +789,7 @@ fn audit_wal_duplicate_capability_grant() {
     {
         let k = Kernel::with_wal_path(wal.clone());
         let h = birth_kernel(&k);
-        let r = birth_kernel(&k);
+        let r = birth_kernel_under(&k, h);
         let mut tx = k.test_begin_in_object(h);
         let cid = match k
             .handle(

@@ -8,6 +8,24 @@ use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{LinkType, ObjectState, ObjectType};
 
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -120,7 +138,7 @@ fn link_then_unlink_survives_recovery() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         a = birth(&kernel);
-        b = birth(&kernel);
+        b = birth_under(&kernel, a);
         link(&kernel, a, b, LinkType::Owns);
         unlink(&kernel, a, b);
         assert!(
@@ -159,7 +177,7 @@ fn freeze_and_unlink_survives_recovery() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         a = birth(&kernel);
-        b = birth(&kernel);
+        b = birth_under(&kernel, a);
         link(&kernel, a, b, LinkType::Owns);
         freeze(&kernel, a);
         unlink(&kernel, a, b);
@@ -194,7 +212,7 @@ fn unlink_then_death_target_survives() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         owner = birth(&kernel);
-        owned = birth(&kernel);
+        owned = birth_under(&kernel, owner);
         link(&kernel, owner, owned, LinkType::Owns);
         unlink(&kernel, owner, owned);
         death(&kernel, owner);
@@ -238,7 +256,7 @@ fn death_cascade_survives_recovery() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         owner = birth(&kernel);
-        owned = birth(&kernel);
+        owned = birth_under(&kernel, owner);
         link(&kernel, owner, owned, LinkType::Owns);
         death(&kernel, owner);
         assert!(

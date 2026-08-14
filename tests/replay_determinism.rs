@@ -11,6 +11,24 @@ use veritas_kernel::types::ObjectType;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -111,7 +129,7 @@ fn object_ops_are_deterministic() {
     {
         let kernel = Kernel::with_wal_path(path.clone());
         let a = birth(&kernel);
-        let b = birth(&kernel);
+        let b = birth_under(&kernel, a);
         let mut tx = kernel.test_begin_in_object(a);
         kernel
             .handle(
@@ -162,7 +180,7 @@ fn wal_contains_full_world() {
     {
         let kernel = Kernel::with_wal_path(path.clone());
         a = birth(&kernel);
-        b = birth(&kernel);
+        b = birth_under(&kernel, a);
         let mut tx = kernel.test_begin_in_object(a);
         kernel
             .handle(

@@ -11,30 +11,41 @@
 //!
 //! 若失败，意味着 checkpoint 序列化格式或恢复逻辑破坏了状态等价性不变量。
 
-use veritas_kernel::kernel::{Kernel, KernelCall};
+use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
 
 /// 构建一个包含四组件的小世界
 fn build_world(kernel: &Kernel) {
     let mut ctx = kernel.test_begin();
-    kernel
+    let _o1 = match kernel
         .handle(
             &mut ctx,
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap();
-    kernel
-        .handle(
-            &mut ctx,
-            KernelCall::ObjectBirth {
-                object_type: ObjectType::StateObject,
-            },
-        )
-        .unwrap();
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+
+    let mut ctx_b2 = kernel.test_begin_in_object(1);
+    let _o2 = match kernel
+        .handle(
+            &mut ctx_b2,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut ctx_b2, KernelCall::Commit).unwrap();
     let mut ctx = kernel.test_begin_in_object(1);
     kernel
         .handle(
@@ -64,7 +75,7 @@ fn build_world(kernel: &Kernel) {
                 grantor: 1,
                 grantee: 2,
                 capability_type: "read".to_string(),
-                resource: 100,
+                resource: 2,
             },
         )
         .unwrap();

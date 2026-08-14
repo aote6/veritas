@@ -64,6 +64,24 @@ fn is_permission_denied(err: &WorldError) -> bool {
         || format!("{err:?}").contains("permission")
 }
 
+fn birth_via_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth_via_kernel(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -288,7 +306,7 @@ fn s_a06_revoke_then_use_denied() {
 
     let _a = birth_via_kernel(&kernel);
     let b = birth_via_kernel(&kernel);
-    let resource = birth_via_kernel(&kernel);
+    let resource = birth_via_kernel_under(&kernel, b);
 
     // Grant B a capability on resource (grantor=B for self-grant pattern used in existing tests).
     let mut tx = kernel.test_begin();

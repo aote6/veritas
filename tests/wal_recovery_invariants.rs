@@ -9,6 +9,24 @@ use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::types::{LinkType, ObjectState};
 
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -175,7 +193,7 @@ fn recovery_invariant_link_then_unlink() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         a = birth(&kernel);
-        b = birth(&kernel);
+        b = birth_under(&kernel, a);
         link(&kernel, a, b, LinkType::Owns);
         unlink(&kernel, a, b);
         assert!(
@@ -216,7 +234,7 @@ fn recovery_invariant_owner_death_removes_link() {
     {
         let kernel = Kernel::with_wal_path(wal_path.clone());
         owner = birth(&kernel);
-        owned = birth(&kernel);
+        owned = birth_under(&kernel, owner);
         link(&kernel, owner, owned, LinkType::Owns);
         death(&kernel, owner);
         assert!(

@@ -28,6 +28,24 @@ fn birth(kernel: &Kernel, ctx: &mut TransactionContext) -> ObjectId {
         _ => panic!("expected ObjectId"),
     }
 }
+fn birth_under(kernel: &Kernel, creator: ObjectId) -> ObjectId {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn grant(
     kernel: &Kernel,
     ctx: &mut TransactionContext,
@@ -122,7 +140,7 @@ fn capability_identity_survives_checkpoint_restore() {
     let kernel = Kernel::new();
     let mut ctx = kernel.test_begin();
     let o1 = birth(&kernel, &mut ctx);
-    let o2 = birth(&kernel, &mut ctx);
+    let o2 = birth_under(&kernel, o1);
     let cap_a = grant(&kernel, &mut ctx, o1, o2, "read");
     let cap_b = grant(&kernel, &mut ctx, o1, o2, "read");
     assert_ne!(cap_a, cap_b);

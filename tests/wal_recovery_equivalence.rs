@@ -97,6 +97,24 @@ fn assert_recovery_equivalence(operations: &[&dyn Fn(&Kernel)]) {
     let _ = std::fs::remove_file(&wal_path);
 }
 
+fn commit_birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn commit_birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
     let id = match kernel
@@ -170,7 +188,7 @@ fn equivalence_single_birth() {
 fn equivalence_birth_and_link() {
     assert_recovery_equivalence(&[&|e| {
         let a = commit_birth(e);
-        let b = commit_birth(e);
+        let b = commit_birth_under(e, a);
         commit_link(e, a, b, LinkType::Owns);
     }]);
 }
@@ -190,8 +208,22 @@ fn equivalence_full_lifecycle() {
 fn equivalence_multi_object_topology() {
     assert_recovery_equivalence(&[&|e| {
         let a = commit_birth(e);
-        let b = commit_birth(e);
-        let c = commit_birth(e);
+        let b = commit_birth_under(e, a);
+        let c = commit_birth_under(e, a);
+        
+        // a 授权 b 可以 link c
+        let mut tx = e.test_begin_in_object(a);
+        e.handle(
+            &mut tx,
+            KernelCall::CapabilityGrant {
+                grantor: a,
+                grantee: b,
+                capability_type: "AdminCap".to_string(),
+                resource: c,
+            },
+        ).unwrap();
+        e.handle(&mut tx, KernelCall::Commit).unwrap();
+
         commit_link(e, a, b, LinkType::Owns);
         commit_link(e, a, c, LinkType::DependsOn);
         commit_link(e, b, c, LinkType::References);
@@ -203,8 +235,8 @@ fn equivalence_multi_object_topology() {
 fn equivalence_death_cascade() {
     assert_recovery_equivalence(&[&|e| {
         let a = commit_birth(e);
-        let b = commit_birth(e);
-        let c = commit_birth(e);
+        let b = commit_birth_under(e, a);
+        let c = commit_birth_under(e, b);
         commit_link(e, a, b, LinkType::Owns);
         commit_link(e, b, c, LinkType::Owns);
         commit_death(e, a);
@@ -230,7 +262,7 @@ fn cross_tx_unlink_then_death_no_cascade() {
     // Expect: B is still alive (unlinked before death)
     let kernel = Kernel::with_wal_path(wal_path.clone());
     let a = commit_birth(&kernel); // A
-    let b = commit_birth(&kernel); // B
+    let b = commit_birth_under(&kernel, a); // B
     commit_link(&kernel, a, b, LinkType::Owns);
     {
         let mut tx = kernel.test_begin_in_object(a);
@@ -275,7 +307,7 @@ fn cross_tx_link_then_death_cascade() {
     // Expect: both A and B dead
     let kernel = Kernel::with_wal_path(wal_path.clone());
     let a = commit_birth(&kernel); // A
-    let b = commit_birth(&kernel); // B
+    let b = commit_birth_under(&kernel, a); // B
     commit_link(&kernel, a, b, LinkType::Owns);
     commit_death(&kernel, a); // kill A → cascade to B
     drop(kernel); // crash
