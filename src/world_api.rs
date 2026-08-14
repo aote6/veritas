@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::kernel::{Kernel, KernelCall, TrapResult};
 use crate::types::{
-    AbortReason, CapabilityId, LinkSnapshot, LinkType, ObjectId, ObjectState, ObjectType,
-    StateId, TransactionContext, TransactionDelta, TransactionReceipt, VeritasError, Version,
+    AbortReason, CapabilityId, LinkSnapshot, LinkType, ObjectId, ObjectState, ObjectType, StateId,
+    TransactionContext, TransactionDelta, TransactionReceipt, VeritasError, Version,
 };
 
 pub type SessionId = u64;
@@ -81,39 +81,53 @@ pub struct CapabilityGrantView {
 
 impl TransactionDeltaView {
     pub fn from_delta(d: &TransactionDelta) -> Self {
-        let memory_written: Vec<MemoryWriteView> = d.writes.iter().map(|(addr, bytes)| {
-            MemoryWriteView {
+        let memory_written: Vec<MemoryWriteView> = d
+            .writes
+            .iter()
+            .map(|(addr, bytes)| MemoryWriteView {
                 object_id: addr.object_id,
                 state_id: addr.state_id,
                 value_hex: hex::encode(bytes),
-            }
-        }).collect();
-        let links_added: Vec<_> = d.links.iter().map(|(f, t, lt)| {
-            let lt_str = match lt {
-                crate::types::LinkType::Owns => "owns",
-                crate::types::LinkType::DependsOn => "depends_on",
-                crate::types::LinkType::References => "references",
-            };
-            (*f, *t, lt_str.to_string())
-        }).collect();
-        let effects: Vec<_> = d.effects.iter().map(|(key, payload)| {
-            (key.clone(), hex::encode(payload))
-        }).collect();
-        let capability_events: Vec<String> = d.capability_grants.iter().map(|g| {
-            format!(
-                "grant cap_id={} type={} grantor={} grantee={} resource={}",
-                g.capability_id, g.cap_type, g.grantor, g.grantee, g.resource
-            )
-        }).collect();
-        let capability_grants: Vec<CapabilityGrantView> = d.capability_grants.iter().map(|g| {
-            CapabilityGrantView {
+            })
+            .collect();
+        let links_added: Vec<_> = d
+            .links
+            .iter()
+            .map(|(f, t, lt)| {
+                let lt_str = match lt {
+                    crate::types::LinkType::Owns => "owns",
+                    crate::types::LinkType::DependsOn => "depends_on",
+                    crate::types::LinkType::References => "references",
+                };
+                (*f, *t, lt_str.to_string())
+            })
+            .collect();
+        let effects: Vec<_> = d
+            .effects
+            .iter()
+            .map(|(key, payload)| (key.clone(), hex::encode(payload)))
+            .collect();
+        let capability_events: Vec<String> = d
+            .capability_grants
+            .iter()
+            .map(|g| {
+                format!(
+                    "grant cap_id={} type={} grantor={} grantee={} resource={}",
+                    g.capability_id, g.cap_type, g.grantor, g.grantee, g.resource
+                )
+            })
+            .collect();
+        let capability_grants: Vec<CapabilityGrantView> = d
+            .capability_grants
+            .iter()
+            .map(|g| CapabilityGrantView {
                 capability_id: g.capability_id,
                 cap_type: g.cap_type.clone(),
                 grantor: g.grantor,
                 grantee: g.grantee,
                 resource: g.resource,
-            }
-        }).collect();
+            })
+            .collect();
 
         TransactionDeltaView {
             actor_id: d.actor_id,
@@ -227,7 +241,9 @@ impl WorldService {
             .list_object_ids()
             .into_iter()
             .filter_map(|id| {
-                self.kernel.get_object_state(id).map(|state| ObjectInfo { id, state })
+                self.kernel
+                    .get_object_state(id)
+                    .map(|state| ObjectInfo { id, state })
             })
             .collect()
     }
@@ -282,7 +298,11 @@ impl WorldService {
         )?;
         let id = match result {
             TrapResult::ObjectId(id) => id,
-            _ => return Err(WorldError::Msg("ObjectBirth did not return ObjectId".into())),
+            _ => {
+                return Err(WorldError::Msg(
+                    "ObjectBirth did not return ObjectId".into(),
+                ))
+            }
         };
         let receipt = self.kernel.commit(&mut ctx)?;
 
@@ -344,48 +364,50 @@ impl WorldService {
                     }
                     Ok(id)
                 }
-                _ => Err(WorldError::Msg("ObjectBirth did not return ObjectId".into())),
+                _ => Err(WorldError::Msg(
+                    "ObjectBirth did not return ObjectId".into(),
+                )),
             }
         })
     }
 
-    pub fn tx_freeze_object(&self, session_id: SessionId, object_id: ObjectId) -> Result<(), WorldError> {
+    pub fn tx_freeze_object(
+        &self,
+        session_id: SessionId,
+        object_id: ObjectId,
+    ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
             // Self-freeze requires acting as the target (AccessIntent).
             if state.ctx.current_object != object_id {
                 // SECURITY: authorize before switching context — freeze is
                 // irreversible (Alive -> Frozen), must not be triggerable
                 // by an unauthorized caller via bare object_id parameter.
-                kernel.engine().authorize_intent(
-                    &state.ctx,
-                    &crate::types::AccessIntent::Call(object_id),
-                )?;
+                kernel
+                    .engine()
+                    .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(object_id))?;
                 state.ctx.enter_object(object_id);
             }
-            kernel.handle(
-                &mut state.ctx,
-                KernelCall::ObjectFreeze { object_id },
-            )?;
+            kernel.handle(&mut state.ctx, KernelCall::ObjectFreeze { object_id })?;
             Ok(())
         })
     }
 
-    pub fn tx_death_object(&self, session_id: SessionId, object_id: ObjectId) -> Result<(), WorldError> {
+    pub fn tx_death_object(
+        &self,
+        session_id: SessionId,
+        object_id: ObjectId,
+    ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
             if state.ctx.current_object != object_id {
                 // SECURITY: authorize before switching context — death is
                 // irreversible and cascades OWNS links, must not be
                 // triggerable by an unauthorized caller.
-                kernel.engine().authorize_intent(
-                    &state.ctx,
-                    &crate::types::AccessIntent::Call(object_id),
-                )?;
+                kernel
+                    .engine()
+                    .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(object_id))?;
                 state.ctx.enter_object(object_id);
             }
-            kernel.handle(
-                &mut state.ctx,
-                KernelCall::ObjectDeath { object_id },
-            )?;
+            kernel.handle(&mut state.ctx, KernelCall::ObjectDeath { object_id })?;
             Ok(())
         })
     }
@@ -421,10 +443,9 @@ impl WorldService {
     ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
             if state.ctx.current_object != grantor {
-                kernel.engine().authorize_intent(
-                    &state.ctx,
-                    &crate::types::AccessIntent::Call(grantor),
-                )?;
+                kernel
+                    .engine()
+                    .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(grantor))?;
                 state.ctx.enter_object(grantor);
             }
             kernel.handle(
@@ -447,10 +468,7 @@ impl WorldService {
         to: ObjectId,
     ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
-            kernel.handle(
-                &mut state.ctx,
-                KernelCall::ObjectUnlink { from, to },
-            )?;
+            kernel.handle(&mut state.ctx, KernelCall::ObjectUnlink { from, to })?;
             Ok(())
         })
     }
@@ -469,10 +487,9 @@ impl WorldService {
                     // BEFORE enter_object, otherwise target == current_object
                     // becomes trivially true post-switch and the capability
                     // graph is bypassed entirely.
-                    kernel.engine().authorize_intent(
-                        &state.ctx,
-                        &crate::types::AccessIntent::Call(oid),
-                    )?;
+                    kernel
+                        .engine()
+                        .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(oid))?;
                     state.ctx.enter_object(oid);
                 }
             }
@@ -481,13 +498,10 @@ impl WorldService {
         })
     }
 
-    pub fn tx_read(
-        &self,
-        session_id: SessionId,
-        state_id: StateId,
-    ) -> Result<Vec<u8>, WorldError> {
+    pub fn tx_read(&self, session_id: SessionId, state_id: StateId) -> Result<Vec<u8>, WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
-            kernel.read(&mut state.ctx, state_id)
+            kernel
+                .read(&mut state.ctx, state_id)
                 .map_err(|e| WorldError::Kernel(e))
         })
     }
@@ -575,15 +589,13 @@ mod tests {
 
         let sid = world.tx_begin(Some(self_id)).unwrap();
         let child = world.tx_create_object(sid).unwrap();
-        world
-            .tx_link(sid, self_id, child, "owns")
-            .unwrap();
+        world.tx_link(sid, self_id, child, "owns").unwrap();
         let receipt = world.tx_commit(sid).unwrap();
-        assert_ne!(receipt.before_root, receipt.after_root, "commit must change root hash");
-        assert_eq!(
-            kernel.get_object_state(child),
-            Some(ObjectState::Alive)
+        assert_ne!(
+            receipt.before_root, receipt.after_root,
+            "commit must change root hash"
         );
+        assert_eq!(kernel.get_object_state(child), Some(ObjectState::Alive));
         assert!(kernel.has_link(self_id, child));
     }
 
@@ -709,7 +721,6 @@ mod tests {
         );
     }
 
-
     /// Regression: an object must be able to read/write its own MemorySpace
     /// with ZERO capabilities held — this is the constitutional "structural
     /// exemption" (engine.rs authorize_intent: target == current_object ||
@@ -736,7 +747,9 @@ mod tests {
             .tx_read(sid, 0)
             .expect("object must be able to read its own MemorySpace without any capability");
         assert_eq!(value, b"self-written".to_vec());
-        world.tx_commit(sid).expect("commit of self-access-only tx must succeed");
+        world
+            .tx_commit(sid)
+            .expect("commit of self-access-only tx must succeed");
     }
 
     /// Companion to self_access_bypasses_capability_graph: confirms the
@@ -761,7 +774,6 @@ mod tests {
             "object A must not be able to write into object B's MemorySpace without a capability"
         );
     }
-
 
     /// Regression for CRITICAL fix (2026-08-09): tx_write with a foreign
     /// object_id must NOT be able to bypass the capability graph by forcing
@@ -854,8 +866,9 @@ mod tests {
         world
             .tx_freeze_object(sid, id)
             .expect("object must still be able to freeze itself after the fix");
-        world.tx_commit(sid).expect("commit of self-freeze must succeed");
+        world
+            .tx_commit(sid)
+            .expect("commit of self-freeze must succeed");
         assert_eq!(kernel.get_object_state(id), Some(ObjectState::Frozen));
     }
-
 }

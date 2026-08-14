@@ -11,75 +11,31 @@
 //!
 //! 若失败，意味着 checkpoint 序列化格式或恢复逻辑破坏了状态等价性不变量。
 
+mod common;
+use common::TestWorld;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::*;
 
 /// 构建一个包含四组件的小世界
-fn build_world(kernel: &Kernel) {
-    let mut ctx = kernel.test_begin();
-    let _o1 = match kernel
-        .handle(
-            &mut ctx,
-            KernelCall::ObjectBirth {
-                object_type: ObjectType::StateObject,
-            },
-        )
-        .unwrap()
-    {
-        TrapResult::ObjectId(id) => id,
-        _ => panic!("expected ObjectId"),
-    };
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+fn build_world(world: &TestWorld) {
+    let o1 = world.birth();
+    let o2 = world.birth_under(o1);
+    world.grant_cap(o1, o1, "link", o2);
 
-    let mut ctx_b2 = kernel.test_begin_in_object(1);
-    let _o2 = match kernel
-        .handle(
-            &mut ctx_b2,
-            KernelCall::ObjectBirth {
-                object_type: ObjectType::StateObject,
-            },
-        )
-        .unwrap()
-    {
-        TrapResult::ObjectId(id) => id,
-        _ => panic!("expected ObjectId"),
-    };
-    kernel.handle(&mut ctx_b2, KernelCall::Commit).unwrap();
-    let mut ctx = kernel.test_begin_in_object(1);
-    kernel
-        .handle(
-            &mut ctx,
-            KernelCall::CapabilityGrant {
-                grantor: 1,
-                grantee: 1,
-                capability_type: "link".to_string(),
-                resource: 2,
-            },
-        )
-        .unwrap();
-    kernel
+    let mut ctx = world.kernel().test_begin_in_object(o1);
+    world
+        .kernel()
         .handle(
             &mut ctx,
             KernelCall::ObjectLink {
-                from: 1,
-                to: 2,
+                from: o1,
+                to: o2,
                 link_type: LinkType::Owns,
             },
         )
         .unwrap();
-    kernel
-        .handle(
-            &mut ctx,
-            KernelCall::CapabilityGrant {
-                grantor: 1,
-                grantee: 2,
-                capability_type: "read".to_string(),
-                resource: 2,
-            },
-        )
-        .unwrap();
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    world.kernel().handle(&mut ctx, KernelCall::Commit).unwrap();
 }
 
 // ========== 1. 五组件 roundtrip ==========
@@ -88,8 +44,9 @@ fn build_world(kernel: &Kernel) {
 /// 失败意味着序列化/反序列化丢失关键状态。
 #[test]
 fn checkpoint_full_roundtrip_all_five_components() {
-    let kernel = Kernel::new();
-    build_world(&kernel);
+    let world = TestWorld::new();
+    let kernel = world.kernel();
+    build_world(&world);
 
     let engine = kernel.test_engine();
     let snap1 = engine.create_checkpoint();
@@ -111,8 +68,9 @@ fn checkpoint_full_roundtrip_all_five_components() {
 /// 失败意味着 restore 后运行时处于不可用状态。
 #[test]
 fn checkpoint_restore_then_continue_execution() {
-    let kernel = Kernel::new();
-    build_world(&kernel);
+    let world = TestWorld::new();
+    let kernel = world.kernel();
+    build_world(&world);
 
     let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();
@@ -146,8 +104,9 @@ fn checkpoint_restore_then_continue_execution() {
 /// 失败意味着 restore 非幂等，破坏确定性。
 #[test]
 fn checkpoint_restore_idempotent() {
-    let kernel = Kernel::new();
-    build_world(&kernel);
+    let world = TestWorld::new();
+    let kernel = world.kernel();
+    build_world(&world);
 
     let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();
@@ -169,8 +128,9 @@ fn checkpoint_restore_idempotent() {
 /// 失败意味着状态根计算或持久化不一致。
 #[test]
 fn checkpoint_root_hash_consistent() {
-    let kernel = Kernel::new();
-    build_world(&kernel);
+    let world = TestWorld::new();
+    let kernel = world.kernel();
+    build_world(&world);
 
     let engine = kernel.test_engine();
     let _root_before = engine.state_root();
@@ -194,8 +154,9 @@ fn checkpoint_root_hash_consistent() {
 /// 失败意味着计数器状态丢失，可能影响 id 分配。
 #[test]
 fn checkpoint_counter_roundtrip() {
-    let kernel = Kernel::new();
-    build_world(&kernel);
+    let world = TestWorld::new();
+    let kernel = world.kernel();
+    build_world(&world);
 
     let engine = kernel.test_engine();
     let snap = engine.create_checkpoint();

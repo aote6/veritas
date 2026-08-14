@@ -126,16 +126,10 @@ fn s02_birth_ab_link_ab_write_a_commit() {
 
     assert_alive(&world, a, "A");
     assert_alive(&world, b, "B");
-    assert!(
-        kernel.has_link(a, b),
-        "A→B link must exist after commit"
-    );
+    assert!(kernel.has_link(a, b), "A→B link must exist after commit");
 
     let sid_a = world.tx_begin(Some(a)).unwrap();
-    assert_eq!(
-        world.tx_read(sid_a, 0).unwrap(),
-        b"after-link".to_vec()
-    );
+    assert_eq!(world.tx_read(sid_a, 0).unwrap(), b"after-link".to_vec());
     world.tx_commit(sid_a).unwrap();
 
     cleanup(&wal);
@@ -166,10 +160,7 @@ fn s03_birth_ab_write_a_link_ab_commit() {
     assert!(kernel.has_link(a, b), "A→B link must exist");
 
     let sid_a = world.tx_begin(Some(a)).unwrap();
-    assert_eq!(
-        world.tx_read(sid_a, 0).unwrap(),
-        b"before-link".to_vec()
-    );
+    assert_eq!(world.tx_read(sid_a, 0).unwrap(), b"before-link".to_vec());
     world.tx_commit(sid_a).unwrap();
 
     cleanup(&wal);
@@ -378,13 +369,9 @@ fn s07_multi_object_abort_no_residual_state() {
 
     let sid = world.tx_begin(None).unwrap();
     let a = world.tx_create_object(sid).unwrap();
-    world
-        .tx_write(sid, 0, b"A-data".to_vec(), Some(a))
-        .unwrap();
+    world.tx_write(sid, 0, b"A-data".to_vec(), Some(a)).unwrap();
     let b = world.tx_create_object(sid).unwrap();
-    world
-        .tx_write(sid, 0, b"B-data".to_vec(), Some(b))
-        .unwrap();
+    world.tx_write(sid, 0, b"B-data".to_vec(), Some(b)).unwrap();
     world.tx_link(sid, a, b, "owns").unwrap();
 
     world.tx_abort(sid).expect("abort must succeed");
@@ -399,7 +386,8 @@ fn s07_multi_object_abort_no_residual_state() {
     let caps = kernel.test_capability_records();
     assert!(
         caps.iter()
-            .filter(|r| r.active && (r.holder == a || r.holder == b || r.resource == a || r.resource == b))
+            .filter(|r| r.active
+                && (r.holder == a || r.holder == b || r.resource == a || r.resource == b))
             .count()
             == 0,
         "abort must leave no active capability involving A or B"
@@ -428,7 +416,9 @@ fn s08_grant_then_abort_leaves_no_capability() {
     world
         .tx_capability_grant(sid_g, a, b, "link".to_string(), c)
         .unwrap();
-    world.tx_abort(sid_g).expect("abort after grant must succeed");
+    world
+        .tx_abort(sid_g)
+        .expect("abort after grant must succeed");
 
     let caps_after = kernel.test_capability_records();
     let active_after: Vec<_> = caps_after.into_iter().filter(|r| r.active).collect();
@@ -448,10 +438,7 @@ fn s08_grant_then_abort_leaves_no_capability() {
     let sid_b = world.tx_begin(Some(b)).unwrap();
     world.tx_link(sid_b, b, c, "owns").unwrap();
     let r = world.tx_commit(sid_b);
-    assert!(
-        r.is_err(),
-        "B must still be denied after aborted grant"
-    );
+    assert!(r.is_err(), "B must still be denied after aborted grant");
 
     cleanup(&wal);
 }
@@ -503,16 +490,10 @@ fn s09_grant_commit_wal_recovery_consistent() {
         assert_alive(&world2, a, "A after recovery");
         assert_alive(&world2, b, "B after recovery");
         assert_alive(&world2, c, "C after recovery");
-        assert!(
-            kernel2.has_link(b, c),
-            "B→C link must survive WAL recovery"
-        );
+        assert!(kernel2.has_link(b, c), "B→C link must survive WAL recovery");
 
         let recs = cap_records_for(&kernel2, b, c);
-        assert!(
-            !recs.is_empty(),
-            "committed grant must survive recovery"
-        );
+        assert!(!recs.is_empty(), "committed grant must survive recovery");
         assert_eq!(recs[0].granted_by, a, "grantor A preserved");
         assert_eq!(recs[0].holder, b, "holder B preserved");
         assert_eq!(recs[0].resource, c, "resource C preserved");
@@ -582,18 +563,9 @@ fn s10_grant_abort_wal_recovery_no_residual_cap() {
                 .any(|r| r.active && r.holder == b && r.resource == c && r.granted_by == a),
             "aborted A→B on C must not appear after recovery"
         );
-        assert_eq!(
-            kernel2.get_object_state(a),
-            Some(ObjectState::Alive)
-        );
-        assert_eq!(
-            kernel2.get_object_state(b),
-            Some(ObjectState::Alive)
-        );
-        assert_eq!(
-            kernel2.get_object_state(c),
-            Some(ObjectState::Alive)
-        );
+        assert_eq!(kernel2.get_object_state(a), Some(ObjectState::Alive));
+        assert_eq!(kernel2.get_object_state(b), Some(ObjectState::Alive));
+        assert_eq!(kernel2.get_object_state(c), Some(ObjectState::Alive));
     }
 
     cleanup(&wal);
@@ -642,11 +614,9 @@ fn s11_grantor_does_not_become_holder() {
     assert_ne!(grant.holder, a, "grantor A must not be listed as holder");
 
     // A does not gain holder status from this grant (creator AdminCap on C is separate).
-    let a_holds_this_grant = records.iter().any(|r| {
-        r.active
-            && r.capability_id == grant.capability_id
-            && r.holder == a
-    });
+    let a_holds_this_grant = records
+        .iter()
+        .any(|r| r.active && r.capability_id == grant.capability_id && r.holder == a);
     assert!(
         !a_holds_this_grant,
         "A must not hold the capability_id that was granted to B"
@@ -680,8 +650,7 @@ fn s12_grantee_further_grant_semantics() {
 
     // B attempts a further CapabilityGrant on C without holding AdminCap(C).
     let sid_b = world.tx_begin(Some(b)).unwrap();
-    let grant_result =
-        world.tx_capability_grant(sid_b, b, d, "link".to_string(), c);
+    let grant_result = world.tx_capability_grant(sid_b, b, d, "link".to_string(), c);
     assert!(
         grant_result.is_err(),
         "CapabilityGrant requires AdminCap(resource); B must be rejected"
@@ -776,7 +745,9 @@ fn s_extra_c_abort_then_new_tx_cannot_use_grant() {
     world
         .tx_capability_grant(sid, a, b, "link".to_string(), c)
         .unwrap();
-    world.tx_write(sid, 0, b"will-abort".to_vec(), Some(a)).unwrap();
+    world
+        .tx_write(sid, 0, b"will-abort".to_vec(), Some(a))
+        .unwrap();
     world.tx_abort(sid).unwrap();
 
     let sid_b = world.tx_begin(Some(b)).unwrap();
@@ -837,11 +808,15 @@ fn s_extra_e_consecutive_cross_object_writes_no_drift() {
         .tx_write(sid, 0, b"A1".to_vec(), Some(a))
         .expect("A self write");
     assert!(
-        world.tx_write(sid, 0, b"B-forged".to_vec(), Some(b)).is_err(),
+        world
+            .tx_write(sid, 0, b"B-forged".to_vec(), Some(b))
+            .is_err(),
         "A must not write B without capability"
     );
     assert!(
-        world.tx_write(sid, 0, b"C-forged".to_vec(), Some(c)).is_err(),
+        world
+            .tx_write(sid, 0, b"C-forged".to_vec(), Some(c))
+            .is_err(),
         "A must not write C without capability"
     );
     // After failed cross attempts, self write must still work (no sticky wrong context).

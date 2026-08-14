@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 use veritas_kernel::kernel::Kernel;
-use veritas_kernel::world_api::WorldService;
 use veritas_kernel::types::ObjectState;
+use veritas_kernel::world_api::WorldService;
 
 fn temp_wal(name: &str) -> String {
     let mut p = std::env::temp_dir();
@@ -29,11 +29,20 @@ fn test_a_multi_object_abort_leaves_no_partial_state() {
 
     world.tx_abort(sid).expect("abort should succeed");
 
-    assert!(world.get_object(a).is_none(), "A must not exist after abort");
-    assert!(world.get_object(b).is_none(), "B must not exist after abort");
+    assert!(
+        world.get_object(a).is_none(),
+        "A must not exist after abort"
+    );
+    assert!(
+        world.get_object(b).is_none(),
+        "B must not exist after abort"
+    );
 
     let links = world.list_links();
-    assert!(!links.iter().any(|l| l.from == a && l.to == b), "no A->B link should exist after abort");
+    assert!(
+        !links.iter().any(|l| l.from == a && l.to == b),
+        "no A->B link should exist after abort"
+    );
 
     let ids: Vec<_> = world.list_objects().iter().map(|o| o.id).collect();
     assert!(!ids.contains(&a));
@@ -50,7 +59,9 @@ fn test_b_cross_session_capability_isolation() {
 
     let sid_a = world.tx_begin(None).unwrap();
     let obj = world.tx_create_object(sid_a).unwrap();
-    world.tx_write(sid_a, 0, b"owner-data".to_vec(), Some(obj)).expect("Session A write failed");
+    world
+        .tx_write(sid_a, 0, b"owner-data".to_vec(), Some(obj))
+        .expect("Session A write failed");
     world.tx_commit(sid_a).expect("Session A commit failed");
 
     let sid_b = world.tx_begin(None).unwrap();
@@ -74,7 +85,10 @@ fn test_c_wal_recovery_multi_object_link_no_duplication() {
     world.tx_commit(sid).unwrap();
 
     let links_before = world.list_links();
-    let count_before = links_before.iter().filter(|l| l.from == a && l.to == b).count();
+    let count_before = links_before
+        .iter()
+        .filter(|l| l.from == a && l.to == b)
+        .count();
     assert_eq!(count_before, 1, "exactly one A->B link before restart");
 
     drop(world);
@@ -89,7 +103,10 @@ fn test_c_wal_recovery_multi_object_link_no_duplication() {
     assert_eq!(obj_b.state, ObjectState::Alive);
 
     let links_after = world2.list_links();
-    let count_after = links_after.iter().filter(|l| l.from == a && l.to == b).count();
+    let count_after = links_after
+        .iter()
+        .filter(|l| l.from == a && l.to == b)
+        .count();
     assert_eq!(count_after, 1, "exactly one A->B link after recovery");
     assert_eq!(count_after, count_before);
 }

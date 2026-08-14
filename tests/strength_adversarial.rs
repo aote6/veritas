@@ -45,7 +45,11 @@ fn assert_alive(world: &WorldService, id: u64, label: &str) {
     let obj = world
         .get_object(id)
         .unwrap_or_else(|| panic!("{label} (id={id}) must exist"));
-    assert_eq!(obj.state, ObjectState::Alive, "{label} (id={id}) must be Alive");
+    assert_eq!(
+        obj.state,
+        ObjectState::Alive,
+        "{label} (id={id}) must be Alive"
+    );
 }
 
 fn assert_absent(world: &WorldService, id: u64, label: &str) {
@@ -141,7 +145,10 @@ fn s_a01_illegal_grantor() {
     let leaked = caps
         .iter()
         .any(|r| r.holder == a && r.resource == c && r.active);
-    assert!(!leaked, "aborted illegal grant must leave no active cap for A on C");
+    assert!(
+        !leaked,
+        "aborted illegal grant must leave no active cap for A on C"
+    );
 
     cleanup(&wal);
 }
@@ -183,7 +190,9 @@ fn s_a03_cross_object_write_without_cap() {
 
     let sid1 = world.tx_begin(None).unwrap();
     let b = world.tx_create_object(sid1).unwrap();
-    world.tx_write(sid1, 0, b"B-secret".to_vec(), Some(b)).unwrap();
+    world
+        .tx_write(sid1, 0, b"B-secret".to_vec(), Some(b))
+        .unwrap();
     world.tx_commit(sid1).unwrap();
 
     let root_before = kernel.state_root();
@@ -291,7 +300,9 @@ fn s_a05_abort_invalidates_pending_capability() {
     // No active capability for B on A.
     let caps = kernel.test_capability_records();
     assert!(
-        !caps.iter().any(|r| r.holder == b && r.resource == a && r.active),
+        !caps
+            .iter()
+            .any(|r| r.holder == b && r.resource == a && r.active),
         "no active cap B→A after abort"
     );
     cleanup(&wal);
@@ -404,7 +415,9 @@ fn s_b01_session_cannot_see_uncommitted_writes() {
 
     let sid0 = world.tx_begin(None).unwrap();
     let obj = world.tx_create_object(sid0).unwrap();
-    world.tx_write(sid0, 0, b"committed".to_vec(), Some(obj)).unwrap();
+    world
+        .tx_write(sid0, 0, b"committed".to_vec(), Some(obj))
+        .unwrap();
     world.tx_commit(sid0).unwrap();
 
     // Session B writes new data but does not commit.
@@ -490,16 +503,32 @@ fn s_b04_ended_session_rejected() {
 
     // Post-commit operations on same session id must fail cleanly.
     let r1 = world.tx_create_object(sid);
-    assert!(matches!(r1, Err(WorldError::NoSession(_))), "create after commit: {:?}", r1);
+    assert!(
+        matches!(r1, Err(WorldError::NoSession(_))),
+        "create after commit: {:?}",
+        r1
+    );
 
     let r2 = world.tx_commit(sid);
-    assert!(matches!(r2, Err(WorldError::NoSession(_))), "commit after commit: {:?}", r2);
+    assert!(
+        matches!(r2, Err(WorldError::NoSession(_))),
+        "commit after commit: {:?}",
+        r2
+    );
 
     let r3 = world.tx_abort(sid);
-    assert!(matches!(r3, Err(WorldError::NoSession(_))), "abort after commit: {:?}", r3);
+    assert!(
+        matches!(r3, Err(WorldError::NoSession(_))),
+        "abort after commit: {:?}",
+        r3
+    );
 
     let r4 = world.tx_write(sid, 0, b"x".to_vec(), None);
-    assert!(matches!(r4, Err(WorldError::NoSession(_))), "write after commit: {:?}", r4);
+    assert!(
+        matches!(r4, Err(WorldError::NoSession(_))),
+        "write after commit: {:?}",
+        r4
+    );
 
     cleanup(&wal);
 }
@@ -570,7 +599,9 @@ fn s_w02_single_byte_corruption_no_panic() {
     }
 
     let original = std::fs::read(&wal).unwrap();
-    let positions: Vec<usize> = (0..original.len()).step_by((original.len() / 8).max(1)).collect();
+    let positions: Vec<usize> = (0..original.len())
+        .step_by((original.len() / 8).max(1))
+        .collect();
 
     for &pos in &positions {
         let mut bytes = original.clone();
@@ -694,10 +725,7 @@ fn s_w04_duplicate_wal_line() {
         .to_string();
     if !last_line.is_empty() {
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&wal)
-            .unwrap();
+        let mut f = std::fs::OpenOptions::new().append(true).open(&wal).unwrap();
         writeln!(f, "{}", last_line).unwrap();
     }
 
@@ -769,7 +797,9 @@ fn s_h01_empty_and_large_payload() {
     let sid = world.tx_begin(None).unwrap();
     let a = world.tx_create_object(sid).unwrap();
 
-    world.tx_write(sid, 0, Vec::new(), Some(a)).expect("empty write");
+    world
+        .tx_write(sid, 0, Vec::new(), Some(a))
+        .expect("empty write");
     world
         .tx_write(sid, 1, b"x".to_vec(), Some(a))
         .expect("1-byte write");
@@ -822,7 +852,10 @@ fn s_t01_double_commit() {
     let sid = world.tx_begin(None).unwrap();
     let _ = world.tx_create_object(sid).unwrap();
     world.tx_commit(sid).unwrap();
-    assert!(matches!(world.tx_commit(sid), Err(WorldError::NoSession(_))));
+    assert!(matches!(
+        world.tx_commit(sid),
+        Err(WorldError::NoSession(_))
+    ));
     cleanup(&wal);
 }
 
@@ -856,7 +889,10 @@ fn s_t04_abort_then_commit() {
     let sid = world.tx_begin(None).unwrap();
     let a = world.tx_create_object(sid).unwrap();
     world.tx_abort(sid).unwrap();
-    assert!(matches!(world.tx_commit(sid), Err(WorldError::NoSession(_))));
+    assert!(matches!(
+        world.tx_commit(sid),
+        Err(WorldError::NoSession(_))
+    ));
     assert_absent(&world, a, "A after abort");
     cleanup(&wal);
 }
@@ -890,7 +926,9 @@ fn s_e01_stress_100_objects() {
     for _ in 0..100 {
         let sid = world.tx_begin(None).unwrap();
         let id = world.tx_create_object(sid).unwrap();
-        world.tx_write(sid, 0, id.to_le_bytes().to_vec(), Some(id)).unwrap();
+        world
+            .tx_write(sid, 0, id.to_le_bytes().to_vec(), Some(id))
+            .unwrap();
         world.tx_commit(sid).unwrap();
         ids.push(id);
     }
@@ -1009,14 +1047,16 @@ fn s_c01_concurrent_different_objects() {
     let h1 = thread::spawn(move || {
         let sid = w1.tx_begin(Some(a)).unwrap();
         for i in 0..20u64 {
-            w1.tx_write(sid, 0, i.to_le_bytes().to_vec(), Some(a)).unwrap();
+            w1.tx_write(sid, 0, i.to_le_bytes().to_vec(), Some(a))
+                .unwrap();
         }
         w1.tx_commit(sid).unwrap();
     });
     let h2 = thread::spawn(move || {
         let sid = w2.tx_begin(Some(b)).unwrap();
         for i in 0..20u64 {
-            w2.tx_write(sid, 0, i.to_le_bytes().to_vec(), Some(b)).unwrap();
+            w2.tx_write(sid, 0, i.to_le_bytes().to_vec(), Some(b))
+                .unwrap();
         }
         w2.tx_commit(sid).unwrap();
     });
@@ -1115,7 +1155,10 @@ fn s_a09_link_without_capability() {
     // P4 confirmed: staging succeeds, commit rejects with PermissionDenied.
     let sid = world.tx_begin(Some(a)).unwrap();
     let result = world.tx_link(sid, a, b, "REFERENCES");
-    assert!(result.is_ok(), "staging link must succeed (commit enforces auth)");
+    assert!(
+        result.is_ok(),
+        "staging link must succeed (commit enforces auth)"
+    );
     let commit_result = world.tx_commit(sid);
     assert!(
         commit_result.is_err(),

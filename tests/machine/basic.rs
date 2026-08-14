@@ -4,8 +4,8 @@
 //! 遇到 Trap 会死循环——见 docs/VASM_EXECUTION_MODEL.md "已知问题"节），
 //! 改用带步数上限的手动 step 循环。
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use veritas_kernel::assembler::assemble_module;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::machine::{Machine, MachineStatus};
@@ -59,11 +59,22 @@ fn e2e_1_single_object_closure() {
     machine.boot(m.program_image).expect("boot e2e1");
     run_bounded(&mut machine, 100);
 
-    assert!(matches!(machine.status(), MachineStatus::Halted), "expected Halted, got {:?}", machine.status());
-    assert_eq!(machine.current_object(), 0, "must return to root identity after RETURN");
+    assert!(
+        matches!(machine.status(), MachineStatus::Halted),
+        "expected Halted, got {:?}",
+        machine.status()
+    );
+    assert_eq!(
+        machine.current_object(),
+        0,
+        "must return to root identity after RETURN"
+    );
 
     let obj_id = machine.registers().get_u64(1);
-    assert!(kernel.get_object_state(obj_id).is_some(), "birthed object must exist after commit");
+    assert!(
+        kernel.get_object_state(obj_id).is_some(),
+        "birthed object must exist after commit"
+    );
 }
 
 /// E2E-2: 动态寄存器数据流 — 对象 id 经 ADD 复制到 R2 后，
@@ -91,12 +102,22 @@ fn e2e_2_dynamic_register_dataflow() {
     machine.boot(m.program_image).expect("boot e2e2");
     run_bounded(&mut machine, 100);
 
-    assert!(matches!(machine.status(), MachineStatus::Halted), "expected Halted, got {:?}", machine.status());
+    assert!(
+        matches!(machine.status(), MachineStatus::Halted),
+        "expected Halted, got {:?}",
+        machine.status()
+    );
 
     let obj_id_via_r0 = machine.registers().get_u64(0);
     let obj_id_via_r2 = machine.registers().get_u64(2);
-    assert_eq!(obj_id_via_r0, obj_id_via_r2, "ADD-copied register must equal source register");
-    assert!(kernel.get_object_state(obj_id_via_r2).is_some(), "object reached via dynamic register CALL must exist");
+    assert_eq!(
+        obj_id_via_r0, obj_id_via_r2,
+        "ADD-copied register must equal source register"
+    );
+    assert!(
+        kernel.get_object_state(obj_id_via_r2).is_some(),
+        "object reached via dynamic register CALL must exist"
+    );
 }
 
 /// E2E-3: Birth + Write + Link 全链路 — 直接跑项目根目录的 world_demo.vasm，
@@ -111,15 +132,32 @@ fn e2e_3_birth_write_link_full_chain() {
     machine.boot(m.program_image).expect("boot world_demo.vasm");
     run_bounded(&mut machine, 200);
 
-    assert!(matches!(machine.status(), MachineStatus::Halted), "world_demo.vasm must halt cleanly, got {:?}", machine.status());
-    assert_eq!(machine.current_object(), 0, "must return to root after both RETURNs");
+    assert!(
+        matches!(machine.status(), MachineStatus::Halted),
+        "world_demo.vasm must halt cleanly, got {:?}",
+        machine.status()
+    );
+    assert_eq!(
+        machine.current_object(),
+        0,
+        "must return to root after both RETURNs"
+    );
 
     let a = machine.registers().get_u64(1);
     let b = machine.registers().get_u64(2);
     assert_ne!(a, b, "object A and B must be distinct");
-    assert!(kernel.get_object_state(a).is_some(), "object A must exist after commit");
-    assert!(kernel.get_object_state(b).is_some(), "object B must exist after commit");
-    assert!(kernel.has_link(a, b), "A must OWN B after world_demo.vasm runs");
+    assert!(
+        kernel.get_object_state(a).is_some(),
+        "object A must exist after commit"
+    );
+    assert!(
+        kernel.get_object_state(b).is_some(),
+        "object B must exist after commit"
+    );
+    assert!(
+        kernel.has_link(a, b),
+        "A must OWN B after world_demo.vasm runs"
+    );
 }
 
 /// E2E-4: 跨对象非法操作必须失败 —
@@ -145,7 +183,10 @@ fn e2e_4_illegal_cross_tx_call_denied() {
         assert!(matches!(machine.status(), MachineStatus::Halted));
         machine.registers().get_u64(0)
     };
-    assert!(kernel.get_object_state(a_id).is_some(), "object A must be committed from tx1");
+    assert!(
+        kernel.get_object_state(a_id).is_some(),
+        "object A must be committed from tx1"
+    );
 
     {
         let src = format!(
@@ -165,8 +206,15 @@ fn e2e_4_illegal_cross_tx_call_denied() {
 
         match machine.status() {
             MachineStatus::Trapped(_) => {}
-            other => panic!("CALL into object without capability must Trap, got {:?}", other),
+            other => panic!(
+                "CALL into object without capability must Trap, got {:?}",
+                other
+            ),
         }
-        assert_eq!(machine.current_object(), 0, "identity must NOT switch on a denied CALL");
+        assert_eq!(
+            machine.current_object(),
+            0,
+            "identity must NOT switch on a denied CALL"
+        );
     }
 }

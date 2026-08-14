@@ -25,20 +25,14 @@ pub trait KernelTestExt {
         state_id: StateId,
         payload: Vec<u8>,
     ) -> Result<(), VeritasError>;
-    fn test_commit(
-        &self,
-        ctx: &mut TransactionContext,
-    ) -> Result<TransactionReceipt, VeritasError>;
+    fn test_commit(&self, ctx: &mut TransactionContext)
+        -> Result<TransactionReceipt, VeritasError>;
     fn test_effect(
         &self,
         ctx: &mut TransactionContext,
         payload: Vec<u8>,
     ) -> Result<String, VeritasError>;
-    fn test_savepoint(
-        &self,
-        ctx: &mut TransactionContext,
-        name: &str,
-    ) -> Result<(), VeritasError>;
+    fn test_savepoint(&self, ctx: &mut TransactionContext, name: &str) -> Result<(), VeritasError>;
     fn test_rollback_to(
         &self,
         ctx: &mut TransactionContext,
@@ -61,7 +55,9 @@ pub trait KernelTestExt {
 }
 
 impl KernelTestExt for Kernel {
-    fn test_apply(&self, delta: &TransactionDelta) { self.engine().apply(delta); }
+    fn test_apply(&self, delta: &TransactionDelta) {
+        self.engine().apply(delta);
+    }
     fn test_begin(&self) -> TransactionContext {
         self.begin()
     }
@@ -96,11 +92,7 @@ impl KernelTestExt for Kernel {
     ) -> Result<String, VeritasError> {
         self.effect(ctx, payload)
     }
-    fn test_savepoint(
-        &self,
-        ctx: &mut TransactionContext,
-        name: &str,
-    ) -> Result<(), VeritasError> {
+    fn test_savepoint(&self, ctx: &mut TransactionContext, name: &str) -> Result<(), VeritasError> {
         self.savepoint(ctx, name)
     }
     fn test_rollback_to(

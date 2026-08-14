@@ -54,11 +54,17 @@ fn tx_capability_grant_jsonl_end_to_end() {
     assert_eq!(r["ok"], true);
     let sid0 = r["session_id"].as_u64().unwrap();
 
-    let r = send(&format!(r#"{{"cmd":"tx_create_object","session_id":{}}}"#, sid0));
+    let r = send(&format!(
+        r#"{{"cmd":"tx_create_object","session_id":{}}}"#,
+        sid0
+    ));
     assert_eq!(r["ok"], true);
     let b = r["object_id"].as_u64().unwrap();
 
-    let r = send(&format!(r#"{{"cmd":"tx_create_object","session_id":{}}}"#, sid0));
+    let r = send(&format!(
+        r#"{{"cmd":"tx_create_object","session_id":{}}}"#,
+        sid0
+    ));
     assert_eq!(r["ok"], true);
     let c = r["object_id"].as_u64().unwrap();
 
@@ -73,9 +79,18 @@ fn tx_capability_grant_jsonl_end_to_end() {
         r#"{{"cmd":"tx_link","session_id":{},"from":{},"to":{},"link_type":"owns"}}"#,
         sid_bad, b, c
     ));
-    assert_eq!(r["ok"], true, "tx_link only stages; commit enforces authorization");
-    let r = send(&format!(r#"{{"cmd":"tx_commit","session_id":{}}}"#, sid_bad));
-    assert_eq!(r["ok"], false, "未授权的 B 对 C 的 link 必须在 commit 时被拒绝");
+    assert_eq!(
+        r["ok"], true,
+        "tx_link only stages; commit enforces authorization"
+    );
+    let r = send(&format!(
+        r#"{{"cmd":"tx_commit","session_id":{}}}"#,
+        sid_bad
+    ));
+    assert_eq!(
+        r["ok"], false,
+        "未授权的 B 对 C 的 link 必须在 commit 时被拒绝"
+    );
 
     // A grants B a link capability on C via the new external primitive.
     let r = send(&format!(r#"{{"cmd":"tx_begin","actor_id":{}}}"#, a));
@@ -99,7 +114,10 @@ fn tx_capability_grant_jsonl_end_to_end() {
     ));
     assert_eq!(r["ok"], true);
     let r = send(&format!(r#"{{"cmd":"tx_commit","session_id":{}}}"#, sid2));
-    assert_eq!(r["ok"], true, "B 持有 A 授予的 capability 后，对 C 的 link 应当在 commit 时成功");
+    assert_eq!(
+        r["ok"], true,
+        "B 持有 A 授予的 capability 后，对 C 的 link 应当在 commit 时成功"
+    );
 
     // Cleanup
     drop(stdin);

@@ -4,10 +4,10 @@
 //! 对应 VERIFICATION_MAP：commitment_domain.rs
 //! 若失败，意味着 commitment 域边界或 self-access 规则被破坏。
 
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
-use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
+use veritas_kernel::test_api::KernelTestExt;
+use veritas_kernel::types::ObjectType;
 
 /// 诊断 live 与 recovery 路径关键组件是否一致。
 /// 失败意味着两条路径产生分歧，破坏可恢复性。
@@ -19,9 +19,14 @@ fn diagnose_live_vs_recovery_components() {
     let k1 = Kernel::with_wal_path(wal_path.clone());
     let root = {
         let mut tx = k1.test_begin();
-        let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k1
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -37,10 +42,19 @@ fn diagnose_live_vs_recovery_components() {
     let k2 = Kernel::with_wal_path(wal_path);
     let recovery = k2.test_engine().debug_root_components();
 
-    println!("LIVE      s={} o={} t={} c={} sc={}", live.0, live.1, live.2, live.3, live.4);
-    println!("RECOVERY  s={} o={} t={} c={} sc={}", recovery.0, recovery.1, recovery.2, recovery.3, recovery.4);
+    println!(
+        "LIVE      s={} o={} t={} c={} sc={}",
+        live.0, live.1, live.2, live.3, live.4
+    );
+    println!(
+        "RECOVERY  s={} o={} t={} c={} sc={}",
+        recovery.0, recovery.1, recovery.2, recovery.3, recovery.4
+    );
 
-    assert_eq!(live, recovery, "All five components must match between live and recovery");
+    assert_eq!(
+        live, recovery,
+        "All five components must match between live and recovery"
+    );
 }
 
 /// Self access 不应导致 capability graph 增长。
@@ -53,9 +67,14 @@ fn self_access_does_not_grow_capability_graph() {
     let k = Kernel::with_wal_path(wal_path);
     let root = {
         let mut tx = k.test_begin();
-        let result = k.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -73,6 +92,8 @@ fn self_access_does_not_grow_capability_graph() {
     }
 
     let after = k.test_engine().capability_sequence();
-    assert_eq!(before, after,
-        "self-access must not create CapabilityGraph records");
+    assert_eq!(
+        before, after,
+        "self-access must not create CapabilityGraph records"
+    );
 }

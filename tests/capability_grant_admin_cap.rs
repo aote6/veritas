@@ -7,11 +7,11 @@
 //!                 successfully mints a Capability on B.
 //! GREEN: same path is rejected with capability authorization failure.
 
+use std::sync::Arc;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 use veritas_kernel::world_api::WorldService;
-use std::sync::Arc;
 
 fn birth_host(kernel: &Kernel) -> u64 {
     let mut ctx = kernel.test_begin();
@@ -56,7 +56,9 @@ fn grant_without_admin_cap_on_resource_rejected() {
     );
     let err = format!("{:?}", result.unwrap_err());
     assert!(
-        err.contains("AdminCap") || err.contains("PermissionDenied") || err.contains("CapabilityGrant"),
+        err.contains("AdminCap")
+            || err.contains("PermissionDenied")
+            || err.contains("CapabilityGrant"),
         "error must be an explicit capability authorization failure, got: {}",
         err
     );
@@ -95,7 +97,11 @@ fn admin_cap_holder_can_grant() {
             resource: b,
         },
     );
-    assert!(result.is_ok(), "AdminCap holder must be allowed to Grant: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "AdminCap holder must be allowed to Grant: {:?}",
+        result
+    );
     kernel.handle(&mut tx2, KernelCall::Commit).unwrap();
 }
 
@@ -121,7 +127,10 @@ fn non_admin_cap_on_resource_does_not_authorize_grant() {
             resource: c,
         },
     );
-    assert!(result.is_err(), "AdminCap on A must not authorize Grant on C");
+    assert!(
+        result.is_err(),
+        "AdminCap on A must not authorize Grant on C"
+    );
 }
 
 /// Revoked AdminCap no longer authorizes Grant.
@@ -232,7 +241,11 @@ fn world_service_grant_requires_admin_cap() {
     // A is creator → holds AdminCap(B)
     let sid2 = world.tx_begin(Some(a)).unwrap();
     let ok = world.tx_capability_grant(sid2, a, a, "link".to_string(), b);
-    assert!(ok.is_ok(), "creator AdminCap must allow WorldService grant: {:?}", ok);
+    assert!(
+        ok.is_ok(),
+        "creator AdminCap must allow WorldService grant: {:?}",
+        ok
+    );
     world.tx_commit(sid2).unwrap();
 
     // Stranger C has no AdminCap on B

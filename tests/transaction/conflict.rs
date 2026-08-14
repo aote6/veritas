@@ -1,6 +1,6 @@
 use crate::common::new_kernel;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::KernelCall;
+use veritas_kernel::test_api::KernelTestExt;
 
 #[test]
 fn t2_conflict_detection() {
@@ -10,7 +10,9 @@ fn t2_conflict_detection() {
 
     // Setup: commit initial state
     let mut tx_setup = tk.kernel.test_begin_in_object(tk.root_object);
-    tk.kernel.test_write(&mut tx_setup, state_id, initial_data).unwrap();
+    tk.kernel
+        .test_write(&mut tx_setup, state_id, initial_data)
+        .unwrap();
     tk.kernel.handle(&mut tx_setup, KernelCall::Commit).unwrap();
 
     // Tx1 reads
@@ -21,7 +23,9 @@ fn t2_conflict_detection() {
     let mut tx2 = tk.kernel.test_begin_in_object(tk.root_object);
     let tx2_data = vec![99];
     tk.kernel.test_write(&mut tx2, state_id, tx2_data).unwrap();
-    tk.kernel.handle(&mut tx2, KernelCall::Commit).expect("Tx2 should commit successfully");
+    tk.kernel
+        .handle(&mut tx2, KernelCall::Commit)
+        .expect("Tx2 should commit successfully");
 
     // Tx1 tries to write and commit — must conflict
     let tx1_data = vec![1];
@@ -29,7 +33,6 @@ fn t2_conflict_detection() {
     let res = tk.kernel.handle(&mut tx1, KernelCall::Commit);
     assert!(res.is_err(), "Tx1 must detect write-write conflict");
 }
-
 
 #[test]
 fn test_blind_write_write_conflict() {
@@ -42,8 +45,12 @@ fn test_blind_write_write_conflict() {
     let target_addr = 88888;
 
     // 确保 read_set 绝对为空（纯写/盲写）
-    tk.kernel.test_write(&mut tx1, target_addr, vec![1]).unwrap();
-    tk.kernel.test_write(&mut tx2, target_addr, vec![2]).unwrap();
+    tk.kernel
+        .test_write(&mut tx1, target_addr, vec![1])
+        .unwrap();
+    tk.kernel
+        .test_write(&mut tx2, target_addr, vec![2])
+        .unwrap();
 
     // T1 先提交，成功将 target_addr 的 entry.version 提升至 commit_version
     let res1 = tk.kernel.test_commit(&mut tx1);

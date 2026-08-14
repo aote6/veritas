@@ -1,5 +1,5 @@
-use crate::types::VeritasError;
 use crate::program::ProgramImage;
+use crate::types::VeritasError;
 
 pub const VMOD_MAGIC: &[u8; 4] = b"VMOD";
 
@@ -12,7 +12,11 @@ pub struct ModuleVersion {
 
 impl ModuleVersion {
     pub fn new(major: u16, minor: u16, patch: u16) -> Self {
-        Self { major, minor, patch }
+        Self {
+            major,
+            minor,
+            patch,
+        }
     }
 }
 
@@ -25,7 +29,11 @@ pub struct ModuleImage {
 
 impl ModuleImage {
     pub fn new(name: &str, version: ModuleVersion, program_image: ProgramImage) -> Self {
-        Self { name: name.into(), version, program_image }
+        Self {
+            name: name.into(),
+            version,
+            program_image,
+        }
     }
 
     pub fn encode_file(&self) -> Result<Vec<u8>, VeritasError> {
@@ -51,12 +59,12 @@ impl ModuleImage {
         let minor = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
         let patch = u16::from_le_bytes(bytes[8..10].try_into().unwrap());
         let name_len = u32::from_le_bytes(bytes[10..14].try_into().unwrap()) as usize;
-        let name = std::str::from_utf8(&bytes[14..14+name_len])
+        let name = std::str::from_utf8(&bytes[14..14 + name_len])
             .map_err(|_| VeritasError::EngineError("Bad UTF-8".into()))?;
         let mut pos = 14 + name_len;
-        let prog_len = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
+        let prog_len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
-        let program_image = ProgramImage::decode(&bytes[pos..pos+prog_len])?;
+        let program_image = ProgramImage::decode(&bytes[pos..pos + prog_len])?;
         Ok(Self {
             name: name.into(),
             version: ModuleVersion::new(major, minor, patch),
@@ -104,7 +112,9 @@ pub struct ModuleLoader {
 
 impl ModuleLoader {
     pub fn new() -> Self {
-        Self { modules: HashMap::new() }
+        Self {
+            modules: HashMap::new(),
+        }
     }
 
     pub fn load_bytes(&self, bytes: &[u8]) -> Result<ModuleImage, VeritasError> {
@@ -124,10 +134,13 @@ impl ModuleLoader {
     pub fn install(&mut self, image: ModuleImage) -> Result<String, VeritasError> {
         self.verify(&image)?;
         let name = image.name.clone();
-        self.modules.insert(name.clone(), LoadedModule {
-            image,
-            status: ModuleStatus::Installed,
-        });
+        self.modules.insert(
+            name.clone(),
+            LoadedModule {
+                image,
+                status: ModuleStatus::Installed,
+            },
+        );
         Ok(name)
     }
 
@@ -168,7 +181,10 @@ mod loader_tests {
         let name = loader.install(decoded).unwrap();
         assert_eq!(name, "core.sys");
         assert!(loader.contains("core.sys"));
-        assert_eq!(loader.get_module("core.sys").unwrap().status, ModuleStatus::Installed);
+        assert_eq!(
+            loader.get_module("core.sys").unwrap().status,
+            ModuleStatus::Installed
+        );
     }
 
     #[test]

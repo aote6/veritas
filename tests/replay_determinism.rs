@@ -88,7 +88,7 @@ fn same_wal_same_state() {
 
 /// P30.1: WAL reconstruction must be deterministic
 #[test]
-fn replay_is_deterministic() {
+fn state_machine_replay_is_deterministic() {
     let path = wal_path("det");
     let _ = std::fs::remove_file(&path);
 

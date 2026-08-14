@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::types::TxId;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 /// 事务物理状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,13 +77,17 @@ impl TransactionManager {
     /// 查询事务是否存活
     pub fn is_active(&self, tx_id: TxId) -> bool {
         let table = self.tx_table.lock().unwrap();
-        table.get(&tx_id).map_or(false, |tx| tx.state == TransactionState::Active)
+        table
+            .get(&tx_id)
+            .map_or(false, |tx| tx.state == TransactionState::Active)
     }
 
     /// 查询事务是否已被击毙
     pub fn is_aborted(&self, tx_id: TxId) -> bool {
         let table = self.tx_table.lock().unwrap();
-        table.get(&tx_id).map_or(false, |tx| tx.state == TransactionState::Aborted)
+        table
+            .get(&tx_id)
+            .map_or(false, |tx| tx.state == TransactionState::Aborted)
     }
 
     /// 从事务表中移除已结束的事务（防止 PCB 泄漏）
@@ -100,8 +104,8 @@ impl TransactionManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use super::*;
+    use std::sync::Arc;
     use std::thread;
 
     #[test]

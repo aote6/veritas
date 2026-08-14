@@ -1,6 +1,6 @@
 use crate::types::ObjectId;
+use crate::types::{AbortReason, VeritasError};
 use crate::view::ObjectView;
-use crate::types::{VeritasError, AbortReason};
 
 /// 物理生命周期统一防线。
 /// 所有方法都是静态的，接收 &dyn ObjectView，不绑定任何具体存储。
@@ -52,10 +52,7 @@ impl ObjectGuard {
         Ok(())
     }
 
-    pub fn ensure_can_grant(
-        view: &dyn ObjectView,
-        grantee: ObjectId,
-    ) -> Result<(), VeritasError> {
+    pub fn ensure_can_grant(view: &dyn ObjectView, grantee: ObjectId) -> Result<(), VeritasError> {
         Self::ensure_alive(view, grantee)
     }
 }

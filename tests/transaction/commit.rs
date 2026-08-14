@@ -1,6 +1,6 @@
 use crate::common::new_kernel;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::KernelCall;
+use veritas_kernel::test_api::KernelTestExt;
 
 #[test]
 fn t1_commit_persists_state() {
@@ -9,14 +9,18 @@ fn t1_commit_persists_state() {
     let payload = vec![1, 2, 3, 4];
 
     let mut tx = tk.kernel.test_begin_in_object(tk.root_object);
-    tk.kernel.test_write(&mut tx, state_id, payload.clone()).unwrap();
+    tk.kernel
+        .test_write(&mut tx, state_id, payload.clone())
+        .unwrap();
     tk.kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);
     let val = tk.kernel.test_read(&mut read_tx, state_id).unwrap();
-    assert_eq!(val, payload, "T1 Invariant Violation: Committed data mismatch!");
+    assert_eq!(
+        val, payload,
+        "T1 Invariant Violation: Committed data mismatch!"
+    );
 }
-
 
 // ============================================================
 // F-002 回归测试：Effect 必须进入 TransactionDelta
@@ -44,7 +48,10 @@ fn test_effect_persisted_in_transaction_delta() {
     );
 
     // 验证 effects 包含正确的 key 和 payload
-    let effect = receipt.delta.effects.iter()
+    let effect = receipt
+        .delta
+        .effects
+        .iter()
         .find(|(k, _)| k == &key)
         .expect("F-002 REGRESSION: committed effect key not found in delta.effects");
 
@@ -53,10 +60,7 @@ fn test_effect_persisted_in_transaction_delta() {
         "F-002 REGRESSION: effect payload mismatch in delta"
     );
 
-    eprintln!(
-        "[TEST] delta.effects = {:?}",
-        receipt.delta.effects
-    );
+    eprintln!("[TEST] delta.effects = {:?}", receipt.delta.effects);
 }
 
 /// 验证 WAL recovery 能恢复 TransactionCommitted 中的 effects
@@ -81,8 +85,7 @@ fn test_effect_survives_wal_recovery() {
 
     eprintln!(
         "[TEST] recovered version={}, effects in original delta={:?}",
-        recovered_version,
-        receipt.delta.effects
+        recovered_version, receipt.delta.effects
     );
 
     // Recovery 后 version 应 >= commit version
@@ -101,9 +104,7 @@ fn test_effect_survives_wal_recovery() {
     );
 }
 
-
 // ============================================================
-
 
 // ============================================================
 // F-007 回归测试：COMMIT 和 ABORT 互斥
@@ -119,9 +120,14 @@ fn test_aborted_tx_commit_must_fail() {
     tk.kernel.test_write(&mut tx, 200, payload).unwrap();
 
     // 显式 ABORT
-    tk.kernel.handle(&mut tx, veritas_kernel::kernel::KernelCall::Abort {
-        reason: veritas_kernel::types::AbortReason::WriteConflict,
-    }).unwrap();
+    tk.kernel
+        .handle(
+            &mut tx,
+            veritas_kernel::kernel::KernelCall::Abort {
+                reason: veritas_kernel::types::AbortReason::WriteConflict,
+            },
+        )
+        .unwrap();
 
     // 尝试 COMMIT 必须失败
     let result = tk.kernel.test_commit(&mut tx);
@@ -153,9 +159,12 @@ fn test_committed_tx_abort_must_be_noop() {
     let _receipt = tk.kernel.test_commit(&mut tx).unwrap();
 
     // COMMIT 后再 ABORT
-    let _result = tk.kernel.handle(&mut tx, veritas_kernel::kernel::KernelCall::Abort {
-        reason: veritas_kernel::types::AbortReason::WriteConflict,
-    });
+    let _result = tk.kernel.handle(
+        &mut tx,
+        veritas_kernel::kernel::KernelCall::Abort {
+            reason: veritas_kernel::types::AbortReason::WriteConflict,
+        },
+    );
 
     // 无论 Ok/Err，已提交的状态不能被回滚
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);
@@ -181,8 +190,12 @@ fn test_concurrent_commit_and_isolation_invariants() {
         let mut tx1 = tk.kernel.test_begin_in_object(root);
         let mut tx2 = tk.kernel.test_begin_in_object(root);
 
-        tk.kernel.test_write(&mut tx1, 2000 + round, vec![1]).unwrap();
-        tk.kernel.test_write(&mut tx2, 2000 + round, vec![2]).unwrap();
+        tk.kernel
+            .test_write(&mut tx1, 2000 + round, vec![1])
+            .unwrap();
+        tk.kernel
+            .test_write(&mut tx2, 2000 + round, vec![2])
+            .unwrap();
 
         let kernel = Arc::new(tk.kernel);
         let barrier = Arc::new(Barrier::new(2));
@@ -220,5 +233,3 @@ fn test_concurrent_commit_and_isolation_invariants() {
         assert!(val.is_ok(), "State must remain readable after race");
     }
 }
-
-

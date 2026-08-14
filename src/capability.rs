@@ -105,21 +105,28 @@ impl CapabilityGraph {
             // 每个 cap_id 只在第一次遇到时创建 CapabilityInfo
             // root_holder 取 parent.is_none() 的那个 holder
             if !self.grants.contains_key(&cap_id) {
-                let root_holder = records.iter()
+                let root_holder = records
+                    .iter()
                     .find(|r| r.capability_id == cap_id && r.parent.is_none())
                     .map(|r| r.holder)
                     .unwrap_or(rec.holder);
-                self.grants.insert(cap_id, CapabilityInfo {
-                    capability_type: rec.capability_type.clone(),
-                    granted_by: rec.granted_by,
-                    root_holder,
-                    resource: rec.resource,
-                });
+                self.grants.insert(
+                    cap_id,
+                    CapabilityInfo {
+                        capability_type: rec.capability_type.clone(),
+                        granted_by: rec.granted_by,
+                        root_holder,
+                        resource: rec.resource,
+                    },
+                );
             }
-            self.holders.insert((cap_id, rec.holder), HolderRecord {
-                active: rec.active,
-                parent: rec.parent,
-            });
+            self.holders.insert(
+                (cap_id, rec.holder),
+                HolderRecord {
+                    active: rec.active,
+                    parent: rec.parent,
+                },
+            );
         }
 
         // 根据 parent 重建 children 索引和 edges
@@ -141,7 +148,8 @@ impl CapabilityGraph {
 
     /// PR2.1: 导出 Capability 稳定语义快照（含 capability_id）。
     pub fn snapshot_capabilities(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
-        let mut result: Vec<crate::types::CapabilitySemanticRecord> = self.holders
+        let mut result: Vec<crate::types::CapabilitySemanticRecord> = self
+            .holders
             .iter()
             .filter_map(|((cap_id, holder), holder_record)| {
                 let info = self.grants.get(cap_id)?;
@@ -149,7 +157,9 @@ impl CapabilityGraph {
                 // that created this holder (edge.to == holder), not any
                 // outgoing edge. Root holders have no incoming edge; default
                 // true matches revoke()'s root behavior (safe-prefer cascade).
-                let cascade_on_revoke = self.edges.iter()
+                let cascade_on_revoke = self
+                    .edges
+                    .iter()
                     .find(|e| e.capability_id == *cap_id && e.to == *holder)
                     .map(|e| e.cascade_on_revoke)
                     .unwrap_or(true);
@@ -166,7 +176,8 @@ impl CapabilityGraph {
             })
             .collect();
         result.sort_by(|a, b| {
-            a.capability_id.cmp(&b.capability_id)
+            a.capability_id
+                .cmp(&b.capability_id)
                 .then(a.granted_by.cmp(&b.granted_by))
                 .then(a.holder.cmp(&b.holder))
                 .then(a.resource.cmp(&b.resource))
@@ -221,7 +232,10 @@ impl CapabilityGraph {
 
     /// 返回所有授权信息的克隆（用于 RootHash 规范化计算）。
     pub fn all_grants(&self) -> Vec<(CapabilityId, CapabilityInfo)> {
-        self.grants.iter().map(|(id, info)| (*id, info.clone())).collect()
+        self.grants
+            .iter()
+            .map(|(id, info)| (*id, info.clone()))
+            .collect()
     }
 
     /// 恢复时用：使用指定的 grant_sequence 重新生成 Capability，
@@ -314,7 +328,8 @@ impl CapabilityGraph {
     /// P8.4: 检查能力是否仍然有效（未被撤销）
     /// P8.4: 获取某个 Object 持有的所有能力 ID
     pub fn caps_for_holder(&self, holder: ObjectId) -> Vec<CapabilityId> {
-        let mut caps: Vec<CapabilityId> = self.holders
+        let mut caps: Vec<CapabilityId> = self
+            .holders
             .keys()
             .filter(|(_, h)| *h == holder)
             .map(|(cap_id, _)| *cap_id)
@@ -345,7 +360,8 @@ impl CapabilityGraph {
 
         self.grants.remove(&cap_id);
         self.holders.remove(&(cap_id, node));
-        self.edges.retain(|e| !(e.capability_id == cap_id && (e.from == node || e.to == node)));
+        self.edges
+            .retain(|e| !(e.capability_id == cap_id && (e.from == node || e.to == node)));
 
         if !self.has_any_remaining_holders(cap_id) {
             self.grants.remove(&cap_id);
@@ -416,10 +432,7 @@ impl CapabilityGraph {
                 parent: Some(from),
             },
         );
-        self.children
-            .entry((cap_id, from))
-            .or_default()
-            .insert(to);
+        self.children.entry((cap_id, from)).or_default().insert(to);
         self.edges.push(DelegationEdge {
             from,
             to,
@@ -637,8 +650,8 @@ mod tests {
         // cascade_on_revoke on a record = incoming edge property (parent→holder).
         // Root has no incoming edge → default true (matches revoke root policy).
         assert!(r2.cascade_on_revoke);
-        assert!(r3.cascade_on_revoke);   // edge 2→3 was cascade=true
-        assert!(!r4.cascade_on_revoke);  // edge 3→4 was cascade=false
+        assert!(r3.cascade_on_revoke); // edge 2→3 was cascade=true
+        assert!(!r4.cascade_on_revoke); // edge 3→4 was cascade=false
 
         let mut restored = CapabilityGraph::new();
         restored.restore_capabilities(&snap);
@@ -662,11 +675,17 @@ mod tests {
         assert!(kids3.contains(&&4));
 
         // 验证 edges 重建 + cascade 语义与原始一致
-        let edge23_restored = restored.edges.iter()
-            .find(|e| e.from == 2 && e.to == 3).unwrap();
+        let edge23_restored = restored
+            .edges
+            .iter()
+            .find(|e| e.from == 2 && e.to == 3)
+            .unwrap();
         assert!(edge23_restored.cascade_on_revoke);
-        let edge34_restored = restored.edges.iter()
-            .find(|e| e.from == 3 && e.to == 4).unwrap();
+        let edge34_restored = restored
+            .edges
+            .iter()
+            .find(|e| e.from == 3 && e.to == 4)
+            .unwrap();
         assert!(!edge34_restored.cascade_on_revoke);
 
         // 验证 holds 语义一致

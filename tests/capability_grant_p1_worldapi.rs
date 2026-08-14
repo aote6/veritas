@@ -53,7 +53,10 @@ fn tx_capability_grant_external_interface_end_to_end() {
     let sid2 = world.tx_begin(Some(b)).unwrap();
     world.tx_link(sid2, b, c, "owns").unwrap();
     let receipt = world.tx_commit(sid2).unwrap();
-    assert_ne!(receipt.before_root, receipt.after_root, "commit 必须改变 root hash");
+    assert_ne!(
+        receipt.before_root, receipt.after_root,
+        "commit 必须改变 root hash"
+    );
     assert!(kernel.has_link(b, c), "link 关系必须真实建立");
 
     // grantor authenticity: query the live capability graph via Engine test helper.
@@ -64,5 +67,8 @@ fn tx_capability_grant_external_interface_end_to_end() {
         .expect("刚授予的 capability 必须能在 capability graph 中查到");
     assert_eq!(record.granted_by, a, "granted_by 必须是真实授权者 A");
     assert_eq!(record.holder, b, "holder 必须是被授权者 B");
-    assert_ne!(record.granted_by, record.holder, "grantor != grantee，杜绝自授语义");
+    assert_ne!(
+        record.granted_by, record.holder,
+        "grantor != grantee，杜绝自授语义"
+    );
 }

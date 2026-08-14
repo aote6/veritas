@@ -343,7 +343,10 @@ impl VeritasEngine {
     /// 仅暴露既有的 snapshot_capabilities()，用于验证 grantor/grantee 语义。
     #[doc(hidden)]
     pub fn snapshot_capabilities_for_test(&self) -> Vec<crate::types::CapabilitySemanticRecord> {
-        self.capability_graph.lock().unwrap().snapshot_capabilities()
+        self.capability_graph
+            .lock()
+            .unwrap()
+            .snapshot_capabilities()
     }
 
     /// 只读查询：capability_graph 当前的 grant_sequence 计数器值。测试用于推算 cap_id。
@@ -1313,9 +1316,9 @@ impl VeritasEngine {
         {
             let mut topo = self.topology.lock().unwrap();
             for (from, to, link_type) in &delta.links {
-                let exists = topo.iter().any(|e| {
-                    e.from == *from && e.to == *to && e.link_type == *link_type
-                });
+                let exists = topo
+                    .iter()
+                    .any(|e| e.from == *from && e.to == *to && e.link_type == *link_type);
                 if !exists {
                     topo.push(LinkEdge {
                         from: *from,
@@ -1513,9 +1516,9 @@ impl VeritasEngine {
         // 2. Same-tx pending AdminCap (birth roots / prior grants in this tx)
         // Pending revoke of a pending grant removes it from pending_capabilities,
         // so presence here already means still active within the tx.
-        ctx.pending_capabilities.iter().any(|g| {
-            g.cap_type == "AdminCap" && g.resource == resource && g.grantee == grantor
-        })
+        ctx.pending_capabilities
+            .iter()
+            .any(|g| g.cap_type == "AdminCap" && g.resource == resource && g.grantee == grantor)
     }
 
     /// CAPABILITY_REVOKE: record a pending revoke; applied on commit via apply().

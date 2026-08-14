@@ -5,7 +5,9 @@ pub struct Memory {
 
 impl Memory {
     pub fn new(capacity: usize) -> Self {
-        Self { data: vec![0; capacity] }
+        Self {
+            data: vec![0; capacity],
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -14,7 +16,11 @@ impl Memory {
 
     pub fn write_bytes(&mut self, addr: usize, bytes: &[u8]) -> Result<(), String> {
         if addr + bytes.len() > self.data.len() {
-            return Err(format!("Memory OOB write: addr 0x{:X} len {}", addr, bytes.len()));
+            return Err(format!(
+                "Memory OOB write: addr 0x{:X} len {}",
+                addr,
+                bytes.len()
+            ));
         }
         self.data[addr..addr + bytes.len()].copy_from_slice(bytes);
         Ok(())

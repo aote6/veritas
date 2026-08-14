@@ -5,12 +5,12 @@
 //! 若失败，意味着跨模块运行时可见性或执行路径断裂。
 
 use std::sync::Arc;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::instruction::Instruction;
 use veritas_kernel::kernel::{Kernel, KernelCall};
 use veritas_kernel::module::{ModuleImage, ModuleVersion};
 use veritas_kernel::program::ProgramImage;
 use veritas_kernel::runtime::Runtime;
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectState;
 
 /// Module A: TRAP OBJECT_BIRTH → COMMIT → HALT
@@ -31,14 +31,16 @@ fn module_a_object_visible_to_module_b_through_runtime_execute() {
     let kernel = Arc::new(Kernel::new());
 
     let module_a = make_birth_module();
-    let object_id = match Runtime::execute(&kernel, &module_a)
-        .expect("module A execute failed")
-    {
+    let object_id = match Runtime::execute(&kernel, &module_a).expect("module A execute failed") {
         veritas_kernel::runtime::ExecutionOutcome::Completed { r0, .. } => r0,
         other => panic!("expected Completed, got {:?}", other),
     };
 
-    assert!(object_id > 0, "module A should receive ObjectId from TRAP, got {}", object_id);
+    assert!(
+        object_id > 0,
+        "module A should receive ObjectId from TRAP, got {}",
+        object_id
+    );
 
     // Cross-execute visibility: object created by module A is Alive in shared Kernel world
     assert_eq!(

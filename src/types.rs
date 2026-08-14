@@ -15,7 +15,10 @@ pub struct Address {
 
 impl Address {
     pub fn new(object_id: ObjectId, state_id: StateId) -> Self {
-        Address { object_id, state_id }
+        Address {
+            object_id,
+            state_id,
+        }
     }
 }
 pub type ScopeId = u64;
@@ -94,7 +97,6 @@ pub enum ObjectState {
     Dead,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkType {
     DependsOn = 0,
@@ -108,7 +110,6 @@ pub struct LinkEdge {
     pub to: ObjectId,
     pub link_type: LinkType,
 }
-
 
 #[derive(Debug, Clone, Default)]
 pub struct ReadSet {
@@ -310,7 +311,6 @@ impl TransactionContext {
         }
     }
 
-
     /// Internal state-setting primitive: sets `current_object` only.
     ///
     /// - Does **not** modify `capability_context`.
@@ -409,14 +409,25 @@ pub struct PendingEffect {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrapReason {
-    InvalidOpcode { opcode: u8 },
-    InvalidEncoding { pc: usize },
-    MemoryFault { addr: usize, size: usize },
+    InvalidOpcode {
+        opcode: u8,
+    },
+    InvalidEncoding {
+        pc: usize,
+    },
+    MemoryFault {
+        addr: usize,
+        size: usize,
+    },
     DivisionByZero,
     ArithmeticOverflow,
-    IllegalInstruction { opcode: u8 },
+    IllegalInstruction {
+        opcode: u8,
+    },
     /// P29: Capability检查失败，硬件级越权拦截
-    AccessDenied { pc: usize },
+    AccessDenied {
+        pc: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,7 +436,6 @@ pub struct TrapFrame {
     pub reason: TrapReason,
     pub cycles: u64,
 }
-
 
 impl ObjectState {
     #[inline]
@@ -523,8 +533,6 @@ impl ObjectRecord {
     pub fn is_dead(&self) -> bool {
         self.state.is_dead()
     }
-
-
 }
 
 /// P30 Step 1b: TransactionDelta — 一次事务的全部副作用集合。
@@ -547,7 +555,7 @@ pub struct TransactionDelta {
 
     // Object lifecycle (原始请求，非展开后)
     pub births: Vec<ObjectId>,
-    pub deaths: Vec<ObjectId>,    // 仅用户显式请求，apply() 内部展开 OWNS
+    pub deaths: Vec<ObjectId>, // 仅用户显式请求，apply() 内部展开 OWNS
     pub freezes: Vec<ObjectId>,
 
     // Topology
@@ -560,7 +568,7 @@ pub struct TransactionDelta {
     pub capability_revokes: Vec<PendingCapabilityRevoke>,
 
     // Effects (待执行)
-    pub effects: Vec<(String, Vec<u8>)>,  // (idempotency_key, payload)
+    pub effects: Vec<(String, Vec<u8>)>, // (idempotency_key, payload)
 }
 
 /// Capability 语义快照记录（进入 Commitment Domain）。
@@ -593,8 +601,10 @@ pub enum AccessIntent {
 impl AccessIntent {
     pub fn target_objects(&self) -> Vec<ObjectId> {
         match self {
-            AccessIntent::Read(id) | AccessIntent::Write(id)
-            | AccessIntent::Destroy(id) | AccessIntent::Freeze(id)
+            AccessIntent::Read(id)
+            | AccessIntent::Write(id)
+            | AccessIntent::Destroy(id)
+            | AccessIntent::Freeze(id)
             | AccessIntent::Call(id) => vec![*id],
             AccessIntent::Link(from, to) => vec![*from, *to],
             AccessIntent::Unlink(from, _to) => vec![*from],
@@ -605,7 +615,6 @@ impl AccessIntent {
 /// WorldState 完整快照。
 /// Commitment Domain 部分进入 root_hash；
 /// Continuation Metadata 不进入 root_hash。
-
 
 /// TransactionReceipt: 一次 commit 的状态转移证明。
 ///
@@ -635,11 +644,16 @@ impl TransactionDelta {
     ///     EFFECT <key> <hex_payload>
     ///     END
     pub fn serialize(&self) -> String {
-        let mut s = format!("TXCOMMIT TX={} VERSION={} ACTOR={}", self.tx_id, self.commit_version, self.actor_id);
+        let mut s = format!(
+            "TXCOMMIT TX={} VERSION={} ACTOR={}",
+            self.tx_id, self.commit_version, self.actor_id
+        );
         for (addr, val) in &self.writes {
             s.push_str(&format!(
                 " WRITE {} {} {}",
-                addr.object_id, addr.state_id, hex::encode(val)
+                addr.object_id,
+                addr.state_id,
+                hex::encode(val)
             ));
         }
         for (scope_id, change_type, state_id) in &self.scope_changes {
@@ -667,14 +681,21 @@ impl TransactionDelta {
         for grant in &self.capability_grants {
             s.push_str(&format!(
                 " CAPGRANT {} {} {} {} {} {}",
-                grant.capability_id, grant.grant_sequence,
-                grant.grantor, grant.grantee, grant.resource, grant.cap_type
+                grant.capability_id,
+                grant.grant_sequence,
+                grant.grantor,
+                grant.grantee,
+                grant.resource,
+                grant.cap_type
             ));
         }
         for d in &self.capability_delegates {
             s.push_str(&format!(
                 " CAPDELEGATE {} {} {} {}",
-                d.capability_id, d.from, d.to, if d.cascade_on_revoke { 1u8 } else { 0u8 }
+                d.capability_id,
+                d.from,
+                d.to,
+                if d.cascade_on_revoke { 1u8 } else { 0u8 }
             ));
         }
         for rev in &self.capability_revokes {
@@ -702,15 +723,20 @@ impl TransactionDelta {
         if parts.len() < 2 || parts[0] != "TXCOMMIT" || parts.last() != Some(&"END") {
             return None;
         }
-        let tx_id = parts.iter()
+        let tx_id = parts
+            .iter()
             .find(|p| p.starts_with("TX="))?
             .strip_prefix("TX=")?
-            .parse::<TxId>().ok()?;
-        let commit_version = parts.iter()
+            .parse::<TxId>()
+            .ok()?;
+        let commit_version = parts
+            .iter()
             .find(|p| p.starts_with("VERSION="))?
             .strip_prefix("VERSION=")?
-            .parse::<Version>().ok()?;
-        let actor_id = parts.iter()
+            .parse::<Version>()
+            .ok()?;
+        let actor_id = parts
+            .iter()
             .find(|p| p.starts_with("ACTOR="))
             .and_then(|p| p.strip_prefix("ACTOR="))
             .and_then(|p| p.parse::<u64>().ok())
@@ -732,40 +758,40 @@ impl TransactionDelta {
         while i < parts.len() {
             match parts[i] {
                 "WRITE" if i + 3 < parts.len() => {
-                    let obj = parts[i+1].parse::<ObjectId>().ok()?;
-                    let state = parts[i+2].parse::<StateId>().ok()?;
-                    let val = hex::decode(parts[i+3]).ok()?;
+                    let obj = parts[i + 1].parse::<ObjectId>().ok()?;
+                    let state = parts[i + 2].parse::<StateId>().ok()?;
+                    let val = hex::decode(parts[i + 3]).ok()?;
                     writes.push((Address::new(obj, state), val));
                     i += 4;
                 }
                 "SCOPEBIND" if i + 2 < parts.len() => {
-                    let sid = parts[i+1].parse::<ScopeId>().ok()?;
-                    let st = parts[i+2].parse::<StateId>().ok()?;
+                    let sid = parts[i + 1].parse::<ScopeId>().ok()?;
+                    let st = parts[i + 2].parse::<StateId>().ok()?;
                     scope_changes.push((sid, ScopeChangeType::Bind, st));
                     i += 3;
                 }
                 "SCOPEUNBIND" if i + 2 < parts.len() => {
-                    let sid = parts[i+1].parse::<ScopeId>().ok()?;
-                    let st = parts[i+2].parse::<StateId>().ok()?;
+                    let sid = parts[i + 1].parse::<ScopeId>().ok()?;
+                    let st = parts[i + 2].parse::<StateId>().ok()?;
                     scope_changes.push((sid, ScopeChangeType::Unbind, st));
                     i += 3;
                 }
                 "BIRTH" if i + 1 < parts.len() => {
-                    births.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    births.push(parts[i + 1].parse::<ObjectId>().ok()?);
                     i += 2;
                 }
                 "DEATH" if i + 1 < parts.len() => {
-                    deaths.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    deaths.push(parts[i + 1].parse::<ObjectId>().ok()?);
                     i += 2;
                 }
                 "FREEZE" if i + 1 < parts.len() => {
-                    freezes.push(parts[i+1].parse::<ObjectId>().ok()?);
+                    freezes.push(parts[i + 1].parse::<ObjectId>().ok()?);
                     i += 2;
                 }
                 "LINK" if i + 3 < parts.len() => {
-                    let from = parts[i+1].parse::<ObjectId>().ok()?;
-                    let to = parts[i+2].parse::<ObjectId>().ok()?;
-                    let lt = parts[i+3].parse::<u8>().ok()?;
+                    let from = parts[i + 1].parse::<ObjectId>().ok()?;
+                    let to = parts[i + 2].parse::<ObjectId>().ok()?;
+                    let lt = parts[i + 3].parse::<u8>().ok()?;
                     let link_type = match lt {
                         0 => LinkType::DependsOn,
                         1 => LinkType::Owns,
@@ -776,18 +802,18 @@ impl TransactionDelta {
                     i += 4;
                 }
                 "UNLINK" if i + 2 < parts.len() => {
-                    let from = parts[i+1].parse::<ObjectId>().ok()?;
-                    let to = parts[i+2].parse::<ObjectId>().ok()?;
+                    let from = parts[i + 1].parse::<ObjectId>().ok()?;
+                    let to = parts[i + 2].parse::<ObjectId>().ok()?;
                     unlinks.push((from, to));
                     i += 3;
                 }
                 "CAPGRANT" if i + 6 < parts.len() => {
-                    let cap_id = parts[i+1].parse::<u64>().ok()?;
-                    let seq = parts[i+2].parse::<u64>().ok()?;
-                    let grantor = parts[i+3].parse::<ObjectId>().ok()?;
-                    let grantee = parts[i+4].parse::<ObjectId>().ok()?;
-                    let resource = parts[i+5].parse::<ObjectId>().ok()?;
-                    let cap_type = parts[i+6].to_string();
+                    let cap_id = parts[i + 1].parse::<u64>().ok()?;
+                    let seq = parts[i + 2].parse::<u64>().ok()?;
+                    let grantor = parts[i + 3].parse::<ObjectId>().ok()?;
+                    let grantee = parts[i + 4].parse::<ObjectId>().ok()?;
+                    let resource = parts[i + 5].parse::<ObjectId>().ok()?;
+                    let cap_type = parts[i + 6].to_string();
                     capability_grants.push(PendingCapabilityGrant {
                         capability_id: cap_id,
                         grant_sequence: seq,
@@ -799,10 +825,10 @@ impl TransactionDelta {
                     i += 7;
                 }
                 "CAPDELEGATE" if i + 4 < parts.len() => {
-                    let cap_id = parts[i+1].parse::<CapabilityId>().ok()?;
-                    let from = parts[i+2].parse::<ObjectId>().ok()?;
-                    let to = parts[i+3].parse::<ObjectId>().ok()?;
-                    let cas = parts[i+4].parse::<u8>().ok()?;
+                    let cap_id = parts[i + 1].parse::<CapabilityId>().ok()?;
+                    let from = parts[i + 2].parse::<ObjectId>().ok()?;
+                    let to = parts[i + 3].parse::<ObjectId>().ok()?;
+                    let cas = parts[i + 4].parse::<u8>().ok()?;
                     capability_delegates.push(PendingCapabilityDelegate {
                         capability_id: cap_id,
                         from,
@@ -812,9 +838,9 @@ impl TransactionDelta {
                     i += 5;
                 }
                 "CAPREVOKE" if i + 3 < parts.len() => {
-                    let cap_id = parts[i+1].parse::<CapabilityId>().ok()?;
-                    let holder = parts[i+2].parse::<ObjectId>().ok()?;
-                    let cas = parts[i+3].parse::<u8>().ok()?;
+                    let cap_id = parts[i + 1].parse::<CapabilityId>().ok()?;
+                    let holder = parts[i + 2].parse::<ObjectId>().ok()?;
+                    let cas = parts[i + 3].parse::<u8>().ok()?;
                     let cascade_override = match cas {
                         0 => Some(false),
                         1 => Some(true),
@@ -828,12 +854,16 @@ impl TransactionDelta {
                     i += 4;
                 }
                 "EFFECT" if i + 2 < parts.len() => {
-                    let key = parts[i+1].to_string();
-                    let payload = hex::decode(parts[i+2]).ok()?;
+                    let key = parts[i + 1].to_string();
+                    let payload = hex::decode(parts[i + 2]).ok()?;
                     effects.push((key, payload));
                     i += 3;
                 }
-                "TXCOMMIT" | "END" | _ if parts[i].starts_with("TX=") | parts[i].starts_with("VERSION=") | parts[i].starts_with("ACTOR=") => {
+                "TXCOMMIT" | "END" | _
+                    if parts[i].starts_with("TX=")
+                        | parts[i].starts_with("VERSION=")
+                        | parts[i].starts_with("ACTOR=") =>
+                {
                     i += 1;
                 }
                 _ => i += 1,

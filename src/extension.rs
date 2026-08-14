@@ -1,6 +1,6 @@
 // Veritas Kernel - Extension 系统
 
-use crate::types::{StateId, AbortReason, TransactionContext};
+use crate::types::{AbortReason, StateId, TransactionContext};
 
 pub trait Extension: Send + Sync {
     fn before_begin(&self, _ctx: &mut TransactionContext) -> Result<(), AbortReason> {
@@ -27,9 +27,7 @@ pub trait Extension: Send + Sync {
         Ok(())
     }
 
-    fn after_commit(&self, _ctx: &TransactionContext) {
-    }
+    fn after_commit(&self, _ctx: &TransactionContext) {}
 
-    fn after_abort(&self, _ctx: &TransactionContext) {
-    }
+    fn after_abort(&self, _ctx: &TransactionContext) {}
 }

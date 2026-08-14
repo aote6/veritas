@@ -86,16 +86,16 @@ fn forge_e2e_create_write_read_commit_observe() {
     assert_eq!(r["ok"], true);
 
     // 8. tx_read state_id=1 — verify pending write is visible within tx
-    let cmd = format!(
-        r#"{{"cmd":"tx_read","session_id":{},"state_id":1}}"#,
-        sid
-    );
+    let cmd = format!(r#"{{"cmd":"tx_read","session_id":{},"state_id":1}}"#, sid);
     let r = send(&cmd);
     assert_eq!(r["ok"], true);
     assert_eq!(r["object_id"], serde_json::Value::Null); // tx_read doesn't echo object_id
     let hex_str = r["value_hex"].as_str().unwrap();
     let decoded = hex::decode(hex_str).unwrap();
-    assert_eq!(String::from_utf8(decoded).unwrap(), "hello world from forge");
+    assert_eq!(
+        String::from_utf8(decoded).unwrap(),
+        "hello world from forge"
+    );
 
     // 9. tx_commit
     let cmd = format!(r#"{{"cmd":"tx_commit","session_id":{}}}"#, sid);
@@ -105,14 +105,26 @@ fn forge_e2e_create_write_read_commit_observe() {
     assert!(receipt["before_root"].as_u64().unwrap() > 0);
     assert!(receipt["after_root"].as_u64().unwrap() > 0);
     assert_ne!(receipt["before_root"], receipt["after_root"]);
-    assert_eq!(receipt["delta"]["objects_created"][0].as_u64().unwrap(), obj_id);
-    assert_eq!(receipt["delta"]["memory_written"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        receipt["delta"]["objects_created"][0].as_u64().unwrap(),
+        obj_id
+    );
+    assert_eq!(
+        receipt["delta"]["memory_written"].as_array().unwrap().len(),
+        2
+    );
 
     // 10. world_info after commit
     let r = send(r#"{"cmd":"world_info"}"#);
     assert_eq!(r["ok"], true);
-    assert_eq!(r["version"].as_u64().unwrap(), receipt["version"].as_u64().unwrap());
-    assert_eq!(r["state_root"].as_u64().unwrap(), receipt["after_root"].as_u64().unwrap());
+    assert_eq!(
+        r["version"].as_u64().unwrap(),
+        receipt["version"].as_u64().unwrap()
+    );
+    assert_eq!(
+        r["state_root"].as_u64().unwrap(),
+        receipt["after_root"].as_u64().unwrap()
+    );
     assert!(r["object_count"].as_u64().unwrap() >= 2);
 
     // 11. new tx_begin + tx_read to confirm committed state is observable
@@ -120,15 +132,15 @@ fn forge_e2e_create_write_read_commit_observe() {
     assert_eq!(r["ok"], true);
     let sid2 = r["session_id"].as_u64().unwrap();
 
-    let cmd = format!(
-        r#"{{"cmd":"tx_read","session_id":{},"state_id":1}}"#,
-        sid2
-    );
+    let cmd = format!(r#"{{"cmd":"tx_read","session_id":{},"state_id":1}}"#, sid2);
     let r = send(&cmd);
     assert_eq!(r["ok"], true);
     let hex_str2 = r["value_hex"].as_str().unwrap();
     let decoded2 = hex::decode(hex_str2).unwrap();
-    assert_eq!(String::from_utf8(decoded2).unwrap(), "hello world from forge");
+    assert_eq!(
+        String::from_utf8(decoded2).unwrap(),
+        "hello world from forge"
+    );
 
     // Abort the read-only tx
     let cmd = format!(r#"{{"cmd":"tx_abort","session_id":{}}}"#, sid2);

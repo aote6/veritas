@@ -68,9 +68,16 @@ mod tests {
     #[test]
     fn test_receipt_verify_rejects_zero() {
         let r = ExecutionReceipt {
-            program_hash: 0, input_root: 1, output_root: 2,
-            trace_hash: 3, write_set_hash: 4, event_hash: 0, capability_hash: 0,
-            instruction_count: 1, reads: 0, writes: 0,
+            program_hash: 0,
+            input_root: 1,
+            output_root: 2,
+            trace_hash: 3,
+            write_set_hash: 4,
+            event_hash: 0,
+            capability_hash: 0,
+            instruction_count: 1,
+            reads: 0,
+            writes: 0,
         };
         assert!(!r.verify());
     }
@@ -78,12 +85,20 @@ mod tests {
     #[test]
     fn test_receipt_matches_detects_difference() {
         let r1 = ExecutionReceipt {
-            program_hash: 1, input_root: 2, output_root: 3,
-            trace_hash: 4, write_set_hash: 5, event_hash: 6, capability_hash: 0,
-            instruction_count: 1, reads: 0, writes: 0,
+            program_hash: 1,
+            input_root: 2,
+            output_root: 3,
+            trace_hash: 4,
+            write_set_hash: 5,
+            event_hash: 6,
+            capability_hash: 0,
+            instruction_count: 1,
+            reads: 0,
+            writes: 0,
         };
         let r2 = ExecutionReceipt {
-            program_hash: 9, ..r1.clone()
+            program_hash: 9,
+            ..r1.clone()
         };
         assert!(!r1.matches(&r2));
     }

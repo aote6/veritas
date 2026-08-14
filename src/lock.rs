@@ -1,7 +1,7 @@
+use crate::tx_manager::TransactionManager;
+use crate::types::{ObjectId, TxId};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use crate::types::{ObjectId, TxId};
-use crate::tx_manager::TransactionManager;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockMode {
@@ -30,12 +30,7 @@ impl LockManager {
     }
 
     /// Wound-Wait 锁申请
-    pub fn acquire(
-        &self,
-        tx_id: TxId,
-        obj_id: ObjectId,
-        mode: LockMode,
-    ) -> Result<(), String> {
+    pub fn acquire(&self, tx_id: TxId, obj_id: ObjectId, mode: LockMode) -> Result<(), String> {
         let mut locks = self.locks.lock().unwrap();
 
         // 如果当前事务已被击毙，直接拒绝
@@ -177,7 +172,7 @@ mod tests {
     fn test_wound_older_kills_newer() {
         let (tm, lm, tx1, tx2) = setup();
         let young_id = tx1; // 老
-        let old_id = tx2;   // 新 — 注意命名反了但逻辑对
+        let old_id = tx2; // 新 — 注意命名反了但逻辑对
 
         // 新事务先持锁
         lm.acquire(old_id, 100, LockMode::Exclusive).unwrap();
@@ -192,7 +187,7 @@ mod tests {
     #[test]
     fn test_die_newer_yields_to_older() {
         let (tm, lm, tx1, tx2) = setup();
-        let old_id = tx1;   // 老
+        let old_id = tx1; // 老
         let young_id = tx2; // 新
 
         // 老事务持锁
@@ -209,7 +204,7 @@ mod tests {
     fn test_wound_cascades_lock_release() {
         let (_tm, lm, tx1, tx2) = setup();
         let young_id = tx1; // 老
-        let old_id = tx2;   // 新
+        let old_id = tx2; // 新
 
         // 新事务锁住两个资源
         lm.acquire(old_id, 100, LockMode::Exclusive).unwrap();

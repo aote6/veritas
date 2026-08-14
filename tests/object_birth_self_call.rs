@@ -46,7 +46,11 @@ fn root_can_call_into_object_it_just_birthed() {
         _ => {}
     }
     // 身份不应切换：OBJECT_BIRTH 不再自动 enter_object。
-    assert_eq!(machine.current_object(), 0, "creator identity must remain unchanged after birth");
+    assert_eq!(
+        machine.current_object(),
+        0,
+        "creator identity must remain unchanged after birth"
+    );
 
     let new_id = machine.registers().get_u64(0);
     assert_ne!(new_id, 0, "birth must allocate a nonzero object id into R0");
@@ -59,7 +63,10 @@ fn root_can_call_into_object_it_just_birthed() {
     }
     .encode()
     .unwrap();
-    machine.ram_mut().write_bytes(call_target_pc, &call_bytes).unwrap();
+    machine
+        .ram_mut()
+        .write_bytes(call_target_pc, &call_bytes)
+        .unwrap();
     machine.set_pc(call_target_pc);
 
     machine.step().unwrap();

@@ -4,16 +4,21 @@
 //! 对应 VERIFICATION_MAP：wal_recovery_robustness.rs
 //! 若失败，意味着损坏 WAL 可导致静默错误状态或崩溃，破坏恢复安全性。
 
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
-
 
 fn birth(kernel: &Kernel) -> u64 {
     let mut tx = kernel.test_begin();
-    let id = match kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap() {
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };

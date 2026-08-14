@@ -8,7 +8,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::types::{Address, ObjectId, ScopeChangeType, ScopeId, StateId, TransactionDelta, TxId, Version};
+use crate::types::{
+    Address, ObjectId, ScopeChangeType, ScopeId, StateId, TransactionDelta, TxId, Version,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalScopeChange {
@@ -104,10 +106,7 @@ impl WalEntry {
                         ScopeChangeType::Bind => "SCOPEBIND",
                         ScopeChangeType::Unbind => "SCOPEUNBIND",
                     };
-                    line.push_str(&format!(
-                        " {} {} {}",
-                        tag, change.scope_id, change.state_id
-                    ));
+                    line.push_str(&format!(" {} {} {}", tag, change.scope_id, change.state_id));
                 }
                 for effect in effects {
                     line.push_str(&format!(
@@ -126,39 +125,73 @@ impl WalEntry {
                 format!("EFFECTACK TX={} KEY={} END\n", tx_id, idempotency_key)
             }
             WalEntry::Checkpoint { version } => {
-                format!("CHECKPOINT VERSION={} END
-", version)
+                format!(
+                    "CHECKPOINT VERSION={} END
+",
+                    version
+                )
             }
             WalEntry::ObjectBirth { tx_id, object_id } => {
-                format!("OBJECTBIRTH TX={} OBJECT={} END
-", tx_id, object_id)
+                format!(
+                    "OBJECTBIRTH TX={} OBJECT={} END
+",
+                    tx_id, object_id
+                )
             }
-            WalEntry::ObjectLink { tx_id, from, to, link_type } => {
-                format!("OBJECTLINK TX={} FROM={} TO={} KIND={} END
-", tx_id, from, to, link_type)
+            WalEntry::ObjectLink {
+                tx_id,
+                from,
+                to,
+                link_type,
+            } => {
+                format!(
+                    "OBJECTLINK TX={} FROM={} TO={} KIND={} END
+",
+                    tx_id, from, to, link_type
+                )
             }
             WalEntry::ObjectDeath { tx_id, object_id } => {
-                format!("OBJECTDEATH TX={} OBJECT={} END
-", tx_id, object_id)
+                format!(
+                    "OBJECTDEATH TX={} OBJECT={} END
+",
+                    tx_id, object_id
+                )
             }
-            WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, grant_sequence, capability_id } => {
+            WalEntry::CapabilityGrant {
+                tx_id,
+                cap_type,
+                grantor,
+                grantee,
+                resource,
+                grant_sequence,
+                capability_id,
+            } => {
                 format!(
                     "CAPABILITYGRANT TX={} TYPE={} GRANTOR={} GRANTEE={} RESOURCE={} cap_id={} SEQ={} END\n",
                     tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence
                 )
             }
             WalEntry::ObjectFreeze { tx_id, object_id } => {
-                format!("OBJECTFREEZE TX={} OBJECT={} END
-", tx_id, object_id)
+                format!(
+                    "OBJECTFREEZE TX={} OBJECT={} END
+",
+                    tx_id, object_id
+                )
             }
             WalEntry::ObjectUnlink { tx_id, from, to } => {
-                format!("OBJECTUNLINK TX={} FROM={} TO={} END
-", tx_id, from, to)
+                format!(
+                    "OBJECTUNLINK TX={} FROM={} TO={} END
+",
+                    tx_id, from, to
+                )
             }
             WalEntry::TransactionCommitted(delta) => {
                 let inner = delta.serialize();
-                format!("{} END
-", inner)  // inner already has END, but we wrap it
+                format!(
+                    "{} END
+",
+                    inner
+                ) // inner already has END, but we wrap it
             }
         }
     }
@@ -236,10 +269,7 @@ impl WalEntry {
                     let state_id = parts[i + 2].parse::<StateId>().ok()?;
                     let val = hex::decode(parts[i + 3]).ok()?;
 
-                    writes.push((
-                        Address::new(object_id, state_id),
-                        val
-                    ));
+                    writes.push((Address::new(object_id, state_id), val));
 
                     i += 4;
                 }
@@ -372,7 +402,15 @@ impl WalEntry {
             .parse::<u64>()
             .ok()
             .unwrap_or(0);
-        Some(WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence })
+        Some(WalEntry::CapabilityGrant {
+            tx_id,
+            cap_type,
+            grantor,
+            grantee,
+            resource,
+            capability_id,
+            grant_sequence,
+        })
     }
 
     fn deserialize_object_freeze(parts: &[&str]) -> Option<Self> {
@@ -438,7 +476,12 @@ impl WalEntry {
             .strip_prefix("KIND=")?
             .parse::<u8>()
             .ok()?;
-        Some(WalEntry::ObjectLink { tx_id, from, to, link_type })
+        Some(WalEntry::ObjectLink {
+            tx_id,
+            from,
+            to,
+            link_type,
+        })
     }
 
     fn deserialize_transaction_committed(payload: &str) -> Option<Self> {
@@ -468,10 +511,7 @@ pub struct WalWriter {
 
 impl WalWriter {
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             file: Mutex::new(file),
         })
@@ -532,23 +572,14 @@ impl RecoveryManager {
 
     /// Extract recovery metadata only (max_tx_id + pending effects).
     /// World state is rebuilt exclusively via build_ordered_deltas() + engine.apply().
-    pub fn apply_records(
-        records: &[WalEntry],
-    ) -> (
-        Vec<PendingRecoveryEffect>,
-        TxId,
-    ) {
+    pub fn apply_records(records: &[WalEntry]) -> (Vec<PendingRecoveryEffect>, TxId) {
         let mut committed_effects: Vec<PendingRecoveryEffect> = Vec::new();
         let mut acked_keys: HashSet<String> = HashSet::new();
         let mut max_tx_id: TxId = 0;
 
         for record in records {
             match record {
-                WalEntry::Commit {
-                    tx_id,
-                    effects,
-                    ..
-                } => {
+                WalEntry::Commit { tx_id, effects, .. } => {
                     if *tx_id > max_tx_id {
                         max_tx_id = *tx_id;
                     }
@@ -592,11 +623,9 @@ impl RecoveryManager {
 /// 从 WAL records 按 tx_id 分组构建 TransactionDelta 列表。
 /// 只保留有 Commit marker 的事务，丢弃孤儿条目。
 /// Recovery 和 Replay 共用此函数。
-pub(crate) fn build_ordered_deltas(
-    records: &[WalEntry],
-) -> Vec<TransactionDelta> {
-    use std::collections::HashMap;
+pub(crate) fn build_ordered_deltas(records: &[WalEntry]) -> Vec<TransactionDelta> {
     use crate::types::{LinkType, PendingCapabilityGrant, TransactionDelta};
+    use std::collections::HashMap;
 
     let mut partial_deltas: HashMap<TxId, TransactionDelta> = HashMap::new();
     let mut ordered_deltas: Vec<TransactionDelta> = Vec::new();
@@ -604,75 +633,149 @@ pub(crate) fn build_ordered_deltas(
     for record in records {
         match record {
             WalEntry::ObjectBirth { tx_id, object_id } => {
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.births.push(*object_id);
             }
             WalEntry::ObjectDeath { tx_id, object_id } => {
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.deaths.push(*object_id);
             }
             WalEntry::ObjectFreeze { tx_id, object_id } => {
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.freezes.push(*object_id);
             }
-            WalEntry::ObjectLink { tx_id, from, to, link_type, .. } => {
+            WalEntry::ObjectLink {
+                tx_id,
+                from,
+                to,
+                link_type,
+                ..
+            } => {
                 let relation = match link_type {
                     0 => LinkType::DependsOn,
                     1 => LinkType::Owns,
                     2 => LinkType::References,
                     _ => continue,
                 };
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.links.push((*from, *to, relation));
             }
             WalEntry::ObjectUnlink { tx_id, from, to } => {
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.unlinks.push((*from, *to));
             }
-            WalEntry::CapabilityGrant { tx_id, cap_type, grantor, grantee, resource, capability_id, grant_sequence } => {
-                let delta = partial_deltas.entry(*tx_id).or_insert_with(|| TransactionDelta {
-                    actor_id: 0,
-                tx_id: *tx_id, commit_version: 0,
-                    writes: vec![], scope_changes: vec![],
-                    births: vec![], deaths: vec![], freezes: vec![],
-                    links: vec![], unlinks: vec![],
-                    capability_grants: vec![], capability_delegates: vec![], capability_revokes: vec![], effects: vec![],
-                });
+            WalEntry::CapabilityGrant {
+                tx_id,
+                cap_type,
+                grantor,
+                grantee,
+                resource,
+                capability_id,
+                grant_sequence,
+            } => {
+                let delta = partial_deltas
+                    .entry(*tx_id)
+                    .or_insert_with(|| TransactionDelta {
+                        actor_id: 0,
+                        tx_id: *tx_id,
+                        commit_version: 0,
+                        writes: vec![],
+                        scope_changes: vec![],
+                        births: vec![],
+                        deaths: vec![],
+                        freezes: vec![],
+                        links: vec![],
+                        unlinks: vec![],
+                        capability_grants: vec![],
+                        capability_delegates: vec![],
+                        capability_revokes: vec![],
+                        effects: vec![],
+                    });
                 delta.capability_grants.push(PendingCapabilityGrant {
                     capability_id: *capability_id,
                     grant_sequence: *grant_sequence,
@@ -682,13 +785,30 @@ pub(crate) fn build_ordered_deltas(
                     resource: *resource,
                 });
             }
-            WalEntry::Commit { tx_id, version, writes, scope_changes, effects } => {
-                if let std::collections::hash_map::Entry::Occupied(mut entry) = partial_deltas.entry(*tx_id) {
+            WalEntry::Commit {
+                tx_id,
+                version,
+                writes,
+                scope_changes,
+                effects,
+            } => {
+                if let std::collections::hash_map::Entry::Occupied(mut entry) =
+                    partial_deltas.entry(*tx_id)
+                {
                     let delta = entry.get_mut();
                     delta.commit_version = *version;
-                    delta.writes = writes.iter().map(|(addr, val)| (*addr, val.clone())).collect();
-                    delta.scope_changes = scope_changes.iter().map(|c| (c.scope_id, c.change_type.clone(), c.state_id)).collect();
-                    delta.effects = effects.iter().map(|e| (e.idempotency_key.clone(), e.payload.clone())).collect();
+                    delta.writes = writes
+                        .iter()
+                        .map(|(addr, val)| (*addr, val.clone()))
+                        .collect();
+                    delta.scope_changes = scope_changes
+                        .iter()
+                        .map(|c| (c.scope_id, c.change_type.clone(), c.state_id))
+                        .collect();
+                    delta.effects = effects
+                        .iter()
+                        .map(|e| (e.idempotency_key.clone(), e.payload.clone()))
+                        .collect();
                     ordered_deltas.push(delta.clone());
                     entry.remove();
                 }
@@ -716,7 +836,10 @@ mod tests {
         let entry = WalEntry::Commit {
             tx_id: 8,
             version: 15,
-            writes: vec![(Address::new(0,100), vec![10,11,12]), (Address::new(0,200), vec![255,238])],
+            writes: vec![
+                (Address::new(0, 100), vec![10, 11, 12]),
+                (Address::new(0, 200), vec![255, 238]),
+            ],
             scope_changes: vec![
                 WalScopeChange {
                     scope_id: 55,
@@ -808,11 +931,13 @@ mod tests {
 
     #[test]
     fn test_transaction_delta_roundtrip() {
-        use crate::types::{Address, LinkType, PendingCapabilityGrant, ScopeChangeType, TransactionDelta};
+        use crate::types::{
+            Address, LinkType, PendingCapabilityGrant, ScopeChangeType, TransactionDelta,
+        };
 
         let delta = TransactionDelta {
             actor_id: 0,
-                tx_id: 42,
+            tx_id: 42,
             commit_version: 3,
             writes: vec![
                 (Address::new(10, 100), vec![1, 2, 3]),
@@ -825,31 +950,28 @@ mod tests {
             births: vec![100, 200],
             deaths: vec![300],
             freezes: vec![400],
-            links: vec![
-                (10, 20, LinkType::Owns),
-                (30, 40, LinkType::DependsOn),
-            ],
+            links: vec![(10, 20, LinkType::Owns), (30, 40, LinkType::DependsOn)],
             unlinks: vec![(50, 60)],
-            capability_grants: vec![
-                PendingCapabilityGrant {
-                    capability_id: 999,
-                    grant_sequence: 5,
-                    cap_type: "AdminCap".to_string(),
-                    grantor: 1,
-                    grantee: 2,
-                    resource: 3,
-                },
-            ],
+            capability_grants: vec![PendingCapabilityGrant {
+                capability_id: 999,
+                grant_sequence: 5,
+                cap_type: "AdminCap".to_string(),
+                grantor: 1,
+                grantee: 2,
+                resource: 3,
+            }],
             capability_delegates: vec![],
             capability_revokes: vec![],
-            effects: vec![
-                ("key-1".to_string(), vec![7, 8, 9]),
-            ],
+            effects: vec![("key-1".to_string(), vec![7, 8, 9])],
         };
 
         let serialized = delta.serialize();
         let deserialized = TransactionDelta::deserialize(&serialized);
-        assert!(deserialized.is_some(), "deserialize returned None for: {}", serialized);
+        assert!(
+            deserialized.is_some(),
+            "deserialize returned None for: {}",
+            serialized
+        );
         let d2 = deserialized.unwrap();
 
         assert_eq!(d2.tx_id, delta.tx_id);
@@ -881,7 +1003,7 @@ mod tests {
         let writer = WalWriter::open(path).unwrap();
         let delta = TransactionDelta {
             actor_id: 0,
-                tx_id: 1,
+            tx_id: 1,
             commit_version: 1,
             writes: vec![],
             scope_changes: vec![],
@@ -899,12 +1021,13 @@ mod tests {
         writer.append_and_sync(&entry).unwrap();
 
         // 2. Append a corrupted entry with deliberately wrong CRC header
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(path)
-            .unwrap();
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
         use std::io::Write;
-        writeln!(file, "LEN=50 CRC=00000000 TXCOMMIT TX=2 VERSION=1 BIRTH 200 END").unwrap();
+        writeln!(
+            file,
+            "LEN=50 CRC=00000000 TXCOMMIT TX=2 VERSION=1 BIRTH 200 END"
+        )
+        .unwrap();
 
         // 3. Recover: only the first entry should survive
         let (records, _) = RecoveryManager::recover(path).unwrap();
@@ -925,7 +1048,7 @@ mod tests {
         let entry = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(Address::new(0,42), vec![1,2,3])],
+            writes: vec![(Address::new(0, 42), vec![1, 2, 3])],
             scope_changes: vec![],
             effects: vec![],
         };
@@ -981,10 +1104,7 @@ mod tests {
             writer.append_and_sync(&entry).unwrap();
 
             // Write a corrupted line with wrong CRC
-            let mut file = std::fs::OpenOptions::new()
-                .append(true)
-                .open(path)
-                .unwrap();
+            let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
             writeln!(file, "LEN=20 CRC=12345678 COMMIT TX=2 BROKEN").unwrap();
         }
         let (records, max_version) = RecoveryManager::recover(path).unwrap();
@@ -1004,7 +1124,7 @@ mod tests {
         let commit = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(Address::new(0,1), vec![9])],
+            writes: vec![(Address::new(0, 1), vec![9])],
             scope_changes: vec![],
             effects: vec![WalEffect {
                 idempotency_key: "1-0".to_string(),
@@ -1028,7 +1148,7 @@ mod tests {
         let commit = WalEntry::Commit {
             tx_id: 1,
             version: 1,
-            writes: vec![(Address::new(0,1), vec![9])],
+            writes: vec![(Address::new(0, 1), vec![9])],
             scope_changes: vec![],
             effects: vec![WalEffect {
                 idempotency_key: "1-0".to_string(),
@@ -1073,7 +1193,9 @@ mod tests {
             capability_delegates: vec![],
             capability_revokes: vec![],
         };
-        writer.append_and_sync(&WalEntry::TransactionCommitted(delta)).unwrap();
+        writer
+            .append_and_sync(&WalEntry::TransactionCommitted(delta))
+            .unwrap();
 
         let (records, _) = RecoveryManager::recover(path).unwrap();
         let deltas = build_ordered_deltas(&records);

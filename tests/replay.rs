@@ -4,10 +4,10 @@
 //! 对应 VERIFICATION_MAP：replay.rs
 //! 若失败，意味着 replay 引擎确定性或与 recovery 路径一致性被破坏。
 
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::Kernel;
-use veritas_kernel::types::ObjectType;
 use veritas_kernel::kernel::KernelCall;
+use veritas_kernel::test_api::KernelTestExt;
+use veritas_kernel::types::ObjectType;
 
 /// 空 WAL replay 返回非零（有意义的结果/状态）。
 /// 失败意味着空路径处理错误。
@@ -23,8 +23,10 @@ fn replay_empty_wal_returns_nonzero() {
 
     let replay_hash = Kernel::replay(&wal_path);
     assert_ne!(replay_hash, 0);
-    assert_eq!(replay_hash, idle_hash,
-        "Replay of empty WAL must equal idle Recovery root_hash");
+    assert_eq!(
+        replay_hash, idle_hash,
+        "Replay of empty WAL must equal idle Recovery root_hash"
+    );
 }
 
 /// Replay 结果与 recovery idle 状态等价。
@@ -38,9 +40,14 @@ fn replay_equals_recovery_idle() {
     let k1 = Kernel::with_wal_path(wal_path.clone());
     let root = {
         let mut tx = k1.test_begin();
-        let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k1
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -67,16 +74,21 @@ fn replay_equals_recovery_idle() {
 /// 相同输入多次 replay 结果完全一致。
 /// 失败意味着确定性执行承诺被破坏。
 #[test]
-fn replay_is_deterministic() {
+fn wal_replay_is_deterministic() {
     let wal_path = format!("target/test_replay_det_{}.wal", std::process::id());
     let _ = std::fs::remove_file(&wal_path);
 
     let k = Kernel::with_wal_path(wal_path.clone());
     let root = {
         let mut tx = k.test_begin();
-        let result = k.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -107,9 +119,14 @@ fn replay_different_ops_different_hash() {
     let k1 = Kernel::with_wal_path(wal1.clone());
     let root1 = {
         let mut tx = k1.test_begin();
-        let result = k1.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k1
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -126,9 +143,14 @@ fn replay_different_ops_different_hash() {
     let k2 = Kernel::with_wal_path(wal2.clone());
     let root2 = {
         let mut tx = k2.test_begin();
-        let result = k2.handle(&mut tx, KernelCall::ObjectBirth {
-            object_type: ObjectType::StateObject,
-        }).unwrap();
+        let result = k2
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .unwrap();
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),

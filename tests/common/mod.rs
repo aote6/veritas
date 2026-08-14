@@ -1,5 +1,7 @@
 #![allow(dead_code)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
+
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{ObjectId, ObjectType, TransactionContext};
@@ -32,6 +34,7 @@ pub fn new_kernel() -> TestKernel {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
+
     kernel
         .handle(&mut tx, KernelCall::Commit)
         .expect("Failed to commit Root Object birth");
@@ -40,6 +43,7 @@ pub fn new_kernel() -> TestKernel {
     kernel
         .test_write(&mut tx_init, 0, 0u64.to_le_bytes().to_vec())
         .expect("Failed to init Root Object memory");
+
     kernel
         .handle(&mut tx_init, KernelCall::Commit)
         .expect("Failed to commit Root Object initialization");
@@ -53,5 +57,91 @@ pub fn new_kernel() -> TestKernel {
 impl TestKernel {
     pub fn begin(&self) -> TransactionContext {
         self.kernel.test_begin_in_object(self.root_object)
+    }
+}
+
+/// Shared test-world fixture.
+///
+/// This layer constructs legal worlds for integration tests.
+/// It must never silently grant capabilities as a side effect
+/// of unrelated operations.
+pub struct TestWorld {
+    pub tk: TestKernel,
+}
+
+impl TestWorld {
+    pub fn new() -> Self {
+        Self { tk: new_kernel() }
+    }
+
+    pub fn kernel(&self) -> &Kernel {
+        &self.tk.kernel
+    }
+
+    pub fn root(&self) -> ObjectId {
+        self.tk.root_object
+    }
+
+    /// Birth an object directly from the test root.
+    pub fn birth(&self) -> ObjectId {
+        self.birth_under(self.root())
+    }
+
+    /// Birth an object under `creator`.
+    ///
+    /// The kernel's normal OBJECT_BIRTH semantics establish the
+    /// creator -> newborn AdminCap relationship.
+    pub fn birth_under(&self, creator: ObjectId) -> ObjectId {
+        let mut tx = self.kernel().test_begin_in_object(creator);
+
+        let id = match self
+            .kernel()
+            .handle(
+                &mut tx,
+                KernelCall::ObjectBirth {
+                    object_type: ObjectType::StateObject,
+                },
+            )
+            .expect("ObjectBirth failed")
+        {
+            TrapResult::ObjectId(id) => id,
+            _ => panic!("expected ObjectId"),
+        };
+
+        self.kernel()
+            .handle(&mut tx, KernelCall::Commit)
+            .expect("ObjectBirth commit failed");
+
+        id
+    }
+
+    /// Explicitly grant a capability.
+    ///
+    /// Authorization is intentionally visible to the test.
+    /// This helper never runs implicitly from link/write/etc.
+    pub fn grant_cap(
+        &self,
+        grantor: ObjectId,
+        grantee: ObjectId,
+        capability_type: &str,
+        resource: ObjectId,
+    ) {
+        let mut tx = self.kernel().test_begin_in_object(grantor);
+
+        self.kernel()
+            .handle(
+                &mut tx,
+                KernelCall::CapabilityGrant {
+                    grantor,
+                    grantee,
+                    capability_type: capability_type.to_string(),
+                    resource,
+                },
+            )
+            .expect("CapabilityGrant failed");
+
+        self.kernel()
+            .handle(&mut tx, KernelCall::Commit)
+            .expect("CapabilityGrant commit failed");
     }
 }

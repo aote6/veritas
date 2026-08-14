@@ -29,13 +29,17 @@ fn link_type_str(lt: veritas_kernel::types::LinkType) -> &'static str {
 
 fn receipt_json(r: &ReceiptView) -> Value {
     let delta = &r.delta;
-    let memory: Vec<Value> = delta.memory_written.iter().map(|w| {
-        json!({
-            "object_id": w.object_id,
-            "state_id": w.state_id,
-            "value_hex": w.value_hex,
+    let memory: Vec<Value> = delta
+        .memory_written
+        .iter()
+        .map(|w| {
+            json!({
+                "object_id": w.object_id,
+                "state_id": w.state_id,
+                "value_hex": w.value_hex,
+            })
         })
-    }).collect();
+        .collect();
     json!({
         "tx_id": r.tx_id,
         "before_root": r.before_root,
@@ -318,7 +322,10 @@ fn handle(world: &WorldService, req: &Value) -> Value {
 
         "receipts_since" => {
             let version = req.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
-            let limit = req.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+            let limit = req
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
             let receipts: Vec<Value> = world
                 .receipts_since(version, limit)
                 .iter()
@@ -356,7 +363,11 @@ fn main() {
         let req: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(e) => {
-                let _ = writeln!(stdout, "{}", json!({"ok": false, "error": format!("bad json: {}", e)}));
+                let _ = writeln!(
+                    stdout,
+                    "{}",
+                    json!({"ok": false, "error": format!("bad json: {}", e)})
+                );
                 let _ = stdout.flush();
                 continue;
             }

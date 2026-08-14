@@ -7,7 +7,9 @@ pub struct Program {
 
 impl Program {
     pub fn new() -> Self {
-        Self { instructions: Vec::new() }
+        Self {
+            instructions: Vec::new(),
+        }
     }
 
     pub fn push(mut self, inst: Instruction) -> Self {
@@ -53,7 +55,11 @@ pub struct ProgramImage {
 
 impl ProgramImage {
     pub fn new(instructions: Vec<crate::instruction::Instruction>) -> Self {
-        Self { version: CURRENT_VERSION, entry_point: 0, instructions }
+        Self {
+            version: CURRENT_VERSION,
+            entry_point: 0,
+            instructions,
+        }
     }
 
     pub fn hash(&self) -> u64 {
@@ -107,7 +113,10 @@ impl ProgramImage {
         }
         let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
         if version > CURRENT_VERSION {
-            return Err(VeritasError::EngineError(format!("Unsupported version {}", version)));
+            return Err(VeritasError::EngineError(format!(
+                "Unsupported version {}",
+                version
+            )));
         }
         let entry_point = u32::from_le_bytes(bytes[6..10].try_into().unwrap());
         let inst_count = u32::from_le_bytes(bytes[10..14].try_into().unwrap()) as usize;
@@ -119,7 +128,8 @@ impl ProgramImage {
         let actual_cs = Self::checksum(&check_data);
         if expected_cs != actual_cs {
             return Err(VeritasError::EngineError(format!(
-                "Checksum mismatch: expected {:08X} got {:08X}", expected_cs, actual_cs
+                "Checksum mismatch: expected {:08X} got {:08X}",
+                expected_cs, actual_cs
             )));
         }
 
@@ -127,14 +137,20 @@ impl ProgramImage {
         let mut instructions = Vec::with_capacity(inst_count);
         for _ in 0..inst_count {
             if offset >= bytes.len() {
-                return Err(VeritasError::EngineError("EOF decoding instructions".into()));
+                return Err(VeritasError::EngineError(
+                    "EOF decoding instructions".into(),
+                ));
             }
             let slice = &bytes[offset..];
             let (inst, consumed) = crate::instruction::Instruction::decode(slice)?;
             instructions.push(inst);
             offset += consumed;
         }
-        Ok(Self { version, entry_point, instructions })
+        Ok(Self {
+            version,
+            entry_point,
+            instructions,
+        })
     }
 }
 
@@ -148,7 +164,11 @@ mod image_tests {
         let insts = vec![
             Instruction::LoadConst { reg: 0, val: 100 },
             Instruction::LoadConst { reg: 1, val: 200 },
-            Instruction::Add { dst: 2, src1: 0, src2: 1 },
+            Instruction::Add {
+                dst: 2,
+                src1: 0,
+                src2: 1,
+            },
             Instruction::Commit,
             Instruction::Halt,
         ];
@@ -160,7 +180,10 @@ mod image_tests {
 
     #[test]
     fn test_p15_2_checksum_tamper_detection() {
-        let insts = vec![Instruction::LoadConst { reg: 0, val: 42 }, Instruction::Halt];
+        let insts = vec![
+            Instruction::LoadConst { reg: 0, val: 42 },
+            Instruction::Halt,
+        ];
         let image = ProgramImage::new(insts);
         let mut bytes = image.encode().unwrap();
         let last = bytes.len() - 1;

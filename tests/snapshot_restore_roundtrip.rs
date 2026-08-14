@@ -29,9 +29,7 @@ fn body_serde_module_empty_rule() {
     let body = ObjectBody::Module {
         code_section: vec![0xAB, 0xCD],
         import_section: vec![10, 20],
-        export_section: std::collections::HashMap::from([
-            ("init".to_string(), 0),
-        ]),
+        export_section: std::collections::HashMap::from([("init".to_string(), 0)]),
         verification_rule: None,
     };
     let bytes = veritas_kernel::engine::VeritasEngine::serialize_object_body(&body);

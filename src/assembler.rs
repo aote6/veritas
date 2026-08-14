@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use crate::program::ProgramImage;
-use crate::module::{ModuleImage, ModuleVersion};
 use crate::instruction::Instruction;
-use crate::types::{VeritasError, AbortReason, LinkType};
+use crate::module::{ModuleImage, ModuleVersion};
+use crate::program::ProgramImage;
+use crate::types::{AbortReason, LinkType, VeritasError};
+use std::collections::HashMap;
 
 pub fn assemble(source: &str) -> Result<Vec<Instruction>, VeritasError> {
     let mut labels: HashMap<String, usize> = HashMap::new();
@@ -11,15 +11,21 @@ pub fn assemble(source: &str) -> Result<Vec<Instruction>, VeritasError> {
     // Pass 1: 收集 label 地址
     for line in source.lines() {
         let line = clean_line(line);
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if line.ends_with(':') {
-            labels.insert(line[..line.len()-1].trim().to_string(), current_pc);
+            labels.insert(line[..line.len() - 1].trim().to_string(), current_pc);
             continue;
         }
         let mut dummy = HashMap::new();
         for word in line.split_whitespace().skip(1).flat_map(|s| s.split(',')) {
             let w = word.trim();
-            if !w.is_empty() && !w.starts_with('R') && !w.starts_with("0x") && w.parse::<u64>().is_err() {
+            if !w.is_empty()
+                && !w.starts_with('R')
+                && !w.starts_with("0x")
+                && w.parse::<u64>().is_err()
+            {
                 dummy.insert(w.to_string(), 0);
             }
         }
@@ -31,7 +37,9 @@ pub fn assemble(source: &str) -> Result<Vec<Instruction>, VeritasError> {
     let mut instructions = Vec::new();
     for line in source.lines() {
         let line = clean_line(line);
-        if line.is_empty() || line.ends_with(':') { continue; }
+        if line.is_empty() || line.ends_with(':') {
+            continue;
+        }
         instructions.push(parse_line(line, &labels)?);
     }
     Ok(instructions)
@@ -44,7 +52,9 @@ fn clean_line(line: &str) -> &str {
 fn parse_reg(s: &str) -> Result<u8, VeritasError> {
     let s = s.trim().to_uppercase();
     if s.starts_with('R') {
-        s[1..].parse::<u8>().map_err(|_| VeritasError::EngineError(format!("Bad reg: {}", s)))
+        s[1..]
+            .parse::<u8>()
+            .map_err(|_| VeritasError::EngineError(format!("Bad reg: {}", s)))
     } else {
         Err(VeritasError::EngineError(format!("Bad reg: {}", s)))
     }
@@ -62,9 +72,11 @@ fn parse_operand(s: &str) -> Result<crate::instruction::Operand, VeritasError> {
 fn parse_u64(s: &str) -> Result<u64, VeritasError> {
     let s = s.trim();
     if s.starts_with("0x") || s.starts_with("0X") {
-        u64::from_str_radix(&s[2..], 16).map_err(|_| VeritasError::EngineError(format!("Bad hex: {}", s)))
+        u64::from_str_radix(&s[2..], 16)
+            .map_err(|_| VeritasError::EngineError(format!("Bad hex: {}", s)))
     } else {
-        s.parse::<u64>().map_err(|_| VeritasError::EngineError(format!("Bad num: {}", s)))
+        s.parse::<u64>()
+            .map_err(|_| VeritasError::EngineError(format!("Bad num: {}", s)))
     }
 }
 
@@ -81,10 +93,13 @@ fn parse_target(s: &str, labels: &HashMap<String, usize>) -> Result<usize, Verit
 fn parse_quoted_string(s: &str) -> Result<String, VeritasError> {
     let s = s.trim();
     if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        let inner = &s[1..s.len()-1];
+        let inner = &s[1..s.len() - 1];
         Ok(inner.replace("\\\"", "\"").replace("\\\\", "\\"))
     } else {
-        Err(VeritasError::EngineError(format!("Expected quoted string, got: {}", s)))
+        Err(VeritasError::EngineError(format!(
+            "Expected quoted string, got: {}",
+            s
+        )))
     }
 }
 
@@ -93,13 +108,18 @@ fn parse_link_type(s: &str) -> Result<LinkType, VeritasError> {
         "depends_on" | "dependson" => Ok(LinkType::DependsOn),
         "owns" => Ok(LinkType::Owns),
         "references" | "refs" => Ok(LinkType::References),
-        _ => Err(VeritasError::EngineError(format!("Unknown LinkType: {} (use depends_on, owns, references)", s))),
+        _ => Err(VeritasError::EngineError(format!(
+            "Unknown LinkType: {} (use depends_on, owns, references)",
+            s
+        ))),
     }
 }
 
 fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction, VeritasError> {
     let raw_parts: Vec<&str> = line.split_whitespace().collect();
-    if raw_parts.is_empty() { return Err(VeritasError::EngineError("Empty".into())); }
+    if raw_parts.is_empty() {
+        return Err(VeritasError::EngineError("Empty".into()));
+    }
     let op = raw_parts[0].to_uppercase();
     let joined = raw_parts[1..].join(" ");
 
@@ -110,83 +130,185 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
         "NOP" => Ok(Instruction::Nop),
         "HALT" => Ok(Instruction::Halt),
         "COMMIT" => Ok(Instruction::Commit),
-        "ABORT" => Ok(Instruction::Abort { reason: AbortReason::WriteConflict }),
+        "ABORT" => Ok(Instruction::Abort {
+            reason: AbortReason::WriteConflict,
+        }),
         "RETURN" => Ok(Instruction::Return),
 
         "LOAD_CONST" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("LOAD_CONST needs reg, val".into())); }
-            Ok(Instruction::LoadConst { reg: parse_reg(args[0])?, val: parse_u64(args[1])? })
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "LOAD_CONST needs reg, val".into(),
+                ));
+            }
+            Ok(Instruction::LoadConst {
+                reg: parse_reg(args[0])?,
+                val: parse_u64(args[1])?,
+            })
         }
         "ADD" => {
-            if args.len() < 3 { return Err(VeritasError::EngineError("ADD needs dst, src1, src2".into())); }
-            Ok(Instruction::Add { dst: parse_reg(args[0])?, src1: parse_reg(args[1])?, src2: parse_reg(args[2])? })
+            if args.len() < 3 {
+                return Err(VeritasError::EngineError(
+                    "ADD needs dst, src1, src2".into(),
+                ));
+            }
+            Ok(Instruction::Add {
+                dst: parse_reg(args[0])?,
+                src1: parse_reg(args[1])?,
+                src2: parse_reg(args[2])?,
+            })
         }
         "SUB" => {
-            if args.len() < 3 { return Err(VeritasError::EngineError("SUB needs dst, src1, src2".into())); }
-            Ok(Instruction::Sub { dst: parse_reg(args[0])?, src1: parse_reg(args[1])?, src2: parse_reg(args[2])? })
+            if args.len() < 3 {
+                return Err(VeritasError::EngineError(
+                    "SUB needs dst, src1, src2".into(),
+                ));
+            }
+            Ok(Instruction::Sub {
+                dst: parse_reg(args[0])?,
+                src1: parse_reg(args[1])?,
+                src2: parse_reg(args[2])?,
+            })
         }
         "CMP" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("CMP needs src1, src2".into())); }
-            Ok(Instruction::Cmp { src1: parse_reg(args[0])?, src2: parse_reg(args[1])? })
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError("CMP needs src1, src2".into()));
+            }
+            Ok(Instruction::Cmp {
+                src1: parse_reg(args[0])?,
+                src2: parse_reg(args[1])?,
+            })
         }
         "JMP" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("JMP needs target".into())); }
-            Ok(Instruction::Jmp { target: parse_target(args[0], labels)? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("JMP needs target".into()));
+            }
+            Ok(Instruction::Jmp {
+                target: parse_target(args[0], labels)?,
+            })
         }
         "JZ" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("JZ needs target".into())); }
-            Ok(Instruction::Jz { target: parse_target(args[0], labels)? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("JZ needs target".into()));
+            }
+            Ok(Instruction::Jz {
+                target: parse_target(args[0], labels)?,
+            })
         }
         "JNZ" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("JNZ needs target".into())); }
-            Ok(Instruction::Jnz { target: parse_target(args[0], labels)? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("JNZ needs target".into()));
+            }
+            Ok(Instruction::Jnz {
+                target: parse_target(args[0], labels)?,
+            })
         }
         "JN" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("JN needs target".into())); }
-            Ok(Instruction::Jn { target: parse_target(args[0], labels)? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("JN needs target".into()));
+            }
+            Ok(Instruction::Jn {
+                target: parse_target(args[0], labels)?,
+            })
         }
         "LOAD_STATE_U64" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("LOAD_STATE_U64 needs reg, state_id".into())); }
-            Ok(Instruction::LoadStateU64 { reg: parse_reg(args[0])?, state_id: parse_u64(args[1])? })
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "LOAD_STATE_U64 needs reg, state_id".into(),
+                ));
+            }
+            Ok(Instruction::LoadStateU64 {
+                reg: parse_reg(args[0])?,
+                state_id: parse_u64(args[1])?,
+            })
         }
         "LOAD_STATE_BYTES" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("LOAD_STATE_BYTES needs reg, state_id".into())); }
-            Ok(Instruction::LoadStateBytes { reg: parse_reg(args[0])?, state_id: parse_u64(args[1])? })
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "LOAD_STATE_BYTES needs reg, state_id".into(),
+                ));
+            }
+            Ok(Instruction::LoadStateBytes {
+                reg: parse_reg(args[0])?,
+                state_id: parse_u64(args[1])?,
+            })
         }
         "WRITE_REGISTER" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("WRITE_REGISTER needs state_id, reg".into())); }
-            Ok(Instruction::WriteRegister { state_id: parse_u64(args[0])?, reg: parse_reg(args[1])? })
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "WRITE_REGISTER needs state_id, reg".into(),
+                ));
+            }
+            Ok(Instruction::WriteRegister {
+                state_id: parse_u64(args[0])?,
+                reg: parse_reg(args[1])?,
+            })
         }
 
         // ===== 新增指令 =====
         "READ" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("READ needs state_id".into())); }
-            Ok(Instruction::Read { state_id: parse_operand(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("READ needs state_id".into()));
+            }
+            Ok(Instruction::Read {
+                state_id: parse_operand(args[0])?,
+            })
         }
         "WRITE" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("WRITE needs state_id, \"string\"".into())); }
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "WRITE needs state_id, \"string\"".into(),
+                ));
+            }
             let payload = parse_quoted_string(args[1])?.into_bytes();
-            Ok(Instruction::Write { state_id: parse_operand(args[0])?, payload })
+            Ok(Instruction::Write {
+                state_id: parse_operand(args[0])?,
+                payload,
+            })
         }
         "EFFECT" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("EFFECT needs \"string\"".into())); }
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("EFFECT needs \"string\"".into()));
+            }
             let payload = parse_quoted_string(args[0])?.into_bytes();
             Ok(Instruction::Effect { payload })
         }
         "OBJECT_BIRTH" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("OBJECT_BIRTH needs object_id".into())); }
-            Ok(Instruction::ObjectBirth { object_id: parse_u64(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError(
+                    "OBJECT_BIRTH needs object_id".into(),
+                ));
+            }
+            Ok(Instruction::ObjectBirth {
+                object_id: parse_u64(args[0])?,
+            })
         }
         "OBJECT_DEATH" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("OBJECT_DEATH needs object_id".into())); }
-            Ok(Instruction::ObjectDeath { object_id: parse_operand(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError(
+                    "OBJECT_DEATH needs object_id".into(),
+                ));
+            }
+            Ok(Instruction::ObjectDeath {
+                object_id: parse_operand(args[0])?,
+            })
         }
         "OBJECT_FREEZE" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("OBJECT_FREEZE needs object_id".into())); }
-            Ok(Instruction::ObjectFreeze { object_id: parse_operand(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError(
+                    "OBJECT_FREEZE needs object_id".into(),
+                ));
+            }
+            Ok(Instruction::ObjectFreeze {
+                object_id: parse_operand(args[0])?,
+            })
         }
         "OBJECT_LINK" => {
-            if args.len() < 3 { return Err(VeritasError::EngineError("OBJECT_LINK needs from, to, relation".into())); }
+            if args.len() < 3 {
+                return Err(VeritasError::EngineError(
+                    "OBJECT_LINK needs from, to, relation".into(),
+                ));
+            }
             Ok(Instruction::ObjectLink {
                 from: parse_operand(args[0])?,
                 to: parse_operand(args[1])?,
@@ -194,29 +316,49 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
             })
         }
         "OBJECT_UNLINK" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("OBJECT_UNLINK needs from, to".into())); }
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "OBJECT_UNLINK needs from, to".into(),
+                ));
+            }
             Ok(Instruction::ObjectUnlink {
                 from: parse_operand(args[0])?,
                 to: parse_operand(args[1])?,
             })
         }
         "CALL" => {
-            if args.len() < 2 { return Err(VeritasError::EngineError("CALL needs object_id, entry_pc".into())); }
+            if args.len() < 2 {
+                return Err(VeritasError::EngineError(
+                    "CALL needs object_id, entry_pc".into(),
+                ));
+            }
             Ok(Instruction::Call {
                 object_id: parse_operand(args[0])?,
                 entry_pc: parse_target(args[1], labels)?,
             })
         }
         "TRAP" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("TRAP needs service_id".into())); }
-            Ok(Instruction::Trap { service_id: parse_u64(args[0])? as u8 })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("TRAP needs service_id".into()));
+            }
+            Ok(Instruction::Trap {
+                service_id: parse_u64(args[0])? as u8,
+            })
         }
         "HOST_CALL" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("HOST_CALL needs call_id".into())); }
-            Ok(Instruction::HostCall { call_id: parse_u64(args[0])? as u8 })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("HOST_CALL needs call_id".into()));
+            }
+            Ok(Instruction::HostCall {
+                call_id: parse_u64(args[0])? as u8,
+            })
         }
         "CAPABILITY_GRANT" => {
-            if args.len() < 3 { return Err(VeritasError::EngineError("CAPABILITY_GRANT needs holder, \"permission\", resource".into())); }
+            if args.len() < 3 {
+                return Err(VeritasError::EngineError(
+                    "CAPABILITY_GRANT needs holder, \"permission\", resource".into(),
+                ));
+            }
             Ok(Instruction::CapabilityGrant {
                 holder: parse_operand(args[0])?,
                 permission: parse_quoted_string(args[1])?,
@@ -224,12 +366,22 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
             })
         }
         "SAVEPOINT" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("SAVEPOINT needs \"name\"".into())); }
-            Ok(Instruction::Savepoint { name: parse_quoted_string(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError("SAVEPOINT needs \"name\"".into()));
+            }
+            Ok(Instruction::Savepoint {
+                name: parse_quoted_string(args[0])?,
+            })
         }
         "ROLLBACK_TO" => {
-            if args.is_empty() { return Err(VeritasError::EngineError("ROLLBACK_TO needs \"name\"".into())); }
-            Ok(Instruction::RollbackTo { name: parse_quoted_string(args[0])? })
+            if args.is_empty() {
+                return Err(VeritasError::EngineError(
+                    "ROLLBACK_TO needs \"name\"".into(),
+                ));
+            }
+            Ok(Instruction::RollbackTo {
+                name: parse_quoted_string(args[0])?,
+            })
         }
 
         _ => Err(VeritasError::EngineError(format!("Unknown op: {}", op))),
@@ -257,8 +409,8 @@ fn split_args_keep_quotes(input: &str) -> Vec<&str> {
 
 #[cfg(test)]
 mod tests {
-    use crate::instruction::Operand;
     use super::*;
+    use crate::instruction::Operand;
 
     #[test]
     fn test_assemble_simple() {
@@ -301,11 +453,38 @@ mod tests {
         "#;
         let insts = assemble(src).unwrap();
         assert_eq!(insts.len(), 8);
-        assert!(matches!(insts[0], Instruction::ObjectBirth { object_id: 100 }));
-        assert!(matches!(insts[1], Instruction::Write { state_id: Operand::Immediate(100), .. }));
-        assert!(matches!(insts[2], Instruction::Read { state_id: Operand::Immediate(100) }));
-        assert!(matches!(insts[3], Instruction::ObjectLink { from: Operand::Immediate(1), to: Operand::Immediate(100), .. }));
-        assert!(matches!(insts[4], Instruction::Call { object_id: Operand::Immediate(100), entry_pc: 0 }));
+        assert!(matches!(
+            insts[0],
+            Instruction::ObjectBirth { object_id: 100 }
+        ));
+        assert!(matches!(
+            insts[1],
+            Instruction::Write {
+                state_id: Operand::Immediate(100),
+                ..
+            }
+        ));
+        assert!(matches!(
+            insts[2],
+            Instruction::Read {
+                state_id: Operand::Immediate(100)
+            }
+        ));
+        assert!(matches!(
+            insts[3],
+            Instruction::ObjectLink {
+                from: Operand::Immediate(1),
+                to: Operand::Immediate(100),
+                ..
+            }
+        ));
+        assert!(matches!(
+            insts[4],
+            Instruction::Call {
+                object_id: Operand::Immediate(100),
+                entry_pc: 0
+            }
+        ));
         assert!(matches!(insts[5], Instruction::Return));
         assert!(matches!(insts[6], Instruction::Commit));
         assert!(matches!(insts[7], Instruction::Halt));
@@ -319,12 +498,20 @@ pub fn assemble_module(source: &str) -> Result<ModuleImage, VeritasError> {
 
     for line in source.lines() {
         let cleaned = clean_line(line);
-        if cleaned.is_empty() { continue; }
+        if cleaned.is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = cleaned.split_whitespace().collect();
-        if parts.is_empty() { continue; }
+        if parts.is_empty() {
+            continue;
+        }
 
         match parts[0].to_lowercase().as_str() {
-            "module" => { if parts.len() >= 2 { name = parts[1].to_string(); } }
+            "module" => {
+                if parts.len() >= 2 {
+                    name = parts[1].to_string();
+                }
+            }
             "version" => {
                 if parts.len() >= 2 {
                     let v: Vec<&str> = parts[1].split('.').collect();
@@ -337,7 +524,9 @@ pub fn assemble_module(source: &str) -> Result<ModuleImage, VeritasError> {
                     }
                 }
             }
-            _ => { code_lines.push(line); }
+            _ => {
+                code_lines.push(line);
+            }
         }
     }
 

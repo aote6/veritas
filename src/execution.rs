@@ -1,7 +1,7 @@
-use crate::trace::{TraceRecorder, InstructionTrace};
 use crate::event::{EventRecorder, ExecutionEvent};
 use crate::instruction::Instruction;
-use crate::types::{WriteSet, StateId};
+use crate::trace::{InstructionTrace, TraceRecorder};
+use crate::types::{StateId, WriteSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionStatistics {
@@ -46,7 +46,11 @@ impl ExecutionContext {
     }
 
     pub fn begin_instruction(&mut self, pc: usize, regs: [u64; 8], inst: Instruction) {
-        self.pending = Some(PendingInstruction { pc, regs_before: regs, instruction: inst });
+        self.pending = Some(PendingInstruction {
+            pc,
+            regs_before: regs,
+            instruction: inst,
+        });
     }
 
     pub fn finish_instruction(&mut self, regs_after: [u64; 8]) {
@@ -78,7 +82,10 @@ impl ExecutionContext {
     }
 
     pub fn record_write(&mut self, state_id: StateId, value: Vec<u8>) {
-        self.events.push(ExecutionEvent::StateWrite { state_id, len: value.len() });
+        self.events.push(ExecutionEvent::StateWrite {
+            state_id,
+            len: value.len(),
+        });
         let addr = crate::types::Address::new(0, state_id);
         self.writes.push(addr, value);
         self.stats.writes += 1;
@@ -88,8 +95,6 @@ impl ExecutionContext {
         self.events.push(ExecutionEvent::StateRead { state_id });
         self.stats.reads += 1;
     }
-
-
 }
 
 #[cfg(test)]
@@ -110,7 +115,8 @@ mod tests {
     fn test_stats_count_instructions_and_writes() {
         let mut ctx = ExecutionContext::new(1, 0);
         ctx.record_instruction(InstructionTrace {
-            pc: 0, opcode: 1,
+            pc: 0,
+            opcode: 1,
             instruction: Instruction::Nop,
             registers_before: [0; 8],
             registers_after: [0; 8],

@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use crate::types::{TxId, VeritasError, AbortReason, TransactionContext};
-use crate::tx_manager::TransactionManager;
 use crate::lock::LockManager;
+use crate::tx_manager::TransactionManager;
+use crate::types::{AbortReason, TransactionContext, TxId, VeritasError};
+use std::sync::Arc;
 
 /// 事务执行控制器：负责事务生命周期管理，
 /// 将控制逻辑从 Engine 中剥离。
@@ -11,10 +11,7 @@ pub struct TransactionController {
 }
 
 impl TransactionController {
-    pub fn new(
-        tx_mgr: Arc<TransactionManager>,
-        lock_mgr: Arc<LockManager>,
-    ) -> Self {
+    pub fn new(tx_mgr: Arc<TransactionManager>, lock_mgr: Arc<LockManager>) -> Self {
         Self { tx_mgr, lock_mgr }
     }
 
@@ -66,8 +63,10 @@ mod tests {
     fn test_controller_begin_creates_active_tx() {
         let ctrl = setup();
         let ctx = ctrl.begin(1);
-        assert!(ctrl.tx_mgr.is_active(ctx.tx_id()),
-            "begin 后事务应为 Active");
+        assert!(
+            ctrl.tx_mgr.is_active(ctx.tx_id()),
+            "begin 后事务应为 Active"
+        );
     }
 
     #[test]
@@ -76,8 +75,7 @@ mod tests {
         let mut ctx = ctrl.begin(1);
         let id = ctx.tx_id();
         ctrl.abort(&mut ctx, AbortReason::WriteConflict);
-        assert!(!ctrl.tx_mgr.is_active(id),
-            "abort 后事务不应为 Active");
+        assert!(!ctrl.tx_mgr.is_active(id), "abort 后事务不应为 Active");
     }
 
     #[test]
@@ -85,8 +83,10 @@ mod tests {
         let ctrl = setup();
         let mut ctx = ctrl.begin(1);
         ctrl.abort(&mut ctx, AbortReason::WriteConflict);
-        assert!(ctrl.pre_commit_check(&ctx).is_err(),
-            "已 abort 的事务应被 pre_commit_check 拒绝");
+        assert!(
+            ctrl.pre_commit_check(&ctx).is_err(),
+            "已 abort 的事务应被 pre_commit_check 拒绝"
+        );
     }
 
     #[test]
@@ -95,7 +95,6 @@ mod tests {
         let ctx = ctrl.begin(1);
         let id = ctx.tx_id();
         ctrl.post_commit(id);
-        assert!(!ctrl.tx_mgr.is_active(id),
-            "post_commit 后事务应结束");
+        assert!(!ctrl.tx_mgr.is_active(id), "post_commit 后事务应结束");
     }
 }

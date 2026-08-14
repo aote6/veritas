@@ -46,7 +46,11 @@ fn all_test_files_have_doc_comments() {
                     }
                 }
                 if !has_doc {
-                    failures.push(format!("{}:{} #[test] missing /// doc comment", fname, i + 1));
+                    failures.push(format!(
+                        "{}:{} #[test] missing /// doc comment",
+                        fname,
+                        i + 1
+                    ));
                 }
             }
         }

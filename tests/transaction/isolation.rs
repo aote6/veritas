@@ -1,6 +1,6 @@
 use crate::common::new_kernel;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::KernelCall;
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::AbortReason;
 
 #[test]
@@ -17,7 +17,14 @@ fn t3_snapshot_isolation_read_own_writes() {
     tk.kernel.test_write(&mut tx, state_id, vec![9]).unwrap();
     let val = tk.kernel.test_read(&mut tx, state_id).unwrap();
     assert_eq!(val, vec![9], "Must read own writes");
-    tk.kernel.handle(&mut tx, KernelCall::Abort { reason: AbortReason::AlreadyAborted }).unwrap();
+    tk.kernel
+        .handle(
+            &mut tx,
+            KernelCall::Abort {
+                reason: AbortReason::AlreadyAborted,
+            },
+        )
+        .unwrap();
 
     // After abort, must see old value
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);
@@ -32,13 +39,22 @@ fn t4_abort_rollback_all() {
 
     // Setup committed value
     let mut setup_tx = tk.kernel.test_begin_in_object(tk.root_object);
-    tk.kernel.test_write(&mut setup_tx, state_id, vec![0]).unwrap();
+    tk.kernel
+        .test_write(&mut setup_tx, state_id, vec![0])
+        .unwrap();
     tk.kernel.handle(&mut setup_tx, KernelCall::Commit).unwrap();
 
     // Write then abort
     let mut tx = tk.kernel.test_begin_in_object(tk.root_object);
     tk.kernel.test_write(&mut tx, state_id, vec![100]).unwrap();
-    tk.kernel.handle(&mut tx, KernelCall::Abort { reason: AbortReason::WriteConflict }).unwrap();
+    tk.kernel
+        .handle(
+            &mut tx,
+            KernelCall::Abort {
+                reason: AbortReason::WriteConflict,
+            },
+        )
+        .unwrap();
 
     // Must see original value
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);

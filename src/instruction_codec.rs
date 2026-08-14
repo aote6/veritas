@@ -49,7 +49,10 @@ fn encode_operand(buf: &mut Vec<u8>, op: &crate::instruction::Operand) {
     }
 }
 
-fn decode_operand(bytes: &[u8], pos: &mut usize) -> Result<crate::instruction::Operand, VeritasError> {
+fn decode_operand(
+    bytes: &[u8],
+    pos: &mut usize,
+) -> Result<crate::instruction::Operand, VeritasError> {
     if *pos + 9 > bytes.len() {
         return Err(VeritasError::EngineError("EOF decoding operand".into()));
     }
@@ -59,7 +62,10 @@ fn decode_operand(bytes: &[u8], pos: &mut usize) -> Result<crate::instruction::O
     match tag {
         0 => Ok(crate::instruction::Operand::Immediate(val)),
         1 => Ok(crate::instruction::Operand::Register(val as u8)),
-        _ => Err(VeritasError::EngineError(format!("Invalid operand tag: {}", tag))),
+        _ => Err(VeritasError::EngineError(format!(
+            "Invalid operand tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -75,15 +81,20 @@ impl Instruction {
             }
             Instruction::Add { dst, src1, src2 } => {
                 buf.push(opcodes::ADD);
-                buf.push(*dst); buf.push(*src1); buf.push(*src2);
+                buf.push(*dst);
+                buf.push(*src1);
+                buf.push(*src2);
             }
             Instruction::Sub { dst, src1, src2 } => {
                 buf.push(opcodes::SUB);
-                buf.push(*dst); buf.push(*src1); buf.push(*src2);
+                buf.push(*dst);
+                buf.push(*src1);
+                buf.push(*src2);
             }
             Instruction::Cmp { src1, src2 } => {
                 buf.push(opcodes::CMP);
-                buf.push(*src1); buf.push(*src2);
+                buf.push(*src1);
+                buf.push(*src2);
             }
             Instruction::Jmp { target } => {
                 buf.push(opcodes::JMP);
@@ -118,7 +129,10 @@ impl Instruction {
             }
             Instruction::Commit => buf.push(opcodes::COMMIT),
             Instruction::Abort { .. } => buf.push(opcodes::ABORT),
-            Instruction::Call { object_id, entry_pc } => {
+            Instruction::Call {
+                object_id,
+                entry_pc,
+            } => {
                 buf.push(opcodes::CALL);
                 encode_operand(&mut buf, object_id);
                 buf.extend_from_slice(&(*entry_pc as u64).to_le_bytes());
@@ -171,7 +185,11 @@ impl Instruction {
                 encode_operand(&mut buf, from);
                 encode_operand(&mut buf, to);
             }
-            Instruction::CapabilityGrant { holder, permission, resource } => {
+            Instruction::CapabilityGrant {
+                holder,
+                permission,
+                resource,
+            } => {
                 buf.push(opcodes::CAPABILITY_GRANT);
                 encode_operand(&mut buf, holder);
                 let perm_bytes = permission.as_bytes();
@@ -204,193 +222,240 @@ impl Instruction {
         macro_rules! check {
             ($need:expr) => {
                 if pos + $need > bytes.len() {
-                    return Err(VeritasError::EngineError(format!("EOF for 0x{:02X}", opcode)));
+                    return Err(VeritasError::EngineError(format!(
+                        "EOF for 0x{:02X}",
+                        opcode
+                    )));
                 }
             };
         }
 
-        Ok((match opcode {
-            opcodes::NOP => Instruction::Nop,
-            opcodes::LOAD_CONST => {
-                check!(9);
-                let reg = bytes[pos];
-                let val = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
-                pos += 9;
-                Instruction::LoadConst { reg, val }
-            }
-            opcodes::ADD => {
-                check!(3);
-                let (dst, s1, s2) = (bytes[pos], bytes[pos+1], bytes[pos+2]);
-                pos += 3;
-                Instruction::Add { dst, src1: s1, src2: s2 }
-            }
-            opcodes::SUB => {
-                check!(3);
-                let (dst, s1, s2) = (bytes[pos], bytes[pos+1], bytes[pos+2]);
-                pos += 3;
-                Instruction::Sub { dst, src1: s1, src2: s2 }
-            }
-            opcodes::CMP => {
-                check!(2);
-                let (s1, s2) = (bytes[pos], bytes[pos+1]);
-                pos += 2;
-                Instruction::Cmp { src1: s1, src2: s2 }
-            }
-            opcodes::JMP => {
-                check!(8);
-                let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
-                pos += 8;
-                Instruction::Jmp { target: t }
-            }
-            opcodes::JZ => {
-                check!(8);
-                let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
-                pos += 8;
-                Instruction::Jz { target: t }
-            }
-            opcodes::JNZ => {
-                check!(8);
-                let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
-                pos += 8;
-                Instruction::Jnz { target: t }
-            }
-            opcodes::CALL => {
-                let object_id = decode_operand(bytes, &mut pos)?;
-                check!(8);
-                let entry_pc = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
-                pos += 8;
-                Instruction::Call { object_id, entry_pc }
-            }
-            opcodes::RETURN => Instruction::Return,
-            opcodes::JN => {
-                check!(8);
-                let t = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap()) as usize;
-                pos += 8;
-                Instruction::Jn { target: t }
-            }
-            opcodes::LOAD_STATE_U64 => {
-                check!(9);
-                let reg = bytes[pos];
-                let sid = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
-                pos += 9;
-                Instruction::LoadStateU64 { reg, state_id: sid }
-            }
-            opcodes::LOAD_STATE_BYTES => {
-                check!(9);
-                let reg = bytes[pos];
-                let sid = u64::from_le_bytes(bytes[pos+1..pos+9].try_into().unwrap());
-                pos += 9;
-                Instruction::LoadStateBytes { reg, state_id: sid }
-            }
-            opcodes::WRITE_REGISTER => {
-                check!(9);
-                let sid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                let reg = bytes[pos+8];
-                pos += 9;
-                Instruction::WriteRegister { state_id: sid, reg }
-            }
-            opcodes::COMMIT => Instruction::Commit,
-            opcodes::ABORT => Instruction::Abort { reason: crate::types::AbortReason::WriteConflict },
-            opcodes::HALT => Instruction::Halt,
-            opcodes::READ => {
-                let state_id = decode_operand(bytes, &mut pos)?;
-                Instruction::Read { state_id }
-            }
-            opcodes::WRITE => {
-                let state_id = decode_operand(bytes, &mut pos)?;
-                check!(4);
-                let len = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
-                pos += 4;
-                check!(len);
-                let payload = bytes[pos..pos+len].to_vec();
-                pos += len;
-                Instruction::Write { state_id, payload }
-            }
-            opcodes::EFFECT => {
-                check!(4);
-                let len = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
-                pos += 4;
-                check!(len);
-                let payload = bytes[pos..pos+len].to_vec();
-                pos += len;
-                Instruction::Effect { payload }
-            }
-            opcodes::OBJECT_BIRTH => {
-                check!(8);
-                let oid = u64::from_le_bytes(bytes[pos..pos+8].try_into().unwrap());
-                pos += 8;
-                Instruction::ObjectBirth { object_id: oid }
-            }
-            opcodes::OBJECT_DEATH => {
-                let object_id = decode_operand(bytes, &mut pos)?;
-                Instruction::ObjectDeath { object_id }
-            }
-            opcodes::OBJECT_LINK => {
-                let from = decode_operand(bytes, &mut pos)?;
-                let to = decode_operand(bytes, &mut pos)?;
-                check!(1);
-                let rel = bytes[pos];
-                pos += 1;
-                let link_type = match rel {
-                    0 => crate::types::LinkType::DependsOn,
-                    1 => crate::types::LinkType::Owns,
-                    2 => crate::types::LinkType::References,
-                    _ => return Err(VeritasError::EngineError(format!("Invalid LinkType: {}", rel))),
-                };
-                Instruction::ObjectLink { from, to, relation: link_type }
-            }
-            opcodes::TRAP => {
-                check!(1);
-                let service_id = bytes[pos];
-                pos += 1;
-                Instruction::Trap { service_id }
-            }
-            opcodes::HOST_CALL => {
-                check!(1);
-                let call_id = bytes[pos];
-                pos += 1;
-                Instruction::HostCall { call_id }
-            }
-            opcodes::OBJECT_FREEZE => {
-                let object_id = decode_operand(bytes, &mut pos)?;
-                Instruction::ObjectFreeze { object_id }
-            }
-            opcodes::OBJECT_UNLINK => {
-                let from = decode_operand(bytes, &mut pos)?;
-                let to = decode_operand(bytes, &mut pos)?;
-                Instruction::ObjectUnlink { from, to }
-            }
-            opcodes::CAPABILITY_GRANT => {
-                let holder = decode_operand(bytes, &mut pos)?;
-                check!(4);
-                let plen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
-                pos += 4;
-                check!(plen);
-                let perm = String::from_utf8(bytes[pos..pos+plen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in CapabilityGrant".into()))?;
-                pos += plen;
-                let resource = decode_operand(bytes, &mut pos)?;
-                Instruction::CapabilityGrant { holder, permission: perm, resource }
-            }
-            opcodes::SAVEPOINT => {
-                check!(4);
-                let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
-                pos += 4;
-                check!(nlen);
-                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in Savepoint".into()))?;
-                pos += nlen;
-                Instruction::Savepoint { name }
-            }
-            opcodes::ROLLBACK_TO => {
-                check!(4);
-                let nlen = u32::from_le_bytes(bytes[pos..pos+4].try_into().unwrap()) as usize;
-                pos += 4;
-                check!(nlen);
-                let name = String::from_utf8(bytes[pos..pos+nlen].to_vec()).map_err(|_| VeritasError::EngineError("Invalid UTF-8 in RollbackTo".into()))?;
-                pos += nlen;
-                Instruction::RollbackTo { name }
-            }
-            _ => return Err(VeritasError::EngineError(format!("Unknown opcode: 0x{:02X}", opcode))),
-        }, pos))
+        Ok((
+            match opcode {
+                opcodes::NOP => Instruction::Nop,
+                opcodes::LOAD_CONST => {
+                    check!(9);
+                    let reg = bytes[pos];
+                    let val = u64::from_le_bytes(bytes[pos + 1..pos + 9].try_into().unwrap());
+                    pos += 9;
+                    Instruction::LoadConst { reg, val }
+                }
+                opcodes::ADD => {
+                    check!(3);
+                    let (dst, s1, s2) = (bytes[pos], bytes[pos + 1], bytes[pos + 2]);
+                    pos += 3;
+                    Instruction::Add {
+                        dst,
+                        src1: s1,
+                        src2: s2,
+                    }
+                }
+                opcodes::SUB => {
+                    check!(3);
+                    let (dst, s1, s2) = (bytes[pos], bytes[pos + 1], bytes[pos + 2]);
+                    pos += 3;
+                    Instruction::Sub {
+                        dst,
+                        src1: s1,
+                        src2: s2,
+                    }
+                }
+                opcodes::CMP => {
+                    check!(2);
+                    let (s1, s2) = (bytes[pos], bytes[pos + 1]);
+                    pos += 2;
+                    Instruction::Cmp { src1: s1, src2: s2 }
+                }
+                opcodes::JMP => {
+                    check!(8);
+                    let t = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+                    pos += 8;
+                    Instruction::Jmp { target: t }
+                }
+                opcodes::JZ => {
+                    check!(8);
+                    let t = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+                    pos += 8;
+                    Instruction::Jz { target: t }
+                }
+                opcodes::JNZ => {
+                    check!(8);
+                    let t = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+                    pos += 8;
+                    Instruction::Jnz { target: t }
+                }
+                opcodes::CALL => {
+                    let object_id = decode_operand(bytes, &mut pos)?;
+                    check!(8);
+                    let entry_pc =
+                        u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+                    pos += 8;
+                    Instruction::Call {
+                        object_id,
+                        entry_pc,
+                    }
+                }
+                opcodes::RETURN => Instruction::Return,
+                opcodes::JN => {
+                    check!(8);
+                    let t = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+                    pos += 8;
+                    Instruction::Jn { target: t }
+                }
+                opcodes::LOAD_STATE_U64 => {
+                    check!(9);
+                    let reg = bytes[pos];
+                    let sid = u64::from_le_bytes(bytes[pos + 1..pos + 9].try_into().unwrap());
+                    pos += 9;
+                    Instruction::LoadStateU64 { reg, state_id: sid }
+                }
+                opcodes::LOAD_STATE_BYTES => {
+                    check!(9);
+                    let reg = bytes[pos];
+                    let sid = u64::from_le_bytes(bytes[pos + 1..pos + 9].try_into().unwrap());
+                    pos += 9;
+                    Instruction::LoadStateBytes { reg, state_id: sid }
+                }
+                opcodes::WRITE_REGISTER => {
+                    check!(9);
+                    let sid = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
+                    let reg = bytes[pos + 8];
+                    pos += 9;
+                    Instruction::WriteRegister { state_id: sid, reg }
+                }
+                opcodes::COMMIT => Instruction::Commit,
+                opcodes::ABORT => Instruction::Abort {
+                    reason: crate::types::AbortReason::WriteConflict,
+                },
+                opcodes::HALT => Instruction::Halt,
+                opcodes::READ => {
+                    let state_id = decode_operand(bytes, &mut pos)?;
+                    Instruction::Read { state_id }
+                }
+                opcodes::WRITE => {
+                    let state_id = decode_operand(bytes, &mut pos)?;
+                    check!(4);
+                    let len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    check!(len);
+                    let payload = bytes[pos..pos + len].to_vec();
+                    pos += len;
+                    Instruction::Write { state_id, payload }
+                }
+                opcodes::EFFECT => {
+                    check!(4);
+                    let len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    check!(len);
+                    let payload = bytes[pos..pos + len].to_vec();
+                    pos += len;
+                    Instruction::Effect { payload }
+                }
+                opcodes::OBJECT_BIRTH => {
+                    check!(8);
+                    let oid = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
+                    pos += 8;
+                    Instruction::ObjectBirth { object_id: oid }
+                }
+                opcodes::OBJECT_DEATH => {
+                    let object_id = decode_operand(bytes, &mut pos)?;
+                    Instruction::ObjectDeath { object_id }
+                }
+                opcodes::OBJECT_LINK => {
+                    let from = decode_operand(bytes, &mut pos)?;
+                    let to = decode_operand(bytes, &mut pos)?;
+                    check!(1);
+                    let rel = bytes[pos];
+                    pos += 1;
+                    let link_type = match rel {
+                        0 => crate::types::LinkType::DependsOn,
+                        1 => crate::types::LinkType::Owns,
+                        2 => crate::types::LinkType::References,
+                        _ => {
+                            return Err(VeritasError::EngineError(format!(
+                                "Invalid LinkType: {}",
+                                rel
+                            )))
+                        }
+                    };
+                    Instruction::ObjectLink {
+                        from,
+                        to,
+                        relation: link_type,
+                    }
+                }
+                opcodes::TRAP => {
+                    check!(1);
+                    let service_id = bytes[pos];
+                    pos += 1;
+                    Instruction::Trap { service_id }
+                }
+                opcodes::HOST_CALL => {
+                    check!(1);
+                    let call_id = bytes[pos];
+                    pos += 1;
+                    Instruction::HostCall { call_id }
+                }
+                opcodes::OBJECT_FREEZE => {
+                    let object_id = decode_operand(bytes, &mut pos)?;
+                    Instruction::ObjectFreeze { object_id }
+                }
+                opcodes::OBJECT_UNLINK => {
+                    let from = decode_operand(bytes, &mut pos)?;
+                    let to = decode_operand(bytes, &mut pos)?;
+                    Instruction::ObjectUnlink { from, to }
+                }
+                opcodes::CAPABILITY_GRANT => {
+                    let holder = decode_operand(bytes, &mut pos)?;
+                    check!(4);
+                    let plen = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    check!(plen);
+                    let perm =
+                        String::from_utf8(bytes[pos..pos + plen].to_vec()).map_err(|_| {
+                            VeritasError::EngineError("Invalid UTF-8 in CapabilityGrant".into())
+                        })?;
+                    pos += plen;
+                    let resource = decode_operand(bytes, &mut pos)?;
+                    Instruction::CapabilityGrant {
+                        holder,
+                        permission: perm,
+                        resource,
+                    }
+                }
+                opcodes::SAVEPOINT => {
+                    check!(4);
+                    let nlen = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    check!(nlen);
+                    let name =
+                        String::from_utf8(bytes[pos..pos + nlen].to_vec()).map_err(|_| {
+                            VeritasError::EngineError("Invalid UTF-8 in Savepoint".into())
+                        })?;
+                    pos += nlen;
+                    Instruction::Savepoint { name }
+                }
+                opcodes::ROLLBACK_TO => {
+                    check!(4);
+                    let nlen = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    check!(nlen);
+                    let name =
+                        String::from_utf8(bytes[pos..pos + nlen].to_vec()).map_err(|_| {
+                            VeritasError::EngineError("Invalid UTF-8 in RollbackTo".into())
+                        })?;
+                    pos += nlen;
+                    Instruction::RollbackTo { name }
+                }
+                _ => {
+                    return Err(VeritasError::EngineError(format!(
+                        "Unknown opcode: 0x{:02X}",
+                        opcode
+                    )))
+                }
+            },
+            pos,
+        ))
     }
 }
 
@@ -402,10 +467,17 @@ mod tests {
     fn test_p15_1_codec_roundtrip() {
         let insts = vec![
             Instruction::LoadConst { reg: 0, val: 55 },
-            Instruction::Add { dst: 2, src1: 0, src2: 1 },
+            Instruction::Add {
+                dst: 2,
+                src1: 0,
+                src2: 1,
+            },
             Instruction::Cmp { src1: 1, src2: 3 },
             Instruction::Jnz { target: 4 },
-            Instruction::WriteRegister { state_id: 100, reg: 2 },
+            Instruction::WriteRegister {
+                state_id: 100,
+                reg: 2,
+            },
             Instruction::Commit,
             Instruction::Halt,
         ];

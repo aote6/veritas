@@ -8,8 +8,15 @@ pub struct Runtime;
 
 #[derive(Debug, Clone)]
 pub enum ExecutionOutcome {
-    Completed { pc: usize, r0: u64 },
-    Trapped { pc: usize, reason: crate::types::TrapReason, r0: u64 },
+    Completed {
+        pc: usize,
+        r0: u64,
+    },
+    Trapped {
+        pc: usize,
+        reason: crate::types::TrapReason,
+        r0: u64,
+    },
 }
 
 impl Runtime {

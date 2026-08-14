@@ -56,7 +56,9 @@ impl StateStore {
     /// 不持有锁——调用方负责排序和哈希。
     pub fn all_entries(&self) -> Vec<(Address, StateEntry)> {
         let map = self.map.lock().unwrap();
-        map.iter().map(|(addr, entry)| (*addr, entry.clone())).collect()
+        map.iter()
+            .map(|(addr, entry)| (*addr, entry.clone()))
+            .collect()
     }
 
     /// 获取所有状态（用于恢复）
@@ -67,7 +69,9 @@ impl StateStore {
     /// 导出完整快照（含 version），供 WorldSnapshot 使用。
     pub fn snapshot(&self) -> Vec<(Address, StateEntry)> {
         let map = self.map.lock().unwrap();
-        map.iter().map(|(addr, entry)| (*addr, entry.clone())).collect()
+        map.iter()
+            .map(|(addr, entry)| (*addr, entry.clone()))
+            .collect()
     }
 
     /// 从完整快照恢复（含真实 version），清空后重建。
@@ -75,10 +79,13 @@ impl StateStore {
         let mut map = self.map.lock().unwrap();
         map.clear();
         for (addr, entry) in entries {
-            map.insert(*addr, StateEntry {
-                value: entry.value.clone(),
-                version: entry.version,
-            });
+            map.insert(
+                *addr,
+                StateEntry {
+                    value: entry.value.clone(),
+                    version: entry.version,
+                },
+            );
         }
     }
 

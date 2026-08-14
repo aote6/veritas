@@ -37,8 +37,12 @@ pub struct TraceRecorder {
 }
 
 impl TraceRecorder {
-    pub fn new() -> Self { Self::default() }
-    pub fn push(&mut self, t: InstructionTrace) { self.traces.push(t); }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn push(&mut self, t: InstructionTrace) {
+        self.traces.push(t);
+    }
     pub fn trace_hash(&self) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
         for t in &self.traces {
@@ -57,7 +61,8 @@ mod tests {
     #[test]
     fn test_trace_hash_deterministic() {
         let t1 = InstructionTrace {
-            pc: 0, opcode: 0x01,
+            pc: 0,
+            opcode: 0x01,
             instruction: Instruction::LoadConst { reg: 0, val: 42 },
             registers_before: [0; 8],
             registers_after: [42, 0, 0, 0, 0, 0, 0, 0],

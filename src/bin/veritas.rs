@@ -1,11 +1,11 @@
 use std::env;
 use std::fs;
 use std::process;
-use veritas_kernel::assembler::assemble_module;
-use veritas_kernel::module::{ModuleImage, ModuleLoader};
-use veritas_kernel::kernel::Kernel;
-use veritas_kernel::runtime::{Runtime, ExecutionOutcome};
 use std::sync::Arc;
+use veritas_kernel::assembler::assemble_module;
+use veritas_kernel::kernel::Kernel;
+use veritas_kernel::module::{ModuleImage, ModuleLoader};
+use veritas_kernel::runtime::{ExecutionOutcome, Runtime};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -55,10 +55,14 @@ fn run_command(args: &[String]) -> Result<(), String> {
             let kernel = get_kernel(args, 3);
             let bytes = fs::read(&args[2]).map_err(|e| format!("read vmod: {}", e))?;
             let mut loader = ModuleLoader::new();
-            let name = loader.load_and_install(&bytes).map_err(|e| format!("load: {:?}", e))?;
-            let loaded = loader.get_module(&name).ok_or("module not found after install")?;
-            let outcome = Runtime::execute(&kernel, &loaded.image)
-                .map_err(|e| format!("exec: {:?}", e))?;
+            let name = loader
+                .load_and_install(&bytes)
+                .map_err(|e| format!("load: {:?}", e))?;
+            let loaded = loader
+                .get_module(&name)
+                .ok_or("module not found after install")?;
+            let outcome =
+                Runtime::execute(&kernel, &loaded.image).map_err(|e| format!("exec: {:?}", e))?;
             match outcome {
                 ExecutionOutcome::Completed { pc, r0 } => {
                     println!("finished pc={} r0={}", pc, r0);
@@ -78,17 +82,22 @@ fn run_command(args: &[String]) -> Result<(), String> {
             let bytes = fs::read(&args[2]).map_err(|e| format!("read vmod: {}", e))?;
             let m = ModuleImage::decode_file(&bytes).map_err(|e| format!("decode: {:?}", e))?;
             println!("name: {}", m.name);
-            println!("version: {}.{}.{}", m.version.major, m.version.minor, m.version.patch);
+            println!(
+                "version: {}.{}.{}",
+                m.version.major, m.version.minor, m.version.patch
+            );
             println!("instructions: {}", m.program_image.instructions.len());
         }
         "inspect" => {
-            let wal = if args.len() > 2 && !args[2].starts_with("list") && !args[2].starts_with("object") {
-                Some(args[2].clone())
-            } else if let Ok(w) = env::var("VERITAS_WAL") {
-                Some(w)
-            } else {
-                None
-            };
+            let wal =
+                if args.len() > 2 && !args[2].starts_with("list") && !args[2].starts_with("object")
+                {
+                    Some(args[2].clone())
+                } else if let Ok(w) = env::var("VERITAS_WAL") {
+                    Some(w)
+                } else {
+                    None
+                };
             let sub = if wal.is_some() && args.len() > 3 {
                 args[3].clone()
             } else if wal.is_none() && args.len() > 2 {

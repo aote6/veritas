@@ -210,7 +210,7 @@ fn equivalence_multi_object_topology() {
         let a = commit_birth(e);
         let b = commit_birth_under(e, a);
         let c = commit_birth_under(e, a);
-        
+
         // a 授权 b 可以 link c
         let mut tx = e.test_begin_in_object(a);
         e.handle(
@@ -221,7 +221,8 @@ fn equivalence_multi_object_topology() {
                 capability_type: "AdminCap".to_string(),
                 resource: c,
             },
-        ).unwrap();
+        )
+        .unwrap();
         e.handle(&mut tx, KernelCall::Commit).unwrap();
 
         commit_link(e, a, b, LinkType::Owns);

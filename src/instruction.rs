@@ -1,5 +1,5 @@
-use crate::types::{StateId, ObjectId, LinkType};
 use crate::types::AbortReason;
+use crate::types::{LinkType, ObjectId, StateId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Opcode {
@@ -43,40 +43,108 @@ pub enum Operand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    Read { state_id: Operand },
-    Write { state_id: Operand, payload: Vec<u8> },
-    Effect { payload: Vec<u8> },
-    ObjectBirth { object_id: ObjectId },
-    ObjectDeath { object_id: Operand },
-    Trap { service_id: u8 },
-    HostCall { call_id: u8 },
-    ObjectFreeze { object_id: Operand },
-    ObjectLink { from: Operand, to: Operand, relation: LinkType },
-    ObjectUnlink { from: Operand, to: Operand },
-    CapabilityGrant { holder: Operand, permission: String, resource: Operand },
-    Savepoint { name: String },
-    RollbackTo { name: String },
+    Read {
+        state_id: Operand,
+    },
+    Write {
+        state_id: Operand,
+        payload: Vec<u8>,
+    },
+    Effect {
+        payload: Vec<u8>,
+    },
+    ObjectBirth {
+        object_id: ObjectId,
+    },
+    ObjectDeath {
+        object_id: Operand,
+    },
+    Trap {
+        service_id: u8,
+    },
+    HostCall {
+        call_id: u8,
+    },
+    ObjectFreeze {
+        object_id: Operand,
+    },
+    ObjectLink {
+        from: Operand,
+        to: Operand,
+        relation: LinkType,
+    },
+    ObjectUnlink {
+        from: Operand,
+        to: Operand,
+    },
+    CapabilityGrant {
+        holder: Operand,
+        permission: String,
+        resource: Operand,
+    },
+    Savepoint {
+        name: String,
+    },
+    RollbackTo {
+        name: String,
+    },
     /// 切换当前执行上下文到目标Object，跳转到entry_pc继续执行。
     /// 对应module.md第6节"跨Module调用"设计的最小可用实现：
     /// 暂不涉及独立代码空间，仅切换current_object + 维护调用栈。
-    Call { object_id: Operand, entry_pc: usize },
+    Call {
+        object_id: Operand,
+        entry_pc: usize,
+    },
     /// 从Call返回：恢复调用前的current_object和pc。
     Return,
     Nop,
-    LoadConst { reg: u8, val: u64 },
-    Add { dst: u8, src1: u8, src2: u8 },
-    Sub { dst: u8, src1: u8, src2: u8 },
-    Cmp { src1: u8, src2: u8 },
-    LoadStateU64 { reg: u8, state_id: StateId },
-    LoadStateBytes { reg: u8, state_id: StateId },
-    WriteRegister { state_id: StateId, reg: u8 },
-    Jmp { target: usize },
-    Jz { target: usize },
-    Jnz { target: usize },
-    Jn { target: usize },
+    LoadConst {
+        reg: u8,
+        val: u64,
+    },
+    Add {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Sub {
+        dst: u8,
+        src1: u8,
+        src2: u8,
+    },
+    Cmp {
+        src1: u8,
+        src2: u8,
+    },
+    LoadStateU64 {
+        reg: u8,
+        state_id: StateId,
+    },
+    LoadStateBytes {
+        reg: u8,
+        state_id: StateId,
+    },
+    WriteRegister {
+        state_id: StateId,
+        reg: u8,
+    },
+    Jmp {
+        target: usize,
+    },
+    Jz {
+        target: usize,
+    },
+    Jnz {
+        target: usize,
+    },
+    Jn {
+        target: usize,
+    },
     Halt,
     Commit,
-    Abort { reason: AbortReason },
+    Abort {
+        reason: AbortReason,
+    },
 }
 
 impl Instruction {

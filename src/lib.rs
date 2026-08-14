@@ -1,41 +1,40 @@
-pub mod runtime;
-pub mod module;
-pub mod memory;
-pub mod machine;
+pub mod assembler;
 pub mod instruction;
 pub mod instruction_codec;
-pub mod assembler;
+pub mod machine;
+pub mod memory;
+pub mod module;
 pub mod program;
+pub mod runtime;
 pub mod verifier;
 // Veritas Kernel V0.2 - 主入口
 
-pub mod engine;
-pub mod kernel;
-pub mod types;
-pub mod wal;
-pub mod view;
-pub mod guard;
-pub mod lock;
+pub mod capability;
 pub mod controller;
-pub mod tx_manager;
+pub mod effect;
+pub mod engine;
+pub mod extension;
+pub mod guard;
+pub mod kernel;
+pub mod lock;
 pub mod scope;
 pub mod scope_registry;
-pub mod capability;
-pub mod effect;
 pub mod store;
-pub mod extension;
-pub mod world_api;
 pub mod test_api;
+pub mod tx_manager;
+pub mod types;
+pub mod view;
+pub mod wal;
+pub mod world_api;
 
 use types::*;
 // use engine::VeritasEngine;
 
-
 #[cfg(test)]
 mod integration_tests {
     use crate::assembler::assemble;
+    use crate::machine::{Machine, RegisterValue};
     use crate::program::ProgramImage;
-        use crate::machine::{Machine, RegisterValue};
 
     #[test]
     fn test_e2e_asm_to_machine() {
@@ -107,12 +106,13 @@ HALT";
         machine.ram_mut().write_bytes(0, &[0xEE]).unwrap();
         machine.set_pc(0);
         machine.step().unwrap();
-        assert!(matches!(machine.status(), crate::machine::MachineStatus::Trapped(_)));
-
+        assert!(matches!(
+            machine.status(),
+            crate::machine::MachineStatus::Trapped(_)
+        ));
     }
 }
-pub mod trace;
-pub mod execution;
 pub mod event;
+pub mod execution;
 pub mod receipt;
-
+pub mod trace;

@@ -13,9 +13,8 @@ use std::sync::Arc;
 use veritas_kernel::kernel::{Kernel, KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::{
-    AccessIntent, Address, LinkType, ObjectType, PendingCapabilityDelegate,
-    PendingCapabilityGrant, PendingCapabilityRevoke, ScopeChangeType, TransactionDelta,
-    VeritasError, ZERO_HASH,
+    AccessIntent, Address, LinkType, ObjectType, PendingCapabilityDelegate, PendingCapabilityGrant,
+    PendingCapabilityRevoke, ScopeChangeType, TransactionDelta, VeritasError, ZERO_HASH,
 };
 use veritas_kernel::wal::WalEntry;
 use veritas_kernel::world_api::WorldService;
@@ -277,9 +276,14 @@ fn audit_link_worldservice_succeeds_with_target_cap() {
     world
         .tx_link(sid, a, b, "OWNS")
         .expect("stage link with creator pending AdminCap");
-    world.tx_commit(sid).expect("commit with target cap must succeed");
+    world
+        .tx_commit(sid)
+        .expect("commit with target cap must succeed");
 
-    assert!(kernel.has_link(a, b), "link must exist after authorized commit");
+    assert!(
+        kernel.has_link(a, b),
+        "link must exist after authorized commit"
+    );
     cleanup(&wal);
 }
 
@@ -419,7 +423,10 @@ fn audit_recovery_restores_global_version() {
         final_version = kernel.get_global_version();
         final_root = kernel.state_root();
         object_count = kernel.list_object_ids().len();
-        assert!(final_version >= 5, "expected version >= 5, got {final_version}");
+        assert!(
+            final_version >= 5,
+            "expected version >= 5, got {final_version}"
+        );
         assert_eq!(
             versions_before.last().copied().unwrap(),
             final_version,
@@ -630,10 +637,7 @@ fn audit_wal_duplicate_transaction_committed() {
         .to_string();
     {
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&wal)
-            .unwrap();
+        let mut f = std::fs::OpenOptions::new().append(true).open(&wal).unwrap();
         writeln!(f, "{}", last).unwrap();
         writeln!(f, "{}", last).unwrap();
     }
@@ -899,8 +903,7 @@ fn audit_wal_empty_delta_bumps_version() {
     );
     // Version gap must be rejected: global_version stays at pre-gap value.
     assert_eq!(
-        v,
-        snap.version,
+        v, snap.version,
         "version-gap empty TransactionCommitted must be rejected; global_version must not jump"
     );
     // Objects unchanged.
@@ -947,10 +950,7 @@ fn audit_wal_corrupt_crc_preserves_prior() {
     // Append a line with valid-looking structure but wrong CRC.
     {
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&wal)
-            .unwrap();
+        let mut f = std::fs::OpenOptions::new().append(true).open(&wal).unwrap();
         // LEN/CRC mismatch — deserializer returns None → recover stops reading further.
         writeln!(
             f,
@@ -1015,14 +1015,14 @@ fn audit_write_cross_object_still_denied() {
     world.tx_commit(sid0).unwrap();
     let sid1 = world.tx_begin(None).unwrap();
     let b = world.tx_create_object(sid1).unwrap();
-    world.tx_write(sid1, 0, b"secret".to_vec(), Some(b)).unwrap();
+    world
+        .tx_write(sid1, 0, b"secret".to_vec(), Some(b))
+        .unwrap();
     world.tx_commit(sid1).unwrap();
     let root = kernel.state_root();
 
     let sid = world.tx_begin(Some(a)).unwrap();
-    assert!(world
-        .tx_write(sid, 0, b"hack".to_vec(), Some(b))
-        .is_err());
+    assert!(world.tx_write(sid, 0, b"hack".to_vec(), Some(b)).is_err());
     let _ = world.tx_abort(sid);
     assert_eq!(kernel.state_root(), root);
     cleanup(&wal);
@@ -1080,7 +1080,11 @@ fn make_delta(
 fn audit_commit_version_first_apply() {
     let (wal, kernel, _world) = world_pair("cv_first");
 
-    assert_eq!(kernel.get_global_version(), 0, "precondition: start at version 0");
+    assert_eq!(
+        kernel.get_global_version(),
+        0,
+        "precondition: start at version 0"
+    );
     let before = snapshot_world(&kernel);
 
     // Minimal new delta at version 1: birth object 1
@@ -1301,8 +1305,30 @@ fn audit_stale_version_is_rejected() {
     let (wal, kernel, _world) = world_pair("cv_stale");
 
     // Advance to version 2
-    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]));
-    kernel.test_apply(&make_delta(2, 2, 0, vec![], vec![2], vec![], vec![], vec![], vec![], vec![]));
+    kernel.test_apply(&make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![1],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    ));
+    kernel.test_apply(&make_delta(
+        2,
+        2,
+        0,
+        vec![],
+        vec![2],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    ));
     assert_eq!(kernel.get_global_version(), 2);
 
     let snap_before = snapshot_world(&kernel);
@@ -1346,8 +1372,30 @@ fn audit_stale_version_is_rejected() {
 fn audit_version_gap_is_rejected() {
     let (wal, kernel, _world) = world_pair("cv_gap");
 
-    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]));
-    kernel.test_apply(&make_delta(2, 2, 0, vec![], vec![2], vec![], vec![], vec![], vec![], vec![]));
+    kernel.test_apply(&make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![1],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    ));
+    kernel.test_apply(&make_delta(
+        2,
+        2,
+        0,
+        vec![],
+        vec![2],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    ));
     assert_eq!(kernel.get_global_version(), 2);
 
     let snap_before = snapshot_world(&kernel);
@@ -1397,7 +1445,18 @@ fn audit_version_gap_is_rejected() {
 fn audit_repeated_wal_replay_is_idempotent() {
     let (wal, kernel, _world) = world_pair("cv_replay");
 
-    let a = make_delta(1, 1, 0, vec![], vec![11], vec![], vec![], vec![], vec![], vec![]);
+    let a = make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![11],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     let b = make_delta(
         2,
         2,
@@ -1446,7 +1505,18 @@ fn audit_rejected_delta_is_atomic() {
     let (wal, kernel, _world) = world_pair("cv_atomic");
 
     // Known baseline: version 1 with object 7
-    kernel.test_apply(&make_delta(1, 1, 0, vec![], vec![7], vec![], vec![], vec![], vec![], vec![]));
+    kernel.test_apply(&make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![7],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    ));
     assert_eq!(kernel.get_global_version(), 1);
 
     let snap_before = snapshot_world(&kernel);
@@ -1676,10 +1746,7 @@ fn audit_canonical_identity_string_boundary_safe() {
     );
 
     let mut c = empty_delta(1, 1);
-    c.effects = vec![
-        ("a".to_string(), b"b".to_vec()),
-        ("c".to_string(), vec![]),
-    ];
+    c.effects = vec![("a".to_string(), b"b".to_vec()), ("c".to_string(), vec![])];
     assert_ne!(a.canonical_identity_bytes(), c.canonical_identity_bytes());
 }
 
@@ -1871,7 +1938,18 @@ fn audit_last_applied_delta_hash_genesis_is_zero() {
 #[test]
 fn audit_last_applied_delta_hash_updates_on_apply() {
     let (wal, kernel, _world) = world_pair("lah_apply");
-    let d = make_delta(1, 1, 0, vec![], vec![1], vec![], vec![], vec![], vec![], vec![]);
+    let d = make_delta(
+        1,
+        1,
+        0,
+        vec![],
+        vec![1],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     let expected = d.content_hash();
     kernel.test_apply(&d);
     assert_eq!(
@@ -1887,7 +1965,18 @@ fn audit_last_applied_delta_hash_updates_on_apply() {
 #[test]
 fn audit_checkpoint_preserves_last_applied_delta_hash() {
     let (wal, kernel, _world) = world_pair("lah_ckpt");
-    let d = make_delta(1, 1, 5, vec![], vec![11], vec![], vec![], vec![], vec![], vec![]);
+    let d = make_delta(
+        1,
+        1,
+        5,
+        vec![],
+        vec![11],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     kernel.test_apply(&d);
     let h = kernel.get_last_applied_delta_hash();
     assert_ne!(h, ZERO_HASH);
@@ -1898,7 +1987,18 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
         "create_checkpoint must persist last_applied_delta_hash"
     );
 
-    let d2 = make_delta(2, 2, 5, vec![], vec![12], vec![], vec![], vec![], vec![], vec![]);
+    let d2 = make_delta(
+        2,
+        2,
+        5,
+        vec![],
+        vec![12],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     kernel.test_apply(&d2);
     assert_ne!(kernel.get_last_applied_delta_hash(), h);
 
@@ -1917,7 +2017,18 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
 #[test]
 fn audit_checkpoint_roundtrip_identity_continuity() {
     let (wal, kernel, _world) = world_pair("lah_roundtrip");
-    let d = make_delta(1, 1, 9, vec![], vec![21], vec![], vec![], vec![], vec![], vec![]);
+    let d = make_delta(
+        1,
+        1,
+        9,
+        vec![],
+        vec![21],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     kernel.test_apply(&d);
     let hash_a = kernel.get_last_applied_delta_hash();
     let ver_a = kernel.get_global_version();
@@ -1925,7 +2036,18 @@ fn audit_checkpoint_roundtrip_identity_continuity() {
 
     let snap = kernel.create_checkpoint();
 
-    let d2 = make_delta(2, 2, 9, vec![], vec![22], vec![], vec![], vec![], vec![], vec![]);
+    let d2 = make_delta(
+        2,
+        2,
+        9,
+        vec![],
+        vec![22],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     kernel.test_apply(&d2);
     assert_ne!(kernel.get_last_applied_delta_hash(), hash_a);
 

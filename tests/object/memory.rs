@@ -1,6 +1,6 @@
 use crate::common::new_kernel;
-use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::kernel::{KernelCall, TrapResult};
+use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 
 #[test]
@@ -9,15 +9,29 @@ fn memory_isolated_per_object() {
     let root = tk.root_object;
 
     let mut tx = tk.kernel.test_begin_in_object(root);
-    let a = match tk.kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap() {
+    let a = match tk
+        .kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    let b = match tk.kernel.handle(&mut tx, KernelCall::ObjectBirth {
-        object_type: ObjectType::StateObject,
-    }).unwrap() {
+    let b = match tk
+        .kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };

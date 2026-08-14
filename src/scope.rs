@@ -58,12 +58,9 @@ impl ScopeExt for VeritasEngine {
             return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
         }
         let id = scope_state_id(scope_name);
-        let (members, struct_version) = self
-            .scope_registry()
-            .snapshot(id)
-            .ok_or_else(|| {
-                VeritasError::EngineError(format!("scope '{}' not found", scope_name))
-            })?;
+        let (members, struct_version) = self.scope_registry().snapshot(id).ok_or_else(|| {
+            VeritasError::EngineError(format!("scope '{}' not found", scope_name))
+        })?;
 
         ctx.read_set.scopes.insert(id, struct_version);
         Ok(members)

@@ -23,7 +23,11 @@ impl<'a> TransactionObjectView<'a> {
         pending_births: &'a [ObjectId],
         pending_deaths: &'a [ObjectId],
     ) -> Self {
-        Self { registry, pending_births, pending_deaths }
+        Self {
+            registry,
+            pending_births,
+            pending_deaths,
+        }
     }
 }
 
@@ -35,7 +39,10 @@ impl<'a> ObjectView for TransactionObjectView<'a> {
         if self.pending_births.contains(&id) {
             return true;
         }
-        self.registry.get(&id).map(|r| r.is_alive()).unwrap_or(false)
+        self.registry
+            .get(&id)
+            .map(|r| r.is_alive())
+            .unwrap_or(false)
     }
 
     fn is_dead(&self, id: ObjectId) -> bool {
