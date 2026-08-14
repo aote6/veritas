@@ -22,6 +22,25 @@ fn birth(kernel: &Kernel) -> u64 {
     id
 }
 
+/// Birth an object under `creator` so creator receives AdminCap on the newborn.
+fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(creator);
+    let id = match kernel
+        .handle(
+            &mut tx,
+            KernelCall::ObjectBirth {
+                object_type: ObjectType::StateObject,
+            },
+        )
+        .unwrap()
+    {
+        TrapResult::ObjectId(id) => id,
+        _ => panic!("expected ObjectId"),
+    };
+    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    id
+}
+
 fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
     let mut tx = kernel.test_begin();
     kernel
@@ -38,15 +57,17 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
-fn grant(kernel: &Kernel, grantee: u64, cap_type: &str, resource: u64) -> u64 {
-    let mut tx = kernel.test_begin();
+/// STRICT: grantor must hold active AdminCap(resource).
+/// Callers must birth resource under grantor (via birth_under).
+fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
+    let mut tx = kernel.test_begin_in_object(grantor);
     let cap_id = match kernel
         .handle(
             &mut tx,
             KernelCall::CapabilityGrant {
-                grantor: grantee,
+                grantor,
                 grantee,
-                capability_type: cap_type.to_string(),
+                capability_type: "read".into(),
                 resource,
             },
         )
@@ -73,9 +94,9 @@ fn kernel_capability_revoke_cascade_downstream() {
     let o1 = birth(&kernel);
     let o2 = birth(&kernel);
     let o3 = birth(&kernel);
-    let resource = birth(&kernel);
+    let resource = birth_under(&kernel, o1);
 
-    let cap = grant(&kernel, o1, "read", resource);
+    let cap = grant(&kernel, o1, o1, resource);
     assert!(kernel.test_engine().holds_capability(cap, o1));
 
     delegate(&kernel, cap, o1, o2, true);
@@ -115,9 +136,9 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
     let o1 = birth(&kernel);
     let o2 = birth(&kernel);
     let o3 = birth(&kernel);
-    let resource = birth(&kernel);
+    let resource = birth_under(&kernel, o1);
 
-    let cap = grant(&kernel, o1, "read", resource);
+    let cap = grant(&kernel, o1, o1, resource);
     delegate(&kernel, cap, o1, o2, false);
     delegate(&kernel, cap, o2, o3, true);
 
@@ -155,8 +176,8 @@ fn kernel_capability_revoke_survives_checkpoint() {
 
     let o1 = birth(&kernel);
     let o2 = birth(&kernel);
-    let resource = birth(&kernel);
-    let cap = grant(&kernel, o1, "read", resource);
+    let resource = birth_under(&kernel, o1);
+    let cap = grant(&kernel, o1, o1, resource);
     delegate(&kernel, cap, o1, o2, true);
 
     let mut tx = kernel.test_begin();
@@ -201,8 +222,8 @@ fn kernel_capability_revoke_wal_replay() {
     let kernel = Kernel::with_wal_path(wal.clone());
 
     let o1 = birth(&kernel);
-    let resource = birth(&kernel);
-    let cap = grant(&kernel, o1, "read", resource);
+    let resource = birth_under(&kernel, o1);
+    let cap = grant(&kernel, o1, o1, resource);
     assert!(kernel.test_engine().holds_capability(cap, o1));
 
     let mut tx = kernel.test_begin();
@@ -240,8 +261,8 @@ fn kernel_capability_revoke_not_holder_errors() {
 
     let o1 = birth(&kernel);
     let o2 = birth(&kernel);
-    let resource = birth(&kernel);
-    let cap = grant(&kernel, o1, "read", resource);
+    let resource = birth_under(&kernel, o1);
+    let cap = grant(&kernel, o1, o1, resource);
 
     let mut tx = kernel.test_begin();
     let err = kernel.handle(
