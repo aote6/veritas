@@ -4,14 +4,14 @@
 
 | Test ID | Category | Layer | TestWorld | Requirement |
 |---|---|---|---|---|
-| tests/call_access_intent.rs::call_after_delegate_succeeds | | | | |
-| tests/call_access_intent.rs::call_after_revoke_fails | | | | |
-| tests/call_access_intent.rs::call_intent_collected_in_verify_path | | | | |
-| tests/call_access_intent.rs::call_permission_survives_checkpoint | | | | |
-| tests/call_access_intent.rs::call_permission_survives_wal_replay | | | | |
-| tests/call_access_intent.rs::call_self_is_exempt | | | | |
-| tests/call_access_intent.rs::call_with_capability_succeeds | | | | |
-| tests/call_access_intent.rs::call_without_capability_fails | | | | |
+| tests/call_access_intent.rs::call_after_delegate_succeeds | B | capability | FORBIDDEN | CAP-02 |
+| tests/call_access_intent.rs::call_after_revoke_fails | B | capability | FORBIDDEN | CAP-03 |
+| tests/call_access_intent.rs::call_intent_collected_in_verify_path | B | capability | FORBIDDEN | CAP-05 |
+| tests/call_access_intent.rs::call_permission_survives_checkpoint | B | recovery | FORBIDDEN | CAP-04 |
+| tests/call_access_intent.rs::call_permission_survives_wal_replay | B | recovery | FORBIDDEN | CAP-04 |
+| tests/call_access_intent.rs::call_self_is_exempt | B | capability | FORBIDDEN | CAP-01 |
+| tests/call_access_intent.rs::call_with_capability_succeeds | B | capability | FORBIDDEN | CAP-01 |
+| tests/call_access_intent.rs::call_without_capability_fails | B | capability | FORBIDDEN | CAP-01 |
 | tests/capability_delegate_p4_recovery.rs::t1_delegate_survives_checkpoint | | | | |
 | tests/capability_delegate_p4_recovery.rs::t2_multilevel_delegate_tree | | | | |
 | tests/capability_delegate_p4_recovery.rs::t3_cascade_revoke | | | | |

@@ -100,6 +100,10 @@ fn load_call_program(machine: &mut Machine, callee: u64, entry_pc: usize) {
 }
 
 /// 1. No Call capability → CALL traps AccessDenied
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-01
 #[test]
 fn call_without_capability_fails() {
     let kernel = Kernel::with_wal_path(temp_wal("call_no_cap"));
@@ -118,6 +122,10 @@ fn call_without_capability_fails() {
 }
 
 /// 2. With capability on callee resource → CALL succeeds
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-01
 #[test]
 fn call_with_capability_succeeds() {
     let kernel = Kernel::with_wal_path(temp_wal("call_with_cap"));
@@ -150,6 +158,10 @@ fn call_with_capability_succeeds() {
 }
 
 /// 3. After Delegate, delegated holder can CALL
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-02
 #[test]
 fn call_after_delegate_succeeds() {
     let kernel = Kernel::with_wal_path(temp_wal("call_delegate"));
@@ -195,6 +207,10 @@ fn call_after_delegate_succeeds() {
 }
 
 /// 4. After Revoke, CALL fails immediately
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-03
 #[test]
 fn call_after_revoke_fails() {
     let kernel = Kernel::with_wal_path(temp_wal("call_revoke"));
@@ -260,6 +276,10 @@ fn call_after_revoke_fails() {
 }
 
 /// 5. Checkpoint restore preserves CALL authorization
+/// @category: B
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: CAP-04
 #[test]
 fn call_permission_survives_checkpoint() {
     let kernel = Kernel::with_wal_path(temp_wal("call_ckpt"));
@@ -291,6 +311,10 @@ fn call_permission_survives_checkpoint() {
 }
 
 /// 6. WAL replay preserves CALL authorization
+/// @category: B
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: CAP-04
 #[test]
 fn call_permission_survives_wal_replay() {
     let wal = temp_wal("call_wal");
@@ -307,6 +331,10 @@ fn call_permission_survives_wal_replay() {
 }
 
 /// AccessIntent::Call is collected and verified at commit
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-05
 #[test]
 fn call_intent_collected_in_verify_path() {
     let kernel = Kernel::with_wal_path(temp_wal("call_collect"));
@@ -324,6 +352,10 @@ fn call_intent_collected_in_verify_path() {
 }
 
 /// Self-call is exempt (structural)
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-01
 #[test]
 fn call_self_is_exempt() {
     let kernel = Kernel::with_wal_path(temp_wal("call_self"));
