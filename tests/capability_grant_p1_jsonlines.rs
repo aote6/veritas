@@ -14,6 +14,10 @@ use std::process::{Command, Stdio};
 
 /// JSONL 端到端：A 授予 B 对 C 的 link 能力后，B 可成功 commit link；未授权时 commit 失败。
 /// 失败意味着外部 CapabilityGrant 原语未正确生效或授权检查被绕过。
+/// @category: D
+/// @layer: integration
+/// @testworld: ALLOWED
+/// @req: INT-01
 #[test]
 fn tx_capability_grant_jsonl_end_to_end() {
     let veritasd_path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_veritasd"));

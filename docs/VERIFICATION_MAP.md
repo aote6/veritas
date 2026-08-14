@@ -12,31 +12,31 @@
 | tests/call_access_intent.rs::call_self_is_exempt | B | capability | FORBIDDEN | CAP-01 |
 | tests/call_access_intent.rs::call_with_capability_succeeds | B | capability | FORBIDDEN | CAP-01 |
 | tests/call_access_intent.rs::call_without_capability_fails | B | capability | FORBIDDEN | CAP-01 |
-| tests/capability_delegate_p4_recovery.rs::t1_delegate_survives_checkpoint | | | | |
-| tests/capability_delegate_p4_recovery.rs::t2_multilevel_delegate_tree | | | | |
-| tests/capability_delegate_p4_recovery.rs::t3_cascade_revoke | | | | |
-| tests/capability_delegate_p4_recovery.rs::t4_non_cascade_revoke | | | | |
-| tests/capability_delegate_p4_recovery.rs::t5_wal_replay_equals_checkpoint_and_live | | | | |
-| tests/capability_delegate_p4_recovery.rs::t6_rollback_drops_pending_delegate | | | | |
-| tests/capability_delegate_p4_recovery.rs::t7_old_wal_without_capdelegate_compatible | | | | |
-| tests/capability_grant_admin_cap.rs::admin_cap_holder_can_grant | | | | |
-| tests/capability_grant_admin_cap.rs::grant_without_admin_cap_on_resource_rejected | | | | |
-| tests/capability_grant_admin_cap.rs::grantee_dead_rejects_grant | | | | |
-| tests/capability_grant_admin_cap.rs::non_admin_cap_on_resource_does_not_authorize_grant | | | | |
-| tests/capability_grant_admin_cap.rs::revoked_admin_cap_rejects_grant | | | | |
-| tests/capability_grant_admin_cap.rs::same_tx_birth_admin_cap_allows_grant | | | | |
-| tests/capability_grant_admin_cap.rs::world_service_grant_requires_admin_cap | | | | |
-| tests/capability_grant_cross_object.rs::grantor_is_real_authorizer_not_self_grant | | | | |
-| tests/capability_grant_p1_jsonlines.rs::tx_capability_grant_jsonl_end_to_end | | | | |
-| tests/capability_grant_p1_worldapi.rs::tx_capability_grant_external_interface_end_to_end | | | | |
-| tests/capability_p4x_recovery.rs::capability_grant_no_leak_on_abort | | | | |
-| tests/capability_p4x_recovery.rs::capability_grant_visible_after_commit | | | | |
-| tests/capability_p4x_recovery.rs::capability_survives_recovery | | | | |
-| tests/capability_revoke.rs::kernel_capability_revoke_cascade_downstream | | | | |
-| tests/capability_revoke.rs::kernel_capability_revoke_non_cascade_preserves_downstream | | | | |
-| tests/capability_revoke.rs::kernel_capability_revoke_not_holder_errors | | | | |
-| tests/capability_revoke.rs::kernel_capability_revoke_survives_checkpoint | | | | |
-| tests/capability_revoke.rs::kernel_capability_revoke_wal_replay | | | | |
+| tests/capability_delegate_p4_recovery.rs::t1_delegate_survives_checkpoint | C | recovery | FORBIDDEN | REC-01 |
+| tests/capability_delegate_p4_recovery.rs::t2_multilevel_delegate_tree | B | capability | FORBIDDEN | CAP-06 |
+| tests/capability_delegate_p4_recovery.rs::t3_cascade_revoke | B | capability | FORBIDDEN | CAP-07 |
+| tests/capability_delegate_p4_recovery.rs::t4_non_cascade_revoke | B | capability | FORBIDDEN | CAP-07 |
+| tests/capability_delegate_p4_recovery.rs::t5_wal_replay_equals_checkpoint_and_live | C | recovery | FORBIDDEN | REC-01 |
+| tests/capability_delegate_p4_recovery.rs::t6_rollback_drops_pending_delegate | B | transaction | FORBIDDEN | TX-01 |
+| tests/capability_delegate_p4_recovery.rs::t7_old_wal_without_capdelegate_compatible | C | recovery | FORBIDDEN | REC-02 |
+| tests/capability_grant_admin_cap.rs::admin_cap_holder_can_grant | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_admin_cap.rs::grant_without_admin_cap_on_resource_rejected | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_admin_cap.rs::grantee_dead_rejects_grant | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_admin_cap.rs::non_admin_cap_on_resource_does_not_authorize_grant | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_admin_cap.rs::revoked_admin_cap_rejects_grant | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_admin_cap.rs::same_tx_birth_admin_cap_allows_grant | B | transaction | FORBIDDEN | TX-02 |
+| tests/capability_grant_admin_cap.rs::world_service_grant_requires_admin_cap | B | capability | FORBIDDEN | CAP-08 |
+| tests/capability_grant_cross_object.rs::grantor_is_real_authorizer_not_self_grant | B | capability | FORBIDDEN | CAP-09 |
+| tests/capability_grant_p1_jsonlines.rs::tx_capability_grant_jsonl_end_to_end | D | integration | ALLOWED | INT-01 |
+| tests/capability_grant_p1_worldapi.rs::tx_capability_grant_external_interface_end_to_end | D | integration | ALLOWED | INT-01 |
+| tests/capability_p4x_recovery.rs::capability_grant_no_leak_on_abort | B | transaction | FORBIDDEN | TX-03 |
+| tests/capability_p4x_recovery.rs::capability_grant_visible_after_commit | B | transaction | FORBIDDEN | TX-03 |
+| tests/capability_p4x_recovery.rs::capability_survives_recovery | C | recovery | FORBIDDEN | REC-03 |
+| tests/capability_revoke.rs::kernel_capability_revoke_cascade_downstream | B | capability | FORBIDDEN | CAP-10 |
+| tests/capability_revoke.rs::kernel_capability_revoke_non_cascade_preserves_downstream | B | capability | FORBIDDEN | CAP-10 |
+| tests/capability_revoke.rs::kernel_capability_revoke_not_holder_errors | B | capability | FORBIDDEN | CAP-10 |
+| tests/capability_revoke.rs::kernel_capability_revoke_survives_checkpoint | C | recovery | FORBIDDEN | REC-04 |
+| tests/capability_revoke.rs::kernel_capability_revoke_wal_replay | C | recovery | FORBIDDEN | REC-04 |
 | tests/checkpoint_continuity.rs::capability_identity_survives_checkpoint_restore | | | | |
 | tests/checkpoint_continuity.rs::checkpoint_preserves_state_entry_versions | | | | |
 | tests/checkpoint_continuity.rs::checkpoint_restore_world_continuity | | | | |
@@ -46,8 +46,8 @@
 | tests/checkpoint_roundtrip.rs::checkpoint_restore_idempotent | | | | |
 | tests/checkpoint_roundtrip.rs::checkpoint_restore_then_continue_execution | | | | |
 | tests/checkpoint_roundtrip.rs::checkpoint_root_hash_consistent | | | | |
-| tests/commitment_domain.rs::diagnose_live_vs_recovery_components | | | | |
-| tests/commitment_domain.rs::self_access_does_not_grow_capability_graph | | | | |
+| tests/commitment_domain.rs::diagnose_live_vs_recovery_components | C | recovery | FORBIDDEN | REC-05 |
+| tests/commitment_domain.rs::self_access_does_not_grow_capability_graph | B | capability | FORBIDDEN | CAP-11 |
 | tests/forge_e2e_jsonlines.rs::forge_e2e_create_write_read_commit_observe | | | | |
 | tests/freeze_unlink_p5x_recovery.rs::death_cascade_survives_recovery | | | | |
 | tests/freeze_unlink_p5x_recovery.rs::freeze_and_unlink_survives_recovery | | | | |
@@ -59,8 +59,8 @@
 | tests/machine/basic.rs::e2e_2_dynamic_register_dataflow | | | | |
 | tests/machine/basic.rs::e2e_3_birth_write_link_full_chain | | | | |
 | tests/machine/basic.rs::e2e_4_illegal_cross_tx_call_denied | | | | |
-| tests/machine_object_link_security.rs::object_link_with_proper_capability_succeeds | | | | |
-| tests/machine_object_link_security.rs::object_link_without_capability_on_target_is_rejected | | | | |
+| tests/machine_object_link_security.rs::object_link_with_proper_capability_succeeds | B | capability | FORBIDDEN | CAP-12 |
+| tests/machine_object_link_security.rs::object_link_without_capability_on_target_is_rejected | B | capability | FORBIDDEN | CAP-12 |
 | tests/meta_verification_comments.rs::all_test_files_have_doc_comments | | | | |
 | tests/multi_object_transaction_matrix.rs::s01_birth_ab_write_ab_commit | | | | |
 | tests/multi_object_transaction_matrix.rs::s02_birth_ab_link_ab_write_a_commit | | | | |

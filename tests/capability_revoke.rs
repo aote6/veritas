@@ -81,6 +81,10 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
 }
 
 /// Test 1: cascade revoke of intermediate holder removes downstream.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-10
 #[test]
 fn kernel_capability_revoke_cascade_downstream() {
     let wal = format!(
@@ -123,6 +127,10 @@ fn kernel_capability_revoke_cascade_downstream() {
 }
 
 /// Test 2: non-cascade revoke keeps downstream active.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-10
 #[test]
 fn kernel_capability_revoke_non_cascade_preserves_downstream() {
     let wal = format!(
@@ -164,6 +172,10 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
 }
 
 /// Test 3: revoke result is visible in checkpoint restore.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-04
 #[test]
 fn kernel_capability_revoke_survives_checkpoint() {
     let wal = format!(
@@ -211,6 +223,10 @@ fn kernel_capability_revoke_survives_checkpoint() {
 }
 
 /// Test 4: WAL recovery re-applies CapabilityRevoke (root grant only, WAL-recorded).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-04
 #[test]
 fn kernel_capability_revoke_wal_replay() {
     let wal = format!(
@@ -249,6 +265,10 @@ fn kernel_capability_revoke_wal_replay() {
 }
 
 /// Revoke of non-holder fails before commit.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-10
 #[test]
 fn kernel_capability_revoke_not_holder_errors() {
     let wal = format!(

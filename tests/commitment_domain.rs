@@ -11,6 +11,10 @@ use veritas_kernel::types::ObjectType;
 
 /// 诊断 live 与 recovery 路径关键组件是否一致。
 /// 失败意味着两条路径产生分歧，破坏可恢复性。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-05
 #[test]
 fn diagnose_live_vs_recovery_components() {
     let wal_path = format!("target/test_diag_{}.wal", std::process::id());
@@ -59,6 +63,10 @@ fn diagnose_live_vs_recovery_components() {
 
 /// Self access 不应导致 capability graph 增长。
 /// 失败意味着 self-access 错误地创建了额外 grant，破坏最小授权不变量。
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-11
 #[test]
 fn self_access_does_not_grow_capability_graph() {
     let wal_path = format!("target/test_nogrow_{}.wal", std::process::id());

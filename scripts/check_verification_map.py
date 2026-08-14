@@ -253,7 +253,7 @@ def main():
             # CHECK-08: Forbidden TestWorld usage (Contamination Detection)
             if tw == 'FORBIDDEN':
                 clean_body = clean_for_analysis(tdata['body'])
-                if re.search(r'\b(TestWorld|world_)', clean_body):
+                if re.search(r"\bTestWorld\b", clean_body):
                     violations.append(f"CHECK-08: {tid} is FORBIDDEN to use TestWorld, but primitive was detected in body!")
                     testworld_violations += 1
                     

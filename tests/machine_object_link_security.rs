@@ -39,6 +39,10 @@ fn birth_under(kernel: &veritas_kernel::kernel::Kernel, creator: u64) -> u64 {
 /// 恶意路径：X 对 A 有 AdminCap（是 A 的创建者），
 /// 但对 B 没有任何 capability。
 /// X 尝试以 A 的身份 Link(A -> B)，必须在 commit 时被拒绝。
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-12
 #[test]
 fn object_link_without_capability_on_target_is_rejected() {
     let tk = new_kernel();
@@ -84,6 +88,10 @@ fn object_link_without_capability_on_target_is_rejected() {
 
 /// 合法路径：X 对 A 和 B 都持有 capability 时，Link 必须成功。
 /// 用于证明去掉 enter_object(from) 之后，正常授权流程没有被误伤。
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-12
 #[test]
 fn object_link_with_proper_capability_succeeds() {
     let tk = new_kernel();

@@ -16,6 +16,10 @@ use veritas_kernel::world_api::WorldService;
 
 /// WorldService 端到端：A 授予 B 对 C 的 link 能力，验证授权成功、未授权拒绝、grantor 归因正确。
 /// 失败意味着外部接口与 Kernel 授权检查或 capability graph 不一致。
+/// @category: D
+/// @layer: integration
+/// @testworld: ALLOWED
+/// @req: INT-01
 #[test]
 fn tx_capability_grant_external_interface_end_to_end() {
     let kernel = Arc::new(Kernel::new());

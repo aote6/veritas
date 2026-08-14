@@ -103,6 +103,10 @@ fn revoke(kernel: &Kernel, cap: u64, holder: u64, cascade_override: Option<bool>
 }
 
 /// T1: grant → delegate → commit → checkpoint restore preserves topology.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-01
 #[test]
 fn t1_delegate_survives_checkpoint() {
     let wal = temp_wal("t1");
@@ -125,6 +129,10 @@ fn t1_delegate_survives_checkpoint() {
 }
 
 /// T2: multi-level A→B→C→D tree.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-06
 #[test]
 fn t2_multilevel_delegate_tree() {
     let kernel = Kernel::with_wal_path(temp_wal("t2"));
@@ -167,6 +175,10 @@ fn t2_multilevel_delegate_tree() {
 }
 
 /// T3: cascade revoke deactivates subtree.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-07
 #[test]
 fn t3_cascade_revoke() {
     let kernel = Kernel::with_wal_path(temp_wal("t3"));
@@ -185,6 +197,10 @@ fn t3_cascade_revoke() {
 }
 
 /// T4: non-cascade revoke preserves downstream.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-07
 #[test]
 fn t4_non_cascade_revoke() {
     let kernel = Kernel::with_wal_path(temp_wal("t4"));
@@ -206,6 +222,10 @@ fn t4_non_cascade_revoke() {
 }
 
 /// T5: pure WAL replay == checkpoint == live.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-01
 #[test]
 fn t5_wal_replay_equals_checkpoint_and_live() {
     let wal = temp_wal("t5");
@@ -258,6 +278,10 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
 }
 
 /// T6: rollback_to drops pending delegates.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-01
 #[test]
 fn t6_rollback_drops_pending_delegate() {
     let kernel = Kernel::with_wal_path(temp_wal("t6"));
@@ -296,6 +320,10 @@ fn t6_rollback_drops_pending_delegate() {
 }
 
 /// T7: old WAL without CAPDELEGATE still deserializes (empty delegates).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-02
 #[test]
 fn t7_old_wal_without_capdelegate_compatible() {
     use veritas_kernel::types::{PendingCapabilityGrant, TransactionDelta};

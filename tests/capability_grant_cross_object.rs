@@ -35,6 +35,10 @@ fn birth(kernel: &Kernel) -> u64 {
 /// 验证 grantor 是真实授权者而非自授：A 授权 B 对 C 的 link 能力后，
 /// capability 记录中 granted_by=A、holder=B，且 B 随后可成功 link C。
 /// 失败意味着授权归因可被伪造，破坏 CapabilityGrant 的安全不变量。
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-09
 #[test]
 fn grantor_is_real_authorizer_not_self_grant() {
     let kernel = Kernel::new();

@@ -33,6 +33,10 @@ fn birth_host(kernel: &Kernel) -> u64 {
 
 /// RED→GREEN: A is current_object (self-access), holds no AdminCap on B,
 /// must NOT successfully CapabilityGrant on resource B.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn grant_without_admin_cap_on_resource_rejected() {
     let kernel = Kernel::new();
@@ -65,6 +69,10 @@ fn grant_without_admin_cap_on_resource_rejected() {
 }
 
 /// AdminCap holder → Grant succeeds.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn admin_cap_holder_can_grant() {
     let kernel = Kernel::new();
@@ -106,6 +114,10 @@ fn admin_cap_holder_can_grant() {
 }
 
 /// Holding a non-AdminCap on resource does not authorize Grant.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn non_admin_cap_on_resource_does_not_authorize_grant() {
     let kernel = Kernel::new();
@@ -134,6 +146,10 @@ fn non_admin_cap_on_resource_does_not_authorize_grant() {
 }
 
 /// Revoked AdminCap no longer authorizes Grant.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn revoked_admin_cap_rejects_grant() {
     let kernel = Kernel::new();
@@ -191,6 +207,10 @@ fn revoked_admin_cap_rejects_grant() {
 }
 
 /// Same-tx ObjectBirth pending AdminCap is visible to Grant authorization.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-02
 #[test]
 fn same_tx_birth_admin_cap_allows_grant() {
     let kernel = Kernel::new();
@@ -228,6 +248,10 @@ fn same_tx_birth_admin_cap_allows_grant() {
 }
 
 /// WorldService path: Host identity + AdminCap → Grant success.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn world_service_grant_requires_admin_cap() {
     let kernel = Arc::new(Kernel::new());
@@ -257,6 +281,10 @@ fn world_service_grant_requires_admin_cap() {
 }
 
 /// Grantee dead → Grant rejected (existing Alive check preserved).
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-08
 #[test]
 fn grantee_dead_rejects_grant() {
     let kernel = Kernel::new();
