@@ -1,26 +1,30 @@
 # Veritas 下一步推进计划
 
+最后更新: 2026-08-14
+
 ## 当前状态
-- cargo test: 全部通过
-- Forge pytest: 208 passed
+- cargo test: 331 passed
+- Forge pytest: 210 passed（含 P0 CapabilityGrant 2 个 e2e）
 - 多对象事务: birth A → write A → birth B → link A→B → commit → WAL recovery 全部通过
 - capability_context bootstrap 修复完成
+- P0 CapabilityGrant 链路闭合 ✅
 
-## 待完成
+## 已完成
 
-### 1. veritasd 暴露 CapabilityGrant 命令（P0）
+### 1. veritasd 暴露 CapabilityGrant 命令（P0）✅ 2026-08-14 确认
 
-**原因**：当前跨对象授权只能通过 ObjectBirth 自动授予创建者。如果两个独立创建的对象需要互相操作（比如 A 要写 B，但 B 不是 A 创建的），没有显式 grant 路径。
+**veritasd**: src/bin/veritasd.rs:292 已有 tx_capability_grant JSON 命令
+**Forge adapter**: forge/world/adapter.py:249 已有 tx_capability_grant() 方法
+**Forge session**: forge/world/session.py:70 已有 grant() 方法
+**测试**: tests/test_p2_capability_grant.py 2 passed
 
-**解决**：veritasd 加 `tx_capability_grant` JSON 命令，Forge adapter/session 加对应封装。内核已有 `KernelCall::CapabilityGrant` 和 `Engine::capability_grant`，只需暴露。
-
-**步骤**：
-1. veritasd.rs 加 "tx_capability_grant" 命令处理
-2. forge/world/adapter.py 加 tx_capability_grant 方法
-3. forge/world/session.py 加 grant 方法
-4. 写测试：独立创建 A 和 B，通过 grant 让 A 获得 B 的 capability，A 写 B 成功
+验证（2026-08-14）:
+python -m pytest tests/test_p2_capability_grant.py -v
+2 passed in 0.25s
 
 ---
+
+## 待完成
 
 ### 2. world_demo.vasm 重写（P1）
 
@@ -38,7 +42,7 @@
 
 ### 3. 跨对象事务的排列组合测试（P1）
 
-**原因**：目前只测了一种操作顺序（birth A → write A → birth B → link A→B → commit）。需要覆盖更多变体，防止以后改代码时把身份生命周期搞坏。
+**原因**：目前只测了一种操作顺序。需要覆盖更多变体。
 
 **原则**：只增加测试，不修改内核。若测试失败，先分类：
 - ① 真 bug → 修
@@ -66,7 +70,7 @@ Recovery 路径：
 9. grant → write/link → commit → WAL recovery → capability + object/link 状态一致
 10. grant → abort → WAL recovery → 不应出现残留 capability
 
-**反向测试（重要）**：
+反向测试：
 11. A grant B on C → B 操作 C 成功 → 确认 A 不因此变成 holder
 12. A grant B → B 再尝试 grant C → 验证授权链语义不变
 
@@ -75,8 +79,6 @@ Recovery 路径：
 ### 4. Session 和 Machine 行为一致性测试（P2）
 
 **原因**：两条入口路径各自维护身份上下文，防止再次分化
-
-**解决**：同一个操作序列分别用 Session API 和 VASM 指令各跑一次，断言结果相同
 
 **步骤**：
 1. 选一个简单序列：birth A → write A → commit
@@ -88,17 +90,24 @@ Recovery 路径：
 
 ### 5. 架构统一：Session 底层走 Machine（P3）
 
-**原因**：详见 STATUS.md 中"架构债"记录。当前 Session 手抄了半份 CALL 逻辑，是身份 bug 反复出现的根源。
+**原因**：当前 Session 手抄了半份 CALL 逻辑，是身份 bug 反复出现的根源。
 
 **解决**：抽取出 enter_identity/leave_identity，Session 的 tx_write 改成 enter→write→leave 对称模式
 
-**步骤**：详见 STATUS.md
-
-**时机**：不紧急。等 1-4 完成后再执行。
+**时机**：不紧急。等 2-4 完成后再执行。
 
 ---
 
 ## 顺序
-1 → 2 → 3 → 4 → 5
+2 → 3 → 4 → 5
 
-1 最堵路（没有 CapabilityGrant 多对象协作走不通），2 是验证全链路的标志性里程碑，3 和 4 是固化测试，5 是架构优化。
+## Stage 2（World State 完整性，world.md §12 主线）
+
+在 2-5 完成后启动：
+1. WorldSnapshot 扩展为八组件
+2. StateEntry 真实 version
+3. Object Death 清理 StateStore
+4. Checkpoint 保存/恢复完整 Machine State
+5. Recovery 恢复计数器续接
+6. Replay 统一走 TransactionDelta → apply()（P30.4/P30.5）
+7. root_hash 升级 SHA-256

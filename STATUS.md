@@ -1650,3 +1650,39 @@ Veritas 有两条独立执行入口，各自维护身份上下文：
 需要：Rust 系统编程 + 数据库理论（WAL/Checkpoint/OCC）+ 确定性系统 + 安全 Capability 模型
 级别：分布式系统内核工程师，类似 Linux 内核子系统维护者
 AI 协作：必须走"审计 → 红测试 → 最小修复 → 全量回归"流程，不可直接改代码
+
+
+## P1 Vertical Execution Proof — 2026-08-14 ✅
+
+### world_demo.vasm 重写完成
+
+完整垂直链路验证通过：
+- VASM 编译 → world_demo.vmod
+- 执行 → finished pc=122 r0=2, objects in world: 2
+- 链路：OBJECT_BIRTH A → CALL A → WRITE(state 0) → RETURN → OBJECT_BIRTH B → CALL B → WRITE(state 0) → RETURN → CALL A（重入）→ WRITE(state 1) → RETURN → OBJECT_LINK A→B owns → COMMIT → HALT
+- WAL Recovery → 对象 1 Alive, 对象 2 Alive
+- Link 恢复 → {from: 1, to: 2, link_type: owns}
+- 佐证测试：object_birth_self_call 1 passed, s_extra_g_multiple_object_switches 1 passed
+- 全量回归：331 passed, 0 failed
+
+### 验证的机制
+
+| 机制 | 验证方式 |
+|------|---------|
+| OBJECT_BIRTH 分配 ID 写入 R0 | demo 中两次 birth 返回不同 id（1 和 2） |
+| self-AdminCap attach 到 ctx.capabilities | CALL A/CALL B 通过 authorize_intent |
+| CALL 切换 current_object | WRITE 写入了对应对象的 MemorySpace |
+| RETURN 恢复上下文 | 第二次 CALL A 成功（重入） |
+| Address = (current_object, state_id) | A 和 B 各写 state 0 不冲突 |
+| OBJECT_LINK 使用 ctx.capabilities 授权 | A→B owns 成功建立 |
+| WAL Recovery | 对象和 Link 从 WAL 恢复 |
+
+### 发现的非阻塞问题
+
+- assembler 不支持分号注释（已规避）
+- /tmp 在 Termux 只读，WAL 路径需用 home 目录
+- ctx.capabilities.contains 是 transaction-level 语义（文档已确认，非 bug）
+
+### 下一里程碑
+
+P1-B：跨对象事务排列组合矩阵（12 个测试）
