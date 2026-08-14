@@ -16,7 +16,7 @@ CATEGORY_TESTWORLD_POLICY = {
     'A': {'FORBIDDEN'},
     'B': {'FORBIDDEN'},
     'C': {'FORBIDDEN'},
-    'D': {'ALLOWED', 'PREFERRED'}
+    'D': {'ALLOWED', 'PREFERRED', 'FORBIDDEN'}
 }
 
 # ==================================================
