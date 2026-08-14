@@ -1686,3 +1686,58 @@ AI 协作：必须走"审计 → 红测试 → 最小修复 → 全量回归"流
 ### 下一里程碑
 
 P1-B：跨对象事务排列组合矩阵（12 个测试）
+
+
+## STRICT CapabilityGrant 迁移教训 — 2026-08-14
+
+### 发生了什么
+
+引入 STRICT CapabilityGrant 谓词（grantor 必须持有 AdminCap(resource)）后，
+全量测试从 332 个暴露了约 20 个旧测试的 setup 假设错误。
+
+这些测试过去依赖旧语义：任意主体可以对任意 resource 做 CapabilityGrant。
+STRICT 模型正确拒绝了这些隐式违规。
+
+### 迁移过程
+
+逐个测试文件迁移 setup：
+- 旧模式: birth(A); birth(B); grant(A→B)
+- 新模式: birth(A); birth_under(B←A); grant(A→B)
+
+涉及文件:
+- capability_delegate_p4_recovery.rs
+- capability_revoke.rs
+- checkpoint_continuity.rs
+- checkpoint_roundtrip.rs
+- freeze_unlink_p5x_recovery.rs
+- machine_object_link_security.rs
+- object/lifecycle.rs
+- replay_determinism.rs
+- root_hash.rs
+- security_recovery_audit.rs
+- strength_adversarial.rs
+- wal_recovery_equivalence.rs
+- wal_recovery_invariants.rs
+- wal_recovery_object.rs
+
+最终: 339 passed, 0 failed。
+
+### 核心教训
+
+1. **内核安全规则绝不回退**。不因测试批量失败而放宽 STRICT 模型。
+2. **测试不能隐式代劳权限**。link helper 不能在背后自动 grant，
+   否则测试会丢失"Link 前提是拥有合法 Capability"这个显式契约。
+3. **测试需要独立的世界构造语言**。后续应建立 TestWorld fixture:
+   - world.birth()
+   - world.birth_under(parent)
+   - world.grant_cap(grantor, grantee, type)
+   - world.link(from, to, type)
+   所有权限准备显式可见，不隐藏在 helper 里。
+4. **同一类失败会分批暴露**。cargo test 并行执行顺序不固定，
+   每次看到的失败清单可能不同。要跑完整量再下结论。
+
+### 防再犯
+
+- 修改 Capability 授权语义前，先查 docs/VERIFICATION_MAP.md
+- 新增测试必须用 birth_under 建立 AdminCap 链，不能用独立 birth 后直接 grant
+- 测试 helper 不得隐式 grant
