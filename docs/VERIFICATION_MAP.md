@@ -732,3 +732,36 @@
 
 - 测试文件: 35 个
 - 测试函数: 203 个
+
+
+## P1-B 结论（2026-08-14）：VASM-LIMITED，跨 session 由 WorldService/veritasd 承载
+
+### 审计结论
+
+A. VASM 是否有 CAPABILITY_GRANT 指令: YES
+B. VASM 是否支持跨 session: NO（一次 module = 一个 transaction ctx，CALL 不等于新 session）
+C. 已有测试是否覆盖跨 session grant 主链: YES
+D. 是否需要 VASM e2e demo: NO（VASM 无法表达跨 session，硬做无增量价值）
+E. 缺失证据: NONE（可选增强：recovery 后 B 新 session 第一次消费 recovered grant）
+
+### 跨 session grant 闭环的测试证据
+
+| 环节 | 测试函数 |
+|------|---------|
+| A 创建 C | tx_capability_grant_external_interface_end_to_end, grantor_is_real_authorizer_not_self_grant |
+| B 未授权操作 C 失败 | tx_capability_grant_*, s05_grant_a_to_b_on_c_link_b_c_commit |
+| A grant B on C | tx_capability_grant_external_interface_end_to_end, s09_grant_commit_wal_recovery_consistent |
+| grant commit 持久化 | capability_grant_visible_after_commit, s09_* |
+| 新 B session 消费 C | tx_capability_grant_*, s_extra_d_grant_commit_new_session_uses_cap |
+| WAL recovery 后 grant 仍在 | s09_grant_commit_wal_recovery_consistent, capability_survives_recovery |
+
+### 最终标记
+
+VASM-LIMITED: VASM 无法表达跨 session，但等价路径已经被 WorldService/veritasd 验证。
+Kernel 无证据驱动的修改理由。P1-B 完成。
+
+### 可选增强（非阻塞）
+
+A grant B on C -> commit -> WAL recovery -> 新 B session -> B 第一次依靠 recovered grant 操作 C -> 成功
+
+这是测试增强，不是 Kernel 修复。
