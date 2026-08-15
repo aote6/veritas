@@ -624,6 +624,8 @@ impl AccessIntent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionReceipt {
     pub tx_id: TxId,
+    /// Commitment algorithm version. 1 = SHA-256.
+    pub commitment_algorithm: u8,
     pub before_root: u64,
     pub delta: TransactionDelta,
     pub after_root: u64,
@@ -1047,6 +1049,10 @@ pub fn delta_content_hash(identity_bytes: &[u8]) -> [u8; 32] {
 /// 这是 Kernel 的持久化协议，不是运行时结构的镜像。
 #[derive(Debug, Clone)]
 pub struct WorldSnapshot {
+    /// Commitment algorithm version. 1 = SHA-256.
+    /// Future algorithms get new version numbers; verification must
+    /// read this field before interpreting state_commitment.
+    pub commitment_algorithm: u8,
     /// State Identity / State Commitment: root_hash() over the five
     /// Commitment Domain components (StateStore, ObjectRegistry, Topology,
     /// CapabilityGraph, ScopeRegistry). Does not cover Continuation Metadata.

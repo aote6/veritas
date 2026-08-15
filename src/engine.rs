@@ -477,6 +477,7 @@ impl VeritasEngine {
         let last_applied_delta_hash = *self.last_applied_delta_hash.lock().unwrap();
 
         WorldSnapshot {
+            commitment_algorithm: 1,
             state_commitment,
             state_entries,
             capability_records,
@@ -1134,6 +1135,7 @@ impl VeritasEngine {
 
         let after_root = self.root_hash();
         let receipt = TransactionReceipt {
+            commitment_algorithm: 1,
             tx_id: delta.tx_id,
             before_root,
             delta,
