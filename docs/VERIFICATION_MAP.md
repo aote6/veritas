@@ -46,6 +46,9 @@
 | tests/checkpoint_roundtrip.rs::checkpoint_restore_idempotent | D | integration | PREFERRED | INT-03 |
 | tests/checkpoint_roundtrip.rs::checkpoint_restore_then_continue_execution | D | integration | PREFERRED | INT-03 |
 | tests/checkpoint_roundtrip.rs::checkpoint_root_hash_consistent | D | integration | PREFERRED | INT-03 |
+| tests/commitment_boundary.rs::checkpoint_preserves_last_applied_delta_hash | C | recovery | FORBIDDEN | REC-11 |
+| tests/commitment_boundary.rs::delta_identity_independent_of_state_commitment | C | recovery | FORBIDDEN | REC-11 |
+| tests/commitment_boundary.rs::state_commitment_excludes_global_version | C | recovery | FORBIDDEN | REC-11 |
 | tests/commitment_domain.rs::diagnose_live_vs_recovery_components | C | recovery | FORBIDDEN | REC-05 |
 | tests/commitment_domain.rs::self_access_does_not_grow_capability_graph | B | capability | FORBIDDEN | CAP-11 |
 | tests/forge_e2e_jsonlines.rs::forge_e2e_create_write_read_commit_observe | D | integration | NOT_USED | INT-02 |
