@@ -874,7 +874,7 @@ fn s_g02_object_id_zero_boundary() {
 }
 
 /// S-H01: Empty payload write and read-back.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -911,7 +911,7 @@ fn s_h01_empty_and_large_payload() {
 }
 
 /// S-H02: Overwrite same state multiple times; last write wins after commit.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1030,7 +1030,7 @@ fn s_t05_multiple_sessions_allowed() {
 // =============================================================================
 
 /// S-E01: Level-1 stress — 100 objects in separate transactions.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1065,7 +1065,7 @@ fn s_e01_stress_100_objects() {
 }
 
 /// S-E02: Level-1 multi-op single transaction — many writes.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1089,7 +1089,7 @@ fn s_e02_stress_many_writes_one_tx() {
 }
 
 /// S-E03: Level-2 stress — 1000 object births (separate txs). Skip under tight CI if needed.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1121,7 +1121,7 @@ fn s_e03_stress_1000_objects() {
 }
 
 /// S-E04: Wide capability graph — many grants from one holder.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1159,7 +1159,7 @@ fn s_e04_stress_wide_capability_graph() {
 
 /// S-C01: Concurrent sessions writing different objects must both succeed.
 /// WorldService serializes via sessions Mutex; Kernel uses per-structure Mutex.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1202,7 +1202,7 @@ fn s_c01_concurrent_different_objects() {
 }
 
 /// S-C02: Concurrent begin + commit of independent sessions.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02
@@ -1235,7 +1235,7 @@ fn s_c02_concurrent_session_lifecycle() {
 
 /// S-C03: Concurrent same-object writes — architecture may serialize or OCC-conflict.
 /// Must not panic / deadlock. Final state must be one of the written values or clean error.
-/// @category: B
+/// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
 /// @req: KER-02

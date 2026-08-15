@@ -177,10 +177,10 @@ fn empty_delta(tx_id: u64, version: u64) -> TransactionDelta {
 ///
 /// WorldService::tx_link does not pre-authorize; it relies on the same
 /// engine.commit → verify_capability path as Machine/Kernel.
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_worldservice_commit_rejects_without_target_cap() {
     let (wal, kernel, world) = world_pair("link_ws");
@@ -236,10 +236,10 @@ fn audit_link_worldservice_commit_rejects_without_target_cap() {
 }
 
 /// Same topology via KernelCall path (Machine-equivalent authorization surface).
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_kernel_commit_rejects_without_target_cap() {
     let wal = temp_wal("link_k");
@@ -272,10 +272,10 @@ fn audit_link_kernel_commit_rejects_without_target_cap() {
 }
 
 /// With capability on target, both WorldService and Kernel commit succeed.
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_worldservice_succeeds_with_target_cap() {
     let (wal, kernel, world) = world_pair("link_ok");
@@ -300,10 +300,10 @@ fn audit_link_worldservice_succeeds_with_target_cap() {
 }
 
 /// Direct authorize_intent on AccessIntent::Link(A,B) with actor A, no caps.
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_authorize_intent_requires_both_endpoints() {
     let wal = temp_wal("link_ai");
@@ -332,10 +332,10 @@ fn audit_link_authorize_intent_requires_both_endpoints() {
 
 /// Parity table assertion: WorldService and Kernel yield same commit outcome
 /// on identical object graph (no target cap).
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_worldservice_machine_parity() {
     // WorldService path
@@ -390,10 +390,10 @@ fn audit_link_worldservice_machine_parity() {
 
 /// Contrast: WorldService pre-authorizes freeze/death/write switches, but NOT link.
 /// This documents API design, not necessarily a bug — commit still gates link.
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-12
 #[test]
 fn audit_link_no_preauth_but_commit_gates() {
     let (wal, kernel, world) = world_pair("preauth");
@@ -1091,10 +1091,10 @@ fn audit_wal_replay_committed_delta_idempotent() {
 
 /// 跨对象 write 在无 capability 时仍被拒绝（审计回归）。
 /// 失败意味着 write 授权检查被绕过。
-/// @category: C
-/// @layer: recovery
+/// @category: B
+/// @layer: capability
 /// @testworld: FORBIDDEN
-/// @req: REC-06
+/// @req: CAP-14
 #[test]
 fn audit_write_cross_object_still_denied() {
     let (wal, kernel, world) = world_pair("write_x");
