@@ -1848,3 +1848,89 @@ Checkpoint/Snapshot 是在 P1b（Engine 15 mutation methods pub → pub(crate)�
 - WorldSnapshot 字段私有化
 - restore 内容验证（commitment_hash / version / capability 合法性）
 - compile-fail 红测试（trybuild 基础设施尚未引入）
+
+
+## Checkpoint Integrity / Commitment Closure — Phase 0 + Phase 1 — 2026-08-15
+
+### Phase 0: Read-Only State/Commitment Audit — CLOSED
+
+对 Checkpoint / Commitment / WAL / Replay / Restore 五者边界做只读审计，不改任何实现。
+
+#### 已确认的代码事实
+
+| # | 事实 |
+|---|---|
+| F1 | commitment_hash 的当前实现是 root_hash() 的零扩展（u64 → [u8;32]），不是整个 WorldSnapshot 的哈希 |
+| F2 | commitment_hash 只覆盖五组件（StateStore, ObjectRegistry, Topology, CapabilityGraph, ScopeRegistry） |
+| F3 | commitment_hash 无任何消费者——restore_checkpoint() 不读取它 |
+| F4 | root_hash() 只覆盖五组件，不覆盖 global_version / object_id_counter / grant_sequence / last_applied_delta_hash |
+| F5 | root_hash() 和 content_hash() 均为 FNV-1a，密码学强度不足（宪法 world.md §9 要求 SHA-256 或 BLAKE3 256-bit） |
+| F6 | TransactionDelta::canonical_identity_bytes() 满足 commit_version.md §3.3 全部编码规则 |
+| F7 | tx_id 存在于 WorldSnapshot，但不进入任何哈希。Constitution 定义为过程标识，是否属于 Serialization Contract 未裁定 |
+
+#### 三条独立 Hash 线
+
+A. State Commitment:
+   五组件 → root_hash() → FNV-1a u64 → commitment_hash [u8;32]
+
+B. Delta Identity:
+   TransactionDelta → canonical_identity_bytes() → delta_content_hash()
+   → FNV-1a u64 → [u8;32] → last_applied_delta_hash
+
+C. Continuation Identity:
+   global_version + object_id_counter + grant_sequence + last_applied_delta_hash
+   （不进入任何 hash，仅 checkpoint 持久化）
+
+### Phase 1: Commitment Boundary ADR — ACCEPTED
+
+新增 docs/constitution/commitment_boundary.md（186 行），正式裁定：
+
+| Identity | 回答的问题 | 覆盖范围 |
+|---|---|---|
+| State Identity | 当前世界内容是什么？ | 五组件 → root_hash |
+| Delta Identity | 世界演化的最后一步是谁？ | global_version + last_applied_delta_hash |
+| Continuation Identity | 恢复后能否继续运行？ | global_version + object_id_counter + grant_sequence + last_applied_delta_hash |
+
+核心裁定：Continuation Metadata 不进入 State Commitment Domain。
+
+commitment_hash 字段保留，正式语义为 State Identity 载体，不是整个 WorldSnapshot 的完整身份。
+
+### 回归护栏测试
+
+新增 tests/commitment_boundary.rs（3 个测试，全绿）：
+
+- state_commitment_excludes_global_version — 五组件相同 + global_version 不同 → root_hash 必须相同
+- checkpoint_preserves_last_applied_delta_hash — checkpoint → restore 后 last_applied_delta_hash 必须原样保留
+- delta_identity_independent_of_state_commitment — 五组件相同 + last_applied_delta_hash 不同 → root_hash 相同但 Delta Identity 不同
+
+### 审计工具链修复
+
+发现并修复 docs/VERIFICATION_MAP.md 与 check_verification_map.py 之间的格式断口：
+
+- gen_verification_map.py 输出列表格式，审计工具读不懂 → CHECK-01 永远失败
+- gen_initial_map.py 输出表格但元数据全空 → CHECK-10 永远失败
+- 新增 scripts/gen_verification_map_fixed.py，复用 check_verification_map.py 的 extract_source_tests()，输出带完整元数据的表格
+
+修复后审计结果：
+
+- Phase 1（ID Parity）：239/239 PASS
+- Phase 2（Metadata Validation）：0 violations，PASS
+
+### 全量验证
+
+- cargo test --all：342 passed，0 failed
+- 审计工具：Phase 1 + Phase 2 全部 PASS
+
+### 相关 commit
+
+- 47850b8 docs: add Commitment Boundary Decision — Phase 1 ADR
+- 6f4b203 test: add Commitment Boundary ADR regression guards and fix verification map toolchain
+
+### 未决问题（下一阶段裁定）
+
+| # | 问题 | 状态 |
+|---|---|---|
+| Q1 | WorldSnapshot Serialization Contract 是否应包含 tx_id | 未裁定 |
+| Q2 | commitment_hash 字段最终命名 | 未裁定，倾向 state_commitment |
+| Q3 | State Commitment 与 Delta Identity 算法迁移顺序 | 未裁定 |
+| Q4 | restore_checkpoint() 验证语义与时机 | 未裁定，依赖 Q3 |
