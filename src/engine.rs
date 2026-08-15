@@ -453,7 +453,6 @@ impl VeritasEngine {
     /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
-        let tx_id = self.tx_mgr.current_tx_id();
         let state_entries = self.state_store.snapshot();
         let objects = self.snapshot_objects();
         let links = self.snapshot_links();
@@ -464,8 +463,8 @@ impl VeritasEngine {
             .snapshot_capabilities();
         let scopes = self.scope_registry.snapshot_all_scopes();
 
-        // commitment_hash 直接用 engine 已有的 root_hash，不另写算法
-        let commitment_hash = {
+        // state_commitment: root_hash() over the five State components only
+        let state_commitment = {
             let h = self.state_root();
             let mut bytes = [0u8; 32];
             bytes[0..8].copy_from_slice(&h.to_le_bytes());
@@ -478,8 +477,7 @@ impl VeritasEngine {
         let last_applied_delta_hash = *self.last_applied_delta_hash.lock().unwrap();
 
         WorldSnapshot {
-            commitment_hash,
-            tx_id,
+            state_commitment,
             state_entries,
             capability_records,
             objects,

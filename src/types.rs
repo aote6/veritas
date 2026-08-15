@@ -1015,7 +1015,7 @@ impl TransactionDelta {
     /// Content hash of this Delta for identity comparison.
     /// Uses the same FNV-1a byte hash as the rest of the kernel; result is
     /// expanded to 32 bytes (first 8 = LE u64, remainder zero) to match
-    /// the Hash / commitment_hash width used elsewhere.
+    /// the Hash / state_commitment width used elsewhere.
     pub fn content_hash(&self) -> [u8; 32] {
         delta_content_hash(&self.canonical_identity_bytes())
     }
@@ -1047,8 +1047,10 @@ pub fn delta_content_hash(identity_bytes: &[u8]) -> [u8; 32] {
 /// 这是 Kernel 的持久化协议，不是运行时结构的镜像。
 #[derive(Debug, Clone)]
 pub struct WorldSnapshot {
-    pub commitment_hash: [u8; 32],
-    pub tx_id: u64,
+    /// State Identity / State Commitment: root_hash() over the five
+    /// Commitment Domain components (StateStore, ObjectRegistry, Topology,
+    /// CapabilityGraph, ScopeRegistry). Does not cover Continuation Metadata.
+    pub state_commitment: [u8; 32],
     pub state_entries: Vec<(Address, StateEntry)>,
     pub capability_records: Vec<CapabilitySemanticRecord>,
     pub objects: Vec<ObjectSnapshot>,

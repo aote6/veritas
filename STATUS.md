@@ -399,7 +399,7 @@ Engine mutation API changed from `pub` to `pub(crate)`:
 
 定义在 `src/types.rs`，与内部实现（ObjectRecord/StateEntry/ScopeEntry）完全解耦：
 
-- `WorldSnapshot` — commitment_hash + tx_id + 五组件数据
+- `WorldSnapshot` — state_commitment + 五组件数据 + Continuation Metadata（global_version / object_id_counter / grant_sequence / last_applied_delta_hash）；tx_id 已按 ADR Q1 移除
 - `ObjectSnapshot` — id + object_type + lifecycle_state + metadata + payload
 - `LinkSnapshot` — from + to + link_type（结构体，支持未来扩展）
 - `ScopeSnapshot` — scope_id + members + owner（owner 用 ObjectId，不暴露 ModuleId）

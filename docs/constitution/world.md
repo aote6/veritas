@@ -47,23 +47,25 @@ Machine State 的定义是 Veritas 最核心的不变量。
 
 ## 3. 当前 WorldSnapshot 与分类表的差距
 
-当前 `WorldSnapshot` 结构（types.rs:745）包含：
+当前 `WorldSnapshot` 结构包含：
 
 | 字段 | 是否属于 World State | 
 |------|:------------------:|
-| commitment_hash | ❌ 可重新计算 |
-| tx_id | ❌ 可推导 |
+| state_commitment | ❌ 可重新计算（State Identity：五组件 root_hash） |
 | state_entries | ✅ |
 | capability_records | ✅ |
 | objects | ✅ |
 | links | ✅ |
 | scopes | ✅ |
+| global_version | ✅ |
+| object_id_counter | ✅ |
+| grant_sequence | ✅ |
+| last_applied_delta_hash | ✅（Continuation / Delta Identity） |
 
-缺失的 World State：
-- global_version
-- object_id_counter
-- grant_sequence
-- 每个 StateEntry 的真实 version（当前硬编码为 1）
+说明：
+- `state_commitment` 仅承载 State Identity（五组件），不是整个 WorldSnapshot 的哈希。
+- `tx_id` 已从 WorldSnapshot 移除（ADR commitment_boundary.md Q1）；事务级 tx_id 仍存在于 TransactionContext / TransactionDelta 等。
+- Continuation Metadata（global_version / object_id_counter / grant_sequence / last_applied_delta_hash）进入 WorldSnapshot，但不进入 root_hash()。
 
 ---
 
