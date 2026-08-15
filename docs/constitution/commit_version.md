@@ -1,6 +1,6 @@
 # Veritas Commit Version & Delta Identity Constitution v0.1
 
-最后更新: 2026-08-13
+最后更新: 2026-08-15
 状态: 已冻结，待实现
 
 ## 1. 宪法地位
@@ -151,7 +151,9 @@ global_version: u64
 
 last_applied_delta_hash: Hash
 
-这两个字段是不可分割的 World State 元组，必须一起进入 WorldSnapshot、Checkpoint、root_hash 计算。
+这两个字段是不可分割的 World State 元组，必须一起进入 WorldSnapshot 和 Checkpoint。
+它们属于 Continuation Identity，不进入 State Commitment (root_hash) 计算。State Commitment 只覆盖五组件。
+此修正依据 commitment_boundary.md (Phase 1 ADR) 第 2.3 节裁定，该裁定基于 Phase 0 只读审计的代码事实。
 
 不能出现 version = N 但 hash = H(N-1) 的状态。
 
@@ -324,3 +326,20 @@ audit_equal_version_different_content_is_rejected
 之前实现时漏掉了这个寄存器，导致 equal-version 的语义无法被正确判断。
 
 现在补上，是修复，不是添加。
+
+
+## 修订记录
+
+### 2026-08-15 — 解冻并修正 §3.4
+
+依据 Phase 0 Read-Only State/Commitment Audit 和
+docs/constitution/commitment_boundary.md (Phase 1 ADR ACCEPTED)：
+
+- 原 §3.4 断言 global_version + last_applied_delta_hash 必须进入
+  root_hash 计算。
+- Phase 0 代码事实证明 root_hash() 只覆盖五组件，且
+  Continuation Metadata 不应进入 State Commitment Domain。
+- 本修正将 §3.4 的进入 root_hash 计算改为进入 WorldSnapshot
+  和 Checkpoint，并明确它们不属于 State Commitment。
+
+状态更新：已冻结 → 已解冻 → 修订后重新冻结。

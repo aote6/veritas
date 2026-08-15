@@ -184,3 +184,175 @@ tx_id 是过程/交易标识。它：
 - canonical_identity_bytes() 的编码规则发生变更
 - 引入新的 State 组件或 Continuation Metadata 字段
 - 发现新的代码事实推翻 Phase 0 审计结论
+
+## 7. Q1-Q4 Architecture Decisions
+
+Phase 1 architecture questions have now been formally adjudicated.
+
+### Q1 — tx_id in WorldSnapshot
+
+Decision: REMOVE
+
+tx_id is not World State and is not part of Delta Identity.
+
+Evidence:
+
+- docs/constitution/commit_version.md explicitly defines tx_id as a process identifier and excludes it from World State and Delta Identity.
+- restore_checkpoint() has no consumer for snap.tx_id.
+- create_checkpoint() only writes the current transaction ID into the snapshot; no restoration or identity verification path reads it.
+- Therefore WorldSnapshot.tx_id has no continuation or identity semantics.
+
+Decision:
+
+WorldSnapshot.tx_id shall be removed. This is a semantic cleanup, not an identity-model change. Implementation must still verify the complete repository impact because WorldSnapshot is a checkpoint/serialization boundary.
+
+### Q2 — commitment_hash naming
+
+Decision: RENAME to state_commitment
+
+The field currently represents only the State Identity / Commitment Domain:
+
+StateStore + ObjectRegistry + Topology + CapabilityGraph + ScopeRegistry -> root_hash() -> commitment_hash
+
+It does not represent:
+
+- global_version
+- object_id_counter
+- grant_sequence
+- last_applied_delta_hash
+- tx_id
+
+Therefore commitment_hash is semantically misleading.
+
+Decision:
+
+WorldSnapshot.commitment_hash shall be renamed to state_commitment. This rename is part of Phase 2A and does not change the State Commitment algorithm.
+
+### Q3 — Hash migration order
+
+Decision: State Commitment first
+
+The two hash lines shall migrate independently.
+
+Migration order:
+
+Phase 2A structural cleanup: tx_id removal + commitment_hash to state_commitment
+
+Phase 2B State Commitment hash migration: FNV-1a u64 to SHA-256 or BLAKE3-256
+
+Phase 2C checkpoint State Commitment verification
+
+Phase 2D Delta Identity hash migration: FNV-1a to SHA-256 or BLAKE3-256
+
+Rationale:
+
+State Commitment is the primary externally meaningful representation of World State and is exposed through checkpoint/receipt/state-root related paths. Delta Identity participates directly in version continuity, replay acceptance, equal-version detection, WAL continuity, and checkpoint continuation. It therefore has a larger behavioral coupling surface.
+
+Decision:
+
+State Commitment migration and Delta Identity migration must remain independent changes. No combined global hash upgrade is permitted.
+
+### Q4 — Checkpoint commitment verification
+
+Decision: verify after restoration, before accepting the checkpoint
+
+restore_checkpoint() shall:
+
+1. restore the checkpoint continuation metadata and five State components;
+2. recompute the State Commitment from the restored five-component state;
+3. compare the recomputed commitment with the checkpoint stored state_commitment;
+4. return failure if the commitments differ;
+5. only accept the restored checkpoint when the commitment matches.
+
+Conceptually:
+
+WorldSnapshot carries state components and state_commitment.
+After restoration, recompute root from restored five components.
+Compare recomputed root with state_commitment.
+Match -> accept. Mismatch -> reject.
+
+The verification is intentionally performed after restoration, because the commitment is defined over the resulting five-component State Domain.
+
+Decision:
+
+restore_checkpoint() shall not accept a checkpoint whose restored State Commitment differs from the checkpoint declared state_commitment. This verification is implemented in Phase 2C, after the State Commitment algorithm migration in Phase 2B.
+
+## 8. Revised Phase 2 Execution Order
+
+The accepted architecture therefore establishes the following implementation sequence:
+
+### Phase 2A — Snapshot Identity Cleanup
+
+- Remove WorldSnapshot.tx_id.
+- Rename WorldSnapshot.commitment_hash to state_commitment.
+- Update all constructors, serializers, tests, documentation, and APIs.
+- Do not change hash semantics.
+- Do not modify root_hash().
+
+### Phase 2B — State Commitment Hash Migration
+
+- Replace the current FNV-1a State Commitment implementation.
+- Adopt a 256-bit cryptographic hash.
+- Update root_hash() / State Commitment consumers.
+- Update Receipt before_root / after_root.
+- Update replay equivalence.
+- Update state_root API.
+- Update Forge/WRI exposure and related tests.
+- Establish the new canonical State Commitment representation.
+
+### Phase 2C — Checkpoint Commitment Verification
+
+After Phase 2B is stable:
+
+- recompute State Commitment after checkpoint restoration;
+- compare against state_commitment;
+- reject mismatched checkpoints;
+- add RED tests for corrupted State Commitment;
+- add GREEN regression tests for valid checkpoint restoration.
+
+### Phase 2D — Delta Identity Hash Migration
+
+Independently migrate:
+
+- TransactionDelta::content_hash();
+- delta_content_hash();
+- last_applied_delta_hash.
+
+Verify:
+
+- equal-version Delta discrimination;
+- replay continuity;
+- WAL continuity;
+- checkpoint continuation;
+- Receipt / Delta Identity consumers.
+
+## 9. Final Architecture Constraints
+
+Effective immediately, the following constraints are accepted:
+
+1. WorldSnapshot.tx_id is not part of the Veritas checkpoint identity model and shall be removed.
+2. WorldSnapshot.state_commitment represents State Identity only.
+3. State Identity is defined exclusively by the five-component Commitment Domain.
+4. global_version, object_id_counter, grant_sequence, and last_applied_delta_hash are Continuation Metadata and shall not enter the State Commitment Domain.
+5. tx_id shall not enter State Identity, Delta Identity, or Continuation Identity.
+6. State Commitment and Delta Identity are independent cryptographic identity lines.
+7. Their hash migrations shall be implemented and verified independently.
+8. State Commitment migration precedes Delta Identity migration.
+9. restore_checkpoint() shall verify the restored State Commitment against the checkpoint declared state_commitment.
+10. No implementation may add Continuation Metadata to root_hash() unless this ADR is formally revised.
+11. No implementation may merge the State Commitment and Delta Identity migrations into a single architectural change.
+
+## 10. Revision Conditions
+
+This decision must be reopened if any of the following occurs:
+
+- the Constitution changes the definition of World State;
+- the five-component Commitment Domain changes;
+- canonical_identity_bytes() changes its canonical encoding contract;
+- new State components are introduced;
+- new Continuation Metadata is introduced;
+- the semantics of global_version or last_applied_delta_hash change;
+- checkpoint restoration semantics change;
+- new code evidence contradicts the Phase 0 audit.
+
+Until such a revision occurs, this document is the authoritative boundary for State Identity, Delta Identity, and Continuation Identity.
