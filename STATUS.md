@@ -1741,3 +1741,73 @@ STRICT 模型正确拒绝了这些隐式违规。
 - 修改 Capability 授权语义前，先查 docs/VERIFICATION_MAP.md
 - 新增测试必须用 birth_under 建立 AdminCap 链，不能用独立 birth 后直接 grant
 - 测试 helper 不得隐式 grant
+
+## Trust Boundary Audit v1 — 2026-08-15
+
+### 审计范围
+
+- Forge → veritasd → WorldService → Kernel::handle → Engine mutation
+- Engine public vs pub(crate) mutation surface
+- Kernel public mutation surface
+- veritasd command surface
+- Checkpoint snapshot/restore APIs
+- WAL append/replay boundary
+
+### 宪法依据
+
+- `constitution/kernel.md` §1-2: Kernel 是 Machine 内核态；TRAP 是唯一调用机制
+- `constitution/kernel.md` §9: 所有内核服务通过 TRAP 调用（当前状态：Kernel Service 仍为 engine.rs pub fn，TRAP 化未完成）
+- `constitution/world.md` §10: World State 八组件定义
+- `constitution/world.md` §11: Checkpoint/Replay/Recovery 必须以恢复 Machine State 为目标
+- `constitution/commit_version.md` §8.4: last_applied_delta_hash 必须与 global_version 一起进入 WorldSnapshot
+
+### 审计结果
+
+| 边界 | 状态 | 发现 |
+|------|------|------|
+| Core Engine mutation | [GREEN] | mutation 方法均为 pub(crate) |
+| Kernel mutation boundary | [GREEN] | Kernel::handle() 是核心 mutation 的唯一 pub dispatch |
+| veritasd command surface | [GREEN] | 无 restore/raw Engine/WAL mutation 命令 |
+| Forge → Veritas | [GREEN] | 无外部可达的 mutation 绕过 |
+| Checkpoint restore | [YELLOW] | pub Rust recovery API；veritasd 未暴露 |
+| WAL append | [YELLOW] | pub 持久化原语；独立 recovery/replay 边界 |
+
+### 关键证据
+
+1. Engine mutation API 此前已从 pub 收紧为 pub(crate)（STATUS.md:190）
+2. Kernel mutation 透传方法已删除（STATUS.md:111-113）
+3. Kernel::handle() 直接 dispatch 核心 mutation
+4. WorldService::kernel() 保持 pub(crate)（src/world_api.rs:226）
+5. veritasd 命令面仅 tx_* 和只读查询，无 checkpoint restore / raw WAL
+6. 内部 apply() 保持 pub(crate)（src/engine.rs:1206）
+7. Checkpoint restore 是文档化的五组件恢复机制（STATUS.md:396-427）
+
+### 宪法未完成项（本次审计确认，非本次引入）
+
+| 宪法要求 | 当前状态 |
+|---------|---------|
+| kernel.md §9.2: 所有内核服务通过 TRAP 调用 | [YELLOW] Kernel Service 仍为 engine.rs pub fn，TRAP 化未完成 |
+| kernel.md §9.5: Host Call 统一收口 | [YELLOW] Host Call 已收敛（machine.rs:577），但需独立审计 |
+| world.md §10: World State 八组件 | ✅ 已实现 |
+| commit_version.md §8.4: checkpoint 恢复 last_applied_delta_hash | ✅ 已实现（security_recovery_audit.rs:2181-2185） |
+| commit_version.md §9: WAL adversarial audit | ✅ 已实现（security_recovery_audit.rs 45 tests） |
+
+### 后续行动（不在本次执行）
+
+1. Rust external-crate compile-boundary regression test
+   - 证明外部 crate 编译期无法调用 pub(crate) mutation
+2. WAL/checkpoint adversarial recovery test
+   - 证明 crafted WAL / crafted checkpoint 不能制造非法 WorldState
+3. TRAP-only Kernel Service 收敛（对应 kernel.md §9.2）
+   - 将 engine.rs pub fn 转为 TRAP 处理，消除 pub mutation 入口
+
+### 决策
+
+Trust Boundary Audit v1 无生产代码修改。
+
+核心 mutation 边界对 Forge/veritasd 外部威胁模型判定为 **CLOSED**。
+
+Checkpoint restore 和 WAL append 是两个独立的 recovery/persistence 边界，
+保持 pub 是文档化的内部机制，veritasd 未暴露。是否收紧为 pub(crate)
+取决于后续 external-crate boundary test 和 TRAP-only 收敛的决策，
+不在本次审计范围内。
