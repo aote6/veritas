@@ -63,6 +63,10 @@ fn cap_records_for(
 /// 1. birth A → birth B → write A → write B → commit
 /// Invariant: multi-object writes in one tx commit; both objects Alive with data;
 /// capability_context does not drift so the second write still authorizes.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-06
 #[test]
 fn s01_birth_ab_write_ab_commit() {
     let wal = temp_wal("s01");
@@ -105,6 +109,10 @@ fn s01_birth_ab_write_ab_commit() {
 }
 
 /// 2. birth A → birth B → link A→B → write A → commit
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-06
 #[test]
 fn s02_birth_ab_link_ab_write_a_commit() {
     let wal = temp_wal("s02");
@@ -136,6 +144,10 @@ fn s02_birth_ab_link_ab_write_a_commit() {
 }
 
 /// 3. birth A → birth B → write A → link A→B → commit
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-06
 #[test]
 fn s03_birth_ab_write_a_link_ab_commit() {
     let wal = temp_wal("s03");
@@ -174,6 +186,10 @@ fn s03_birth_ab_write_a_link_ab_commit() {
 /// C is a real third object. B receives link/write capability on C; write is
 /// performed under B's identity on B itself (self-access). The grant record
 /// is verified: grantor=A, holder=B, resource=C.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s04_grant_a_to_b_on_c_write_b_commit() {
     let wal = temp_wal("s04");
@@ -233,6 +249,10 @@ fn s04_grant_a_to_b_on_c_write_b_commit() {
 }
 
 /// 5. birth A → birth B → grant A→B on C → link B→C → commit
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s05_grant_a_to_b_on_c_link_b_c_commit() {
     let wal = temp_wal("s05");
@@ -284,6 +304,10 @@ fn s05_grant_a_to_b_on_c_link_b_c_commit() {
 /// Creator A holds AdminCap on B, but B does not hold capability on A unless granted.
 /// We grant B a link capability on A as well, OR expect failure on B→A without it.
 /// Real model: authorize_intent for Link targets both from and to. B needs cap on A.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s06_grant_then_write_b_link_b_to_a_commit() {
     let wal = temp_wal("s06");
@@ -327,6 +351,10 @@ fn s06_grant_then_write_b_link_b_to_a_commit() {
 }
 
 /// 6b. Negative: grant on C alone does not authorize link B→A.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s06b_grant_on_c_does_not_authorize_link_to_a() {
     let wal = temp_wal("s06b");
@@ -361,6 +389,10 @@ fn s06b_grant_on_c_does_not_authorize_link_to_a() {
 // =============================================================================
 
 /// 7. birth A → write A → birth B → write B → abort
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-05
 #[test]
 fn s07_multi_object_abort_no_residual_state() {
     let wal = temp_wal("s07");
@@ -397,6 +429,10 @@ fn s07_multi_object_abort_no_residual_state() {
 }
 
 /// 8. birth A → birth B → grant A→B → abort → capability must not remain
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-05
 #[test]
 fn s08_grant_then_abort_leaves_no_capability() {
     let wal = temp_wal("s08");
@@ -448,6 +484,10 @@ fn s08_grant_then_abort_leaves_no_capability() {
 // =============================================================================
 
 /// 9. grant → write/link → commit → WAL recovery → state consistent
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-09
 #[test]
 fn s09_grant_commit_wal_recovery_consistent() {
     let wal = temp_wal("s09");
@@ -508,6 +548,10 @@ fn s09_grant_commit_wal_recovery_consistent() {
 }
 
 /// 10. grant → abort → WAL recovery → no residual capability
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-09
 #[test]
 fn s10_grant_abort_wal_recovery_no_residual_cap() {
     let wal = temp_wal("s10");
@@ -576,6 +620,10 @@ fn s10_grant_abort_wal_recovery_no_residual_cap() {
 // =============================================================================
 
 /// 11. A grant B on C → B operates on C → A is not made holder of that grant
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s11_grantor_does_not_become_holder() {
     let wal = temp_wal("s11");
@@ -628,6 +676,10 @@ fn s11_grantor_does_not_become_holder() {
 /// 12. STRICT CAPABILITY MODEL: B without AdminCap on C cannot mint a new root Grant on C.
 /// Only holders of active AdminCap(resource) may CapabilityGrant on that resource.
 /// CapabilityDelegate remains the path for sharing an existing CapabilityId.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s12_grantee_further_grant_semantics() {
     let wal = temp_wal("s12");
@@ -664,6 +716,10 @@ fn s12_grantee_further_grant_semantics() {
 // =============================================================================
 
 /// A. birth A,B,C → grant → write → link → commit (single richer tx mix)
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s_extra_a_three_object_grant_write_link_commit() {
     let wal = temp_wal("extra_a");
@@ -695,6 +751,10 @@ fn s_extra_a_three_object_grant_write_link_commit() {
 }
 
 /// B. Multiple capability grants in one transaction
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s_extra_b_multiple_grants_same_tx() {
     let wal = temp_wal("extra_b");
@@ -729,6 +789,10 @@ fn s_extra_b_multiple_grants_same_tx() {
 }
 
 /// C. grant → write → abort → new tx cannot use aborted grant
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-05
 #[test]
 fn s_extra_c_abort_then_new_tx_cannot_use_grant() {
     let wal = temp_wal("extra_c");
@@ -761,6 +825,10 @@ fn s_extra_c_abort_then_new_tx_cannot_use_grant() {
 }
 
 /// D. grant → commit → new session uses capability
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s_extra_d_grant_commit_new_session_uses_cap() {
     let wal = temp_wal("extra_d");
@@ -791,6 +859,10 @@ fn s_extra_d_grant_commit_new_session_uses_cap() {
 }
 
 /// E. Consecutive writes A→B→C→A→C→B — capability_context / current_object must not drift into unauthorized access.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-06
 #[test]
 fn s_extra_e_consecutive_cross_object_writes_no_drift() {
     let wal = temp_wal("extra_e");
@@ -842,6 +914,10 @@ fn s_extra_e_consecutive_cross_object_writes_no_drift() {
 }
 
 /// F. Mixed link/unlink with capability grant
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s_extra_f_link_unlink_with_grant() {
     let wal = temp_wal("extra_f");
@@ -878,6 +954,10 @@ fn s_extra_f_link_unlink_with_grant() {
 }
 
 /// G. Multiple object switches before commit
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-06
 #[test]
 fn s_extra_g_multiple_object_switches_before_commit() {
     let wal = temp_wal("extra_g");
@@ -911,6 +991,10 @@ fn s_extra_g_multiple_object_switches_before_commit() {
 }
 
 /// H. Grant then operate under grantee identity in a fresh session (identity return).
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-13
 #[test]
 fn s_extra_h_grant_then_switch_identity_and_return() {
     let wal = temp_wal("extra_h");

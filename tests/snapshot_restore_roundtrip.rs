@@ -14,6 +14,10 @@ use veritas_kernel::types::*;
 
 /// Body state 组件 serde roundtrip 正确。
 /// 失败意味着 state 序列化丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn body_serde_state() {
     let body = ObjectBody::State;
@@ -24,6 +28,10 @@ fn body_serde_state() {
 
 /// Body module 空 rule serde roundtrip。
 /// 失败意味着 module 空规则序列化错误。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn body_serde_module_empty_rule() {
     let body = ObjectBody::Module {
@@ -39,6 +47,10 @@ fn body_serde_module_empty_rule() {
 
 /// Body module 有 rule 时 serde roundtrip。
 /// 失败意味着 rule 序列化丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn body_serde_module_with_rule() {
     let body = ObjectBody::Module {
@@ -59,6 +71,10 @@ fn body_serde_module_with_rule() {
 
 /// 空 CapGraph serde roundtrip。
 /// 失败意味着空 capability graph 序列化错误。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn cap_graph_roundtrip_empty() {
     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
@@ -70,6 +86,10 @@ fn cap_graph_roundtrip_empty() {
 
 /// 有 grants 的 CapGraph serde roundtrip。
 /// 失败意味着 grant 信息在序列化中丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn cap_graph_roundtrip_with_grants() {
     let mut graph = veritas_kernel::capability::CapabilityGraph::new();
@@ -85,6 +105,10 @@ fn cap_graph_roundtrip_with_grants() {
 
 /// 空 Scope serde roundtrip。
 /// 失败意味着空 scope 序列化错误。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn scope_roundtrip_empty() {
     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
@@ -96,6 +120,10 @@ fn scope_roundtrip_empty() {
 
 /// 有数据的 Scope serde roundtrip。
 /// 失败意味着 scope 数据丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn scope_roundtrip_with_data() {
     let registry = veritas_kernel::scope_registry::ScopeRegistry::new();
@@ -114,6 +142,10 @@ fn scope_roundtrip_with_data() {
 
 /// 空 Topology serde roundtrip。
 /// 失败意味着空拓扑序列化错误。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn topology_roundtrip_empty() {
     let engine = veritas_kernel::test_api::empty_engine();

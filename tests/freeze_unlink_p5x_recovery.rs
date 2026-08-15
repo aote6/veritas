@@ -95,6 +95,10 @@ fn unlink(kernel: &Kernel, from: u64, to: u64) {
 }
 
 /// P5.x: Freeze → Death sequence survives recovery
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn freeze_then_death_survives_recovery() {
     let wal_path = format!("target/test_freeze_death_{}.wal", std::process::id());
@@ -128,6 +132,10 @@ fn freeze_then_death_survives_recovery() {
 }
 
 /// P5.x: Link → Unlink sequence survives recovery
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn link_then_unlink_survives_recovery() {
     let wal_path = format!("target/test_link_unlink_{}.wal", std::process::id());
@@ -167,6 +175,10 @@ fn link_then_unlink_survives_recovery() {
 }
 
 /// P5.x: Freeze + Unlink — freeze survives, unlink applied correctly after recovery
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn freeze_and_unlink_survives_recovery() {
     let wal_path = format!("target/test_freeze_unlink_{}.wal", std::process::id());
@@ -202,6 +214,10 @@ fn freeze_and_unlink_survives_recovery() {
 }
 
 /// P5.x: Unlink + Death — unlinked target must survive owner death
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn unlink_then_death_target_survives() {
     let wal_path = format!("target/test_unlink_death_target_{}.wal", std::process::id());
@@ -246,6 +262,10 @@ fn unlink_then_death_target_survives() {
 }
 
 /// P5.x: Death cascade — OWNS link, owner death cascades to owned
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn death_cascade_survives_recovery() {
     let wal_path = format!("target/test_death_cascade_{}.wal", std::process::id());

@@ -11,6 +11,10 @@ use veritas_kernel::types::ObjectType;
 
 /// Receipt 的 after_root 必须匹配实际 world root hash。
 /// 失败意味着 receipt 与状态根脱节。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn receipt_after_matches_root_hash() {
     let wal_path = format!("target/test_rcpt1_{}.wal", std::process::id());
@@ -44,6 +48,10 @@ fn receipt_after_matches_root_hash() {
 
 /// Receipt before/after 与实际状态变化一致。
 /// 失败意味着 receipt 记录了错误的状态边界。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn receipt_before_after_consistency() {
     let wal_path = format!("target/test_rcpt2_{}.wal", std::process::id());
@@ -80,6 +88,10 @@ fn receipt_before_after_consistency() {
 
 /// Replay 后生成的 receipt 与原始一致。
 /// 失败意味着 replay 路径 receipt 计算分歧。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn receipt_replay_consistency() {
     let wal_path = format!("target/test_rcpt3_{}.wal", std::process::id());

@@ -72,6 +72,10 @@ fn grant(
 
 /// Checkpoint restore 后世界状态连续，可继续执行并保持拓扑一致。
 /// 失败意味着 restore 丢失了 live 状态或破坏了连续性不变量。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn checkpoint_restore_world_continuity() {
     let k_cont = Kernel::new();
@@ -135,6 +139,10 @@ fn checkpoint_restore_world_continuity() {
 
 /// Capability 身份（capability_id）在 checkpoint restore 后保持不变。
 /// 失败意味着身份在持久化/恢复路径上被重新分配，破坏可归因性。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn capability_identity_survives_checkpoint_restore() {
     let kernel = Kernel::new();
@@ -166,6 +174,10 @@ fn capability_identity_survives_checkpoint_restore() {
 
 /// 对象死亡后经 checkpoint restore 不应留下 ghost state。
 /// 失败意味着死亡状态未正确持久化，破坏生命周期不变量。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn object_death_no_ghost_state_after_checkpoint() {
     let kernel = Kernel::new();
@@ -205,6 +217,10 @@ fn object_death_no_ghost_state_after_checkpoint() {
 
 /// Checkpoint 保留 state entry 的版本号，restore 后版本连续。
 /// 失败意味着版本信息丢失，破坏乐观并发/一致性不变量。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn checkpoint_preserves_state_entry_versions() {
     let kernel = Kernel::new();

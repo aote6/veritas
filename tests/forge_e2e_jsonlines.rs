@@ -8,6 +8,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 /// Full Forge-like E2E: start veritasd, drive JSON-Lines, verify the whole chain.
+/// @category: D
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: INT-02
 #[test]
 fn forge_e2e_create_write_read_commit_observe() {
     let veritasd_path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_veritasd"));

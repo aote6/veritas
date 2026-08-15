@@ -177,6 +177,10 @@ fn empty_delta(tx_id: u64, version: u64) -> TransactionDelta {
 ///
 /// WorldService::tx_link does not pre-authorize; it relies on the same
 /// engine.commit → verify_capability path as Machine/Kernel.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_worldservice_commit_rejects_without_target_cap() {
     let (wal, kernel, world) = world_pair("link_ws");
@@ -232,6 +236,10 @@ fn audit_link_worldservice_commit_rejects_without_target_cap() {
 }
 
 /// Same topology via KernelCall path (Machine-equivalent authorization surface).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_kernel_commit_rejects_without_target_cap() {
     let wal = temp_wal("link_k");
@@ -264,6 +272,10 @@ fn audit_link_kernel_commit_rejects_without_target_cap() {
 }
 
 /// With capability on target, both WorldService and Kernel commit succeed.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_worldservice_succeeds_with_target_cap() {
     let (wal, kernel, world) = world_pair("link_ok");
@@ -288,6 +300,10 @@ fn audit_link_worldservice_succeeds_with_target_cap() {
 }
 
 /// Direct authorize_intent on AccessIntent::Link(A,B) with actor A, no caps.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_authorize_intent_requires_both_endpoints() {
     let wal = temp_wal("link_ai");
@@ -316,6 +332,10 @@ fn audit_link_authorize_intent_requires_both_endpoints() {
 
 /// Parity table assertion: WorldService and Kernel yield same commit outcome
 /// on identical object graph (no target cap).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_worldservice_machine_parity() {
     // WorldService path
@@ -370,6 +390,10 @@ fn audit_link_worldservice_machine_parity() {
 
 /// Contrast: WorldService pre-authorizes freeze/death/write switches, but NOT link.
 /// This documents API design, not necessarily a bug — commit still gates link.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_link_no_preauth_but_commit_gates() {
     let (wal, kernel, world) = world_pair("preauth");
@@ -404,6 +428,10 @@ fn audit_link_no_preauth_but_commit_gates() {
 
 /// After N commits, recovery must restore get_global_version() to the last
 /// commit_version (via apply()), even if recover()'s max_version log is 0.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recovery_restores_global_version() {
     let wal = temp_wal("ver_restore");
@@ -459,6 +487,10 @@ fn audit_recovery_restores_global_version() {
 }
 
 /// After recovery, subsequent commits must continue version sequence.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recovery_version_continues_after_restart() {
     let wal = temp_wal("ver_cont");
@@ -488,6 +520,10 @@ fn audit_recovery_version_continues_after_restart() {
 }
 
 /// receipts_since after recovery should see committed versions > since.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recovery_receipts_since_sees_history() {
     let (wal, _k, world) = world_pair("receipts");
@@ -537,6 +573,10 @@ fn audit_recovery_receipts_since_sees_history() {
 
 /// OCC-related: snapshot_version is taken at begin; after recovery a new
 /// transaction must see restored global_version as its baseline.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recovery_occ_baseline_matches_version() {
     let wal = temp_wal("occ");
@@ -566,6 +606,10 @@ fn audit_recovery_occ_baseline_matches_version() {
 
 /// Prove recover() max_version ignores TransactionCommitted while apply() fixes
 /// engine.global_version — documents the log discrepancy root cause.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recover_max_version_ignores_txcommitted_but_apply_sets_engine() {
     let wal = temp_wal("maxver");
@@ -616,6 +660,10 @@ fn audit_recover_max_version_ignores_txcommitted_but_apply_sets_engine() {
 
 /// Duplicate identical TransactionCommitted line appended — recovery must not
 /// invent extra objects / explode state. Prefer idempotent or last-wins.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_duplicate_transaction_committed() {
     let wal = temp_wal("dup_txc");
@@ -670,6 +718,10 @@ fn audit_wal_duplicate_transaction_committed() {
 
 /// Append a TransactionCommitted with a new birth id already used — recovery
 /// behavior: may recreate / overwrite registry entry; must not panic.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_duplicate_birth_id_in_new_tx() {
     let wal = temp_wal("dup_birth");
@@ -701,6 +753,10 @@ fn audit_wal_duplicate_birth_id_in_new_tx() {
 }
 
 /// TransactionCommitted with version going backwards relative to prior records.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_out_of_order_version() {
     let wal = temp_wal("ver_order");
@@ -740,6 +796,10 @@ fn audit_wal_out_of_order_version() {
 }
 
 /// Duplicate link edges via appended TransactionCommitted.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_duplicate_link_records() {
     let wal = temp_wal("dup_link");
@@ -785,6 +845,10 @@ fn audit_wal_duplicate_link_records() {
 }
 
 /// Capability grant duplicated via WAL append.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_duplicate_capability_grant() {
     let wal = temp_wal("dup_cap");
@@ -851,6 +915,10 @@ fn audit_wal_duplicate_capability_grant() {
 }
 
 /// recovery → commit → recovery → commit chain.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_recovery_commit_recovery_chain() {
     let wal = temp_wal("chain");
@@ -879,6 +947,10 @@ fn audit_recovery_commit_recovery_chain() {
 }
 
 /// Empty-body TransactionCommitted with advanced version only.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_empty_delta_bumps_version() {
     let wal = temp_wal("empty_delta");
@@ -912,6 +984,10 @@ fn audit_wal_empty_delta_bumps_version() {
 }
 
 /// Valid UTF-8 TXCOMMIT with illegal field values (BIRTH id=0).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_illegal_field_values() {
     let wal = temp_wal("illegal");
@@ -936,6 +1012,10 @@ fn audit_wal_illegal_field_values() {
 }
 
 /// Half-valid: corrupt CRC so record is skipped; prior state preserved.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_corrupt_crc_preserves_prior() {
     let wal = temp_wal("crc");
@@ -971,6 +1051,10 @@ fn audit_wal_corrupt_crc_preserves_prior() {
 }
 
 /// Replay: open same WAL twice; state identical (idempotent recovery).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_wal_replay_committed_delta_idempotent() {
     let wal = temp_wal("replay");
@@ -1007,6 +1091,10 @@ fn audit_wal_replay_committed_delta_idempotent() {
 
 /// 跨对象 write 在无 capability 时仍被拒绝（审计回归）。
 /// 失败意味着 write 授权检查被绕过。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_write_cross_object_still_denied() {
     let (wal, kernel, world) = world_pair("write_x");
@@ -1076,6 +1164,10 @@ fn make_delta(
 }
 
 /// 1. First apply: current=0, incoming.version=1 → APPLY
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_commit_version_first_apply() {
     let (wal, kernel, _world) = world_pair("cv_first");
@@ -1121,6 +1213,10 @@ fn audit_commit_version_first_apply() {
 }
 
 /// 2. Consecutive apply: version 1 then version 2 → both APPLY
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_commit_version_consecutive_apply() {
     let (wal, kernel, _world) = world_pair("cv_consec");
@@ -1176,6 +1272,10 @@ fn audit_commit_version_consecutive_apply() {
 ///
 /// tx_id is NOT part of Delta Identity; different tx_id with identical
 /// canonical content must still be recognized as the same Delta.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_equal_version_same_content_is_idempotent() {
     let (wal, kernel, _world) = world_pair("cv_same_content");
@@ -1234,6 +1334,10 @@ fn audit_equal_version_same_content_is_idempotent() {
 ///
 /// Upgrade of the former audit_equal_version_residual_gap_red.
 /// Core residual-gap contract: same version, different payload must not mutate.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_equal_version_different_content_is_rejected() {
     let (wal, kernel, world) = world_pair("cv_diff_content");
@@ -1300,6 +1404,10 @@ fn audit_equal_version_different_content_is_rejected() {
 ///
 /// Even if content hash matched a historical delta, stale version must REJECT.
 /// NO-OP is ONLY for equal version + same content hash.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_stale_version_is_rejected() {
     let (wal, kernel, _world) = world_pair("cv_stale");
@@ -1368,6 +1476,10 @@ fn audit_stale_version_is_rejected() {
 }
 
 /// 6. Version gap (version > current + 1) → REJECT
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_version_gap_is_rejected() {
     let (wal, kernel, _world) = world_pair("cv_gap");
@@ -1441,6 +1553,10 @@ fn audit_version_gap_is_rejected() {
 }
 
 /// 7. Repeated WAL replay is idempotent (A then B, then A then B again → NO-OP)
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_repeated_wal_replay_is_idempotent() {
     let (wal, kernel, _world) = world_pair("cv_replay");
@@ -1500,6 +1616,10 @@ fn audit_repeated_wal_replay_is_idempotent() {
 }
 
 /// 8. REJECT is atomic — multi-mutation illegal delta must not partially apply
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_rejected_delta_is_atomic() {
     let (wal, kernel, _world) = world_pair("cv_atomic");
@@ -1560,6 +1680,10 @@ fn audit_rejected_delta_is_atomic() {
 }
 
 /// 9. Equal version + same content preserves root identity (NO-OP root pin)
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_equal_version_same_content_preserves_root() {
     let (wal, kernel, _world) = world_pair("cv_root_pin");
@@ -1659,6 +1783,10 @@ fn base_delta() -> TransactionDelta {
 
 /// 相同 delta 的 canonical identity 相等。
 /// 失败意味着 identity 计算非确定性或字段遗漏。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_same_delta_equal() {
     let a = base_delta();
@@ -1673,6 +1801,10 @@ fn audit_canonical_identity_same_delta_equal() {
 
 /// Canonical identity 排除 tx_id（非语义字段）。
 /// 失败意味着 identity 混入了瞬时字段。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_excludes_tx_id() {
     let mut a = base_delta();
@@ -1688,6 +1820,10 @@ fn audit_canonical_identity_excludes_tx_id() {
 
 /// Canonical identity 排除 commit_version。
 /// 失败意味着 identity 混入了版本瞬时字段。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_excludes_commit_version() {
     let mut a = base_delta();
@@ -1703,6 +1839,10 @@ fn audit_canonical_identity_excludes_commit_version() {
 
 /// Canonical identity 包含 actor_id。
 /// 失败意味着归因信息丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_includes_actor_id() {
     let mut a = base_delta();
@@ -1718,6 +1858,10 @@ fn audit_canonical_identity_includes_actor_id() {
 
 /// Vec 字段顺序影响 canonical identity。
 /// 失败意味着顺序被错误规范化或忽略。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_vec_order_matters() {
     let mut a = base_delta();
@@ -1733,6 +1877,10 @@ fn audit_canonical_identity_vec_order_matters() {
 
 /// String 边界在 canonical identity 中安全（无歧义）。
 /// 失败意味着编码存在边界碰撞。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_string_boundary_safe() {
     let mut a = empty_delta(1, 1);
@@ -1752,6 +1900,10 @@ fn audit_canonical_identity_string_boundary_safe() {
 
 /// 空 Vec 与非空 Vec 的 identity 不同。
 /// 失败意味着空集合被错误处理。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_empty_vs_nonempty_vec() {
     let mut a = empty_delta(1, 1);
@@ -1767,6 +1919,10 @@ fn audit_canonical_identity_empty_vs_nonempty_vec() {
 
 /// Option Some/None 在 identity 中可区分。
 /// 失败意味着 Option 编码丢失信息。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_option_some_none() {
     let mut a = empty_delta(1, 1);
@@ -1798,6 +1954,10 @@ fn audit_canonical_identity_option_some_none() {
 
 /// Enum 不同 variant 产生不同 identity。
 /// 失败意味着 variant 区分失败。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_enum_variants() {
     let mut a = empty_delta(1, 1);
@@ -1819,6 +1979,10 @@ fn audit_canonical_identity_enum_variants() {
 
 /// 每个语义字段都影响 canonical identity。
 /// 失败意味着某些语义字段被遗漏。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_canonical_identity_every_semantic_field() {
     let empty = empty_delta(1, 1);
@@ -1921,6 +2085,10 @@ fn audit_canonical_identity_every_semantic_field() {
 
 /// Genesis 时 last_applied_delta_hash 为零。
 /// 失败意味着初始 hash 状态错误。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_last_applied_delta_hash_genesis_is_zero() {
     let (wal, kernel, _world) = world_pair("lah_genesis");
@@ -1935,6 +2103,10 @@ fn audit_last_applied_delta_hash_genesis_is_zero() {
 
 /// Apply delta 后 last_applied_delta_hash 更新。
 /// 失败意味着 hash 链未推进。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_last_applied_delta_hash_updates_on_apply() {
     let (wal, kernel, _world) = world_pair("lah_apply");
@@ -1962,6 +2134,10 @@ fn audit_last_applied_delta_hash_updates_on_apply() {
 
 /// Checkpoint 保留 last_applied_delta_hash。
 /// 失败意味着 hash 链在 checkpoint 丢失。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_checkpoint_preserves_last_applied_delta_hash() {
     let (wal, kernel, _world) = world_pair("lah_ckpt");
@@ -2014,6 +2190,10 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
 
 /// Checkpoint roundtrip 后 identity 连续。
 /// 失败意味着 identity 在持久化路径上漂移。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn audit_checkpoint_roundtrip_identity_continuity() {
     let (wal, kernel, _world) = world_pair("lah_roundtrip");

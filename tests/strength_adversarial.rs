@@ -110,6 +110,10 @@ fn birth_via_kernel(kernel: &Kernel) -> u64 {
 
 /// S-A01: Illegal grantor — session actor is A, attempt to grant as B without capability.
 /// Expected: PermissionDenied (or equivalent). No residual capability.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a01_illegal_grantor() {
     let (wal, kernel, world) = world_with_wal("s_a01");
@@ -155,6 +159,10 @@ fn s_a01_illegal_grantor() {
 
 /// S-A02: Grantor/grantee swap attack — grantor tries to grant to self on foreign resource
 /// without capability on that resource.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a02_grantor_grantee_swap_foreign_resource() {
     let (wal, _kernel, world) = world_with_wal("s_a02");
@@ -180,6 +188,10 @@ fn s_a02_grantor_grantee_swap_foreign_resource() {
 }
 
 /// S-A03: Cross-object write without capability must fail; state must not change.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a03_cross_object_write_without_cap() {
     let (wal, kernel, world) = world_with_wal("s_a03");
@@ -230,6 +242,10 @@ fn s_a03_cross_object_write_without_cap() {
 
 /// S-A04: Self-access exemption must NOT authorize write on unrelated object.
 /// current_object == A, capability_context == A, target == B → must require capability.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a04_self_access_exemption_boundary() {
     let (wal, _kernel, world) = world_with_wal("s_a04");
@@ -269,6 +285,10 @@ fn s_a04_self_access_exemption_boundary() {
 }
 
 /// S-A05: After abort, pending capability must not authorize subsequent session.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a05_abort_invalidates_pending_capability() {
     let (wal, kernel, world) = world_with_wal("s_a05");
@@ -310,6 +330,10 @@ fn s_a05_abort_invalidates_pending_capability() {
 
 /// S-A06: After commit+revoke path (if available via KernelCall), old capability must not work.
 /// Uses KernelCall::CapabilityRevoke directly.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a06_revoke_then_use_denied() {
     let wal = temp_wal("s_a06");
@@ -361,6 +385,10 @@ fn s_a06_revoke_then_use_denied() {
 }
 
 /// S-A07: Freeze without capability must fail; object remains Alive.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a07_unauthorized_freeze() {
     let (wal, _kernel, world) = world_with_wal("s_a07");
@@ -383,6 +411,10 @@ fn s_a07_unauthorized_freeze() {
 }
 
 /// S-A08: Death without capability must fail; object remains Alive.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a08_unauthorized_death() {
     let (wal, _kernel, world) = world_with_wal("s_a08");
@@ -409,6 +441,10 @@ fn s_a08_unauthorized_death() {
 // =============================================================================
 
 /// S-B01: Session A must not observe session B's uncommitted writes.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_b01_session_cannot_see_uncommitted_writes() {
     let (wal, _kernel, world) = world_with_wal("s_b01");
@@ -446,6 +482,10 @@ fn s_b01_session_cannot_see_uncommitted_writes() {
 }
 
 /// S-B02: Session A must not use session B's pending capability.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_b02_session_cannot_use_other_pending_cap() {
     let (wal, _kernel, world) = world_with_wal("s_b02");
@@ -478,6 +518,10 @@ fn s_b02_session_cannot_use_other_pending_cap() {
 }
 
 /// S-B03: Abort clears all pending objects — they must not appear after abort.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_b03_abort_clears_pending_objects() {
     let (wal, _kernel, world) = world_with_wal("s_b03");
@@ -493,6 +537,10 @@ fn s_b03_abort_clears_pending_objects() {
 }
 
 /// S-B04: Using ended session must return NoSession, not panic.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_b04_ended_session_rejected() {
     let (wal, _kernel, world) = world_with_wal("s_b04");
@@ -534,6 +582,10 @@ fn s_b04_ended_session_rejected() {
 }
 
 /// S-B05: Nonexistent session id must return NoSession.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_b05_nonexistent_session() {
     let (wal, _kernel, world) = world_with_wal("s_b05");
@@ -558,6 +610,10 @@ fn s_b05_nonexistent_session() {
 // =============================================================================
 
 /// S-W01: Truncate final WAL record at various offsets — recovery must not panic.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_w01_truncated_final_record_no_panic() {
     let wal = temp_wal("s_w01");
@@ -587,6 +643,10 @@ fn s_w01_truncated_final_record_no_panic() {
 }
 
 /// S-W02: Flip single bytes across the WAL — recovery must not panic.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_w02_single_byte_corruption_no_panic() {
     let wal = temp_wal("s_w02");
@@ -615,6 +675,10 @@ fn s_w02_single_byte_corruption_no_panic() {
 }
 
 /// S-W03: Empty WAL recovery.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_w03_empty_wal() {
     let wal = temp_wal("s_w03");
@@ -625,6 +689,10 @@ fn s_w03_empty_wal() {
 }
 
 /// S-R01: Recovery is idempotent — N recoveries yield same object set and state_root.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_r01_recovery_idempotent() {
     let wal = temp_wal("s_r01");
@@ -660,6 +728,10 @@ fn s_r01_recovery_idempotent() {
 }
 
 /// S-R02: Duplicate recovery of multi-object + link + capability world stays consistent.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_r02_complex_world_recovery_stable() {
     let (wal, kernel, world) = world_with_wal("s_r02");
@@ -705,6 +777,10 @@ fn s_r02_complex_world_recovery_stable() {
 
 /// S-W04: Append a duplicate of the last complete WAL line — recovery must not panic
 /// and must not invent extra objects beyond what CRC/parser accepts.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-10
 #[test]
 fn s_w04_duplicate_wal_line() {
     let wal = temp_wal("s_w04");
@@ -744,6 +820,10 @@ fn s_w04_duplicate_wal_line() {
 // =============================================================================
 
 /// S-G01: Operations on nonexistent ObjectId must fail cleanly.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_g01_nonexistent_object_ops() {
     let (wal, _kernel, world) = world_with_wal("s_g01");
@@ -771,6 +851,10 @@ fn s_g01_nonexistent_object_ops() {
 }
 
 /// S-G02: ObjectId 0 is not a valid actor / target for privileged ops.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_g02_object_id_zero_boundary() {
     let (wal, _kernel, world) = world_with_wal("s_g02");
@@ -790,6 +874,10 @@ fn s_g02_object_id_zero_boundary() {
 }
 
 /// S-H01: Empty payload write and read-back.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_h01_empty_and_large_payload() {
     let (wal, _kernel, world) = world_with_wal("s_h01");
@@ -823,6 +911,10 @@ fn s_h01_empty_and_large_payload() {
 }
 
 /// S-H02: Overwrite same state multiple times; last write wins after commit.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_h02_multiple_overwrite_same_state() {
     let (wal, _kernel, world) = world_with_wal("s_h02");
@@ -846,6 +938,10 @@ fn s_h02_multiple_overwrite_same_state() {
 // =============================================================================
 
 /// S-T01: Double commit must fail on second call (NoSession).
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_t01_double_commit() {
     let (wal, _kernel, world) = world_with_wal("s_t01");
@@ -860,6 +956,10 @@ fn s_t01_double_commit() {
 }
 
 /// S-T02: Double abort.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_t02_double_abort() {
     let (wal, _kernel, world) = world_with_wal("s_t02");
@@ -871,6 +971,10 @@ fn s_t02_double_abort() {
 }
 
 /// S-T03: Commit then abort on same id.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_t03_commit_then_abort() {
     let (wal, _kernel, world) = world_with_wal("s_t03");
@@ -883,6 +987,10 @@ fn s_t03_commit_then_abort() {
 }
 
 /// S-T04: Abort then commit on same id.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_t04_abort_then_commit() {
     let (wal, _kernel, world) = world_with_wal("s_t04");
@@ -898,6 +1006,10 @@ fn s_t04_abort_then_commit() {
 }
 
 /// S-T05: begin → begin (two concurrent sessions) is allowed by architecture.
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-07
 #[test]
 fn s_t05_multiple_sessions_allowed() {
     let (wal, _kernel, world) = world_with_wal("s_t05");
@@ -918,6 +1030,10 @@ fn s_t05_multiple_sessions_allowed() {
 // =============================================================================
 
 /// S-E01: Level-1 stress — 100 objects in separate transactions.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_e01_stress_100_objects() {
     let (wal, kernel, world) = world_with_wal("s_e01");
@@ -949,6 +1065,10 @@ fn s_e01_stress_100_objects() {
 }
 
 /// S-E02: Level-1 multi-op single transaction — many writes.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_e02_stress_many_writes_one_tx() {
     let (wal, kernel, world) = world_with_wal("s_e02");
@@ -969,6 +1089,10 @@ fn s_e02_stress_many_writes_one_tx() {
 }
 
 /// S-E03: Level-2 stress — 1000 object births (separate txs). Skip under tight CI if needed.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_e03_stress_1000_objects() {
     let (wal, kernel, world) = world_with_wal("s_e03");
@@ -997,6 +1121,10 @@ fn s_e03_stress_1000_objects() {
 }
 
 /// S-E04: Wide capability graph — many grants from one holder.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_e04_stress_wide_capability_graph() {
     let (wal, kernel, world) = world_with_wal("s_e04");
@@ -1031,6 +1159,10 @@ fn s_e04_stress_wide_capability_graph() {
 
 /// S-C01: Concurrent sessions writing different objects must both succeed.
 /// WorldService serializes via sessions Mutex; Kernel uses per-structure Mutex.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_c01_concurrent_different_objects() {
     let (wal, kernel, world) = world_with_wal("s_c01");
@@ -1070,6 +1202,10 @@ fn s_c01_concurrent_different_objects() {
 }
 
 /// S-C02: Concurrent begin + commit of independent sessions.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_c02_concurrent_session_lifecycle() {
     let (wal, _kernel, world) = world_with_wal("s_c02");
@@ -1099,6 +1235,10 @@ fn s_c02_concurrent_session_lifecycle() {
 
 /// S-C03: Concurrent same-object writes — architecture may serialize or OCC-conflict.
 /// Must not panic / deadlock. Final state must be one of the written values or clean error.
+/// @category: B
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-02
 #[test]
 fn s_c03_concurrent_same_object_writes() {
     let (wal, _kernel, world) = world_with_wal("s_c03");
@@ -1139,6 +1279,10 @@ fn s_c03_concurrent_same_object_writes() {
 // =============================================================================
 
 /// S-A09: Link without capability on target must fail.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a09_link_without_capability() {
     let (wal, _kernel, world) = world_with_wal("s_a09");
@@ -1168,6 +1312,10 @@ fn s_a09_link_without_capability() {
 }
 
 /// S-A10: After successful grant+commit, grantee can use; grantor identity is not swapped.
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-14
 #[test]
 fn s_a10_grantor_does_not_become_grantee() {
     let (wal, kernel, world) = world_with_wal("s_a10");

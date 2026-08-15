@@ -28,6 +28,10 @@ fn birth(kernel: &Kernel) -> u64 {
 
 /// Replay engine 正确观察到 ObjectBirth 事件。
 /// 失败意味着 birth 未进入 replay 可见事件流。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn replay_engine_sees_births() {
     let wal_path = format!("target/test_replay_birth_{}.wal", std::process::id());
@@ -54,6 +58,10 @@ fn replay_engine_sees_births() {
 
 /// Replay engine 正确观察到 Capability 相关事件。
 /// 失败意味着 capability 事件未进入 replay 可见事件流。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn replay_engine_sees_capability() {
     let wal_path = format!("target/test_replay_cap_{}.wal", std::process::id());

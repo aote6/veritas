@@ -42,6 +42,10 @@ fn build_world(world: &TestWorld) {
 
 /// 全量五组件 checkpoint roundtrip 后状态与 live 等价。
 /// 失败意味着序列化/反序列化丢失关键状态。
+/// @category: D
+/// @layer: integration
+/// @testworld: PREFERRED
+/// @req: INT-03
 #[test]
 fn checkpoint_full_roundtrip_all_five_components() {
     let world = TestWorld::new();
@@ -66,6 +70,10 @@ fn checkpoint_full_roundtrip_all_five_components() {
 
 /// Checkpoint restore 后可继续正常执行新事务。
 /// 失败意味着 restore 后运行时处于不可用状态。
+/// @category: D
+/// @layer: integration
+/// @testworld: PREFERRED
+/// @req: INT-03
 #[test]
 fn checkpoint_restore_then_continue_execution() {
     let world = TestWorld::new();
@@ -102,6 +110,10 @@ fn checkpoint_restore_then_continue_execution() {
 
 /// 多次 checkpoint restore 结果幂等，状态不漂移。
 /// 失败意味着 restore 非幂等，破坏确定性。
+/// @category: D
+/// @layer: integration
+/// @testworld: PREFERRED
+/// @req: INT-03
 #[test]
 fn checkpoint_restore_idempotent() {
     let world = TestWorld::new();
@@ -126,6 +138,10 @@ fn checkpoint_restore_idempotent() {
 
 /// Checkpoint roundtrip 后 root hash 与原始一致。
 /// 失败意味着状态根计算或持久化不一致。
+/// @category: D
+/// @layer: integration
+/// @testworld: PREFERRED
+/// @req: INT-03
 #[test]
 fn checkpoint_root_hash_consistent() {
     let world = TestWorld::new();
@@ -152,6 +168,10 @@ fn checkpoint_root_hash_consistent() {
 
 /// Checkpoint 正确保存并恢复内部 counter。
 /// 失败意味着计数器状态丢失，可能影响 id 分配。
+/// @category: D
+/// @layer: integration
+/// @testworld: PREFERRED
+/// @req: INT-03
 #[test]
 fn checkpoint_counter_roundtrip() {
     let world = TestWorld::new();

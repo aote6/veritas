@@ -2,6 +2,10 @@ use crate::common::new_kernel;
 use veritas_kernel::kernel::KernelCall;
 use veritas_kernel::test_api::KernelTestExt;
 
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn t2_conflict_detection() {
     let tk = new_kernel();
@@ -34,6 +38,10 @@ fn t2_conflict_detection() {
     assert!(res.is_err(), "Tx1 must detect write-write conflict");
 }
 
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn test_blind_write_write_conflict() {
     let tk = new_kernel();

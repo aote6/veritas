@@ -11,6 +11,10 @@ use veritas_kernel::types::ObjectType;
 
 /// 空 WAL replay 返回非零（有意义的结果/状态）。
 /// 失败意味着空路径处理错误。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn replay_empty_wal_returns_nonzero() {
     let wal_path = format!("target/test_replay_empty_{}.wal", std::process::id());
@@ -31,6 +35,10 @@ fn replay_empty_wal_returns_nonzero() {
 
 /// Replay 结果与 recovery idle 状态等价。
 /// 失败意味着两条恢复路径分歧。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn replay_equals_recovery_idle() {
     let wal_path = format!("target/test_replay_idle_{}.wal", std::process::id());
@@ -73,6 +81,10 @@ fn replay_equals_recovery_idle() {
 
 /// 相同输入多次 replay 结果完全一致。
 /// 失败意味着确定性执行承诺被破坏。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn wal_replay_is_deterministic() {
     let wal_path = format!("target/test_replay_det_{}.wal", std::process::id());
@@ -108,6 +120,10 @@ fn wal_replay_is_deterministic() {
 
 /// 不同操作序列产生不同 root hash。
 /// 失败意味着 hash 碰撞或未正确反映状态变化。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn replay_different_ops_different_hash() {
     let wal1 = format!("target/test_replay_diff1_{}.wal", std::process::id());

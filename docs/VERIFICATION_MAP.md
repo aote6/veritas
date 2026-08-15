@@ -37,206 +37,206 @@
 | tests/capability_revoke.rs::kernel_capability_revoke_not_holder_errors | B | capability | FORBIDDEN | CAP-10 |
 | tests/capability_revoke.rs::kernel_capability_revoke_survives_checkpoint | C | recovery | FORBIDDEN | REC-04 |
 | tests/capability_revoke.rs::kernel_capability_revoke_wal_replay | C | recovery | FORBIDDEN | REC-04 |
-| tests/checkpoint_continuity.rs::capability_identity_survives_checkpoint_restore | | | | |
-| tests/checkpoint_continuity.rs::checkpoint_preserves_state_entry_versions | | | | |
-| tests/checkpoint_continuity.rs::checkpoint_restore_world_continuity | | | | |
-| tests/checkpoint_continuity.rs::object_death_no_ghost_state_after_checkpoint | | | | |
-| tests/checkpoint_roundtrip.rs::checkpoint_counter_roundtrip | | | | |
-| tests/checkpoint_roundtrip.rs::checkpoint_full_roundtrip_all_five_components | | | | |
-| tests/checkpoint_roundtrip.rs::checkpoint_restore_idempotent | | | | |
-| tests/checkpoint_roundtrip.rs::checkpoint_restore_then_continue_execution | | | | |
-| tests/checkpoint_roundtrip.rs::checkpoint_root_hash_consistent | | | | |
+| tests/checkpoint_continuity.rs::capability_identity_survives_checkpoint_restore | C | recovery | FORBIDDEN | REC-06 |
+| tests/checkpoint_continuity.rs::checkpoint_preserves_state_entry_versions | C | recovery | FORBIDDEN | REC-06 |
+| tests/checkpoint_continuity.rs::checkpoint_restore_world_continuity | C | recovery | FORBIDDEN | REC-06 |
+| tests/checkpoint_continuity.rs::object_death_no_ghost_state_after_checkpoint | C | recovery | FORBIDDEN | REC-06 |
+| tests/checkpoint_roundtrip.rs::checkpoint_counter_roundtrip | D | integration | PREFERRED | INT-03 |
+| tests/checkpoint_roundtrip.rs::checkpoint_full_roundtrip_all_five_components | D | integration | PREFERRED | INT-03 |
+| tests/checkpoint_roundtrip.rs::checkpoint_restore_idempotent | D | integration | PREFERRED | INT-03 |
+| tests/checkpoint_roundtrip.rs::checkpoint_restore_then_continue_execution | D | integration | PREFERRED | INT-03 |
+| tests/checkpoint_roundtrip.rs::checkpoint_root_hash_consistent | D | integration | PREFERRED | INT-03 |
 | tests/commitment_domain.rs::diagnose_live_vs_recovery_components | C | recovery | FORBIDDEN | REC-05 |
 | tests/commitment_domain.rs::self_access_does_not_grow_capability_graph | B | capability | FORBIDDEN | CAP-11 |
-| tests/forge_e2e_jsonlines.rs::forge_e2e_create_write_read_commit_observe | | | | |
-| tests/freeze_unlink_p5x_recovery.rs::death_cascade_survives_recovery | | | | |
-| tests/freeze_unlink_p5x_recovery.rs::freeze_and_unlink_survives_recovery | | | | |
-| tests/freeze_unlink_p5x_recovery.rs::freeze_then_death_survives_recovery | | | | |
-| tests/freeze_unlink_p5x_recovery.rs::link_then_unlink_survives_recovery | | | | |
-| tests/freeze_unlink_p5x_recovery.rs::unlink_then_death_target_survives | | | | |
-| tests/kernel_world_runtime.rs::module_a_object_visible_to_module_b_through_runtime_execute | | | | |
-| tests/machine/basic.rs::e2e_1_single_object_closure | | | | |
-| tests/machine/basic.rs::e2e_2_dynamic_register_dataflow | | | | |
-| tests/machine/basic.rs::e2e_3_birth_write_link_full_chain | | | | |
-| tests/machine/basic.rs::e2e_4_illegal_cross_tx_call_denied | | | | |
+| tests/forge_e2e_jsonlines.rs::forge_e2e_create_write_read_commit_observe | D | integration | NOT_USED | INT-02 |
+| tests/freeze_unlink_p5x_recovery.rs::death_cascade_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/freeze_unlink_p5x_recovery.rs::freeze_and_unlink_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/freeze_unlink_p5x_recovery.rs::freeze_then_death_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/freeze_unlink_p5x_recovery.rs::link_then_unlink_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/freeze_unlink_p5x_recovery.rs::unlink_then_death_target_survives | C | recovery | FORBIDDEN | REC-06 |
+| tests/kernel_world_runtime.rs::module_a_object_visible_to_module_b_through_runtime_execute | D | integration | NOT_USED | INT-02 |
+| tests/machine/basic.rs::e2e_1_single_object_closure | A | kernel | FORBIDDEN | KER-03 |
+| tests/machine/basic.rs::e2e_2_dynamic_register_dataflow | A | kernel | FORBIDDEN | KER-03 |
+| tests/machine/basic.rs::e2e_3_birth_write_link_full_chain | A | kernel | FORBIDDEN | KER-03 |
+| tests/machine/basic.rs::e2e_4_illegal_cross_tx_call_denied | B | capability | FORBIDDEN | CAP-15 |
 | tests/machine_object_link_security.rs::object_link_with_proper_capability_succeeds | B | capability | FORBIDDEN | CAP-12 |
 | tests/machine_object_link_security.rs::object_link_without_capability_on_target_is_rejected | B | capability | FORBIDDEN | CAP-12 |
-| tests/meta_verification_comments.rs::all_test_files_have_doc_comments | | | | |
-| tests/multi_object_transaction_matrix.rs::s01_birth_ab_write_ab_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s02_birth_ab_link_ab_write_a_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s03_birth_ab_write_a_link_ab_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s04_grant_a_to_b_on_c_write_b_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s05_grant_a_to_b_on_c_link_b_c_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s06_grant_then_write_b_link_b_to_a_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s06b_grant_on_c_does_not_authorize_link_to_a | | | | |
-| tests/multi_object_transaction_matrix.rs::s07_multi_object_abort_no_residual_state | | | | |
-| tests/multi_object_transaction_matrix.rs::s08_grant_then_abort_leaves_no_capability | | | | |
-| tests/multi_object_transaction_matrix.rs::s09_grant_commit_wal_recovery_consistent | | | | |
-| tests/multi_object_transaction_matrix.rs::s10_grant_abort_wal_recovery_no_residual_cap | | | | |
-| tests/multi_object_transaction_matrix.rs::s11_grantor_does_not_become_holder | | | | |
-| tests/multi_object_transaction_matrix.rs::s12_grantee_further_grant_semantics | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_a_three_object_grant_write_link_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_b_multiple_grants_same_tx | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_c_abort_then_new_tx_cannot_use_grant | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_d_grant_commit_new_session_uses_cap | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_e_consecutive_cross_object_writes_no_drift | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_f_link_unlink_with_grant | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_g_multiple_object_switches_before_commit | | | | |
-| tests/multi_object_transaction_matrix.rs::s_extra_h_grant_then_switch_identity_and_return | | | | |
-| tests/multi_object_transaction_regression.rs::test_a_multi_object_abort_leaves_no_partial_state | | | | |
-| tests/multi_object_transaction_regression.rs::test_b_cross_session_capability_isolation | | | | |
-| tests/multi_object_transaction_regression.rs::test_c_wal_recovery_multi_object_link_no_duplication | | | | |
-| tests/object/birth.rs::o1_object_birth_creates_isolated_entity | | | | |
-| tests/object/lifecycle.rs::lifecycle_alive_to_dead | | | | |
-| tests/object/lifecycle.rs::lifecycle_birth_alive | | | | |
-| tests/object/lifecycle.rs::lifecycle_birth_freeze_dead | | | | |
-| tests/object/lifecycle.rs::lifecycle_death_irreversible | | | | |
-| tests/object/lifecycle.rs::lifecycle_depends_on_invalidation | | | | |
-| tests/object/lifecycle.rs::lifecycle_frozen_rejects_link | | | | |
-| tests/object/lifecycle.rs::lifecycle_owns_cascade | | | | |
-| tests/object/lifecycle.rs::lifecycle_owns_chain_cascade | | | | |
-| tests/object/lifecycle.rs::lifecycle_references_no_cascade | | | | |
-| tests/object/lifecycle.rs::lifecycle_self_link_rejected | | | | |
-| tests/object/memory.rs::memory_isolated_per_object | | | | |
-| tests/object_birth_self_call.rs::root_can_call_into_object_it_just_birthed | | | | |
-| tests/receipt.rs::receipt_after_matches_root_hash | | | | |
-| tests/receipt.rs::receipt_before_after_consistency | | | | |
-| tests/receipt.rs::receipt_replay_consistency | | | | |
-| tests/replay.rs::replay_different_ops_different_hash | | | | |
-| tests/replay.rs::replay_empty_wal_returns_nonzero | | | | |
-| tests/replay.rs::replay_equals_recovery_idle | | | | |
-| tests/replay.rs::wal_replay_is_deterministic | | | | |
-| tests/replay_determinism.rs::object_ops_are_deterministic | | | | |
-| tests/replay_determinism.rs::same_wal_same_state | | | | |
-| tests/replay_determinism.rs::state_machine_replay_is_deterministic | | | | |
-| tests/replay_determinism.rs::wal_contains_full_world | | | | |
-| tests/replay_engine_test.rs::replay_engine_sees_births | | | | |
-| tests/replay_engine_test.rs::replay_engine_sees_capability | | | | |
-| tests/root_hash.rs::empty_world_root_hash_is_deterministic | | | | |
-| tests/root_hash.rs::root_hash_changes_on_birth | | | | |
-| tests/root_hash.rs::root_hash_changes_on_link | | | | |
-| tests/root_hash.rs::root_hash_changes_on_write | | | | |
-| tests/root_hash.rs::root_hash_order_independent | | | | |
-| tests/root_link_two_children.rs::root_can_link_two_self_birthed_children_without_call | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_empty_vs_nonempty_vec | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_enum_variants | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_every_semantic_field | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_excludes_commit_version | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_excludes_tx_id | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_includes_actor_id | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_option_some_none | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_same_delta_equal | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_string_boundary_safe | | | | |
-| tests/security_recovery_audit.rs::audit_canonical_identity_vec_order_matters | | | | |
-| tests/security_recovery_audit.rs::audit_checkpoint_preserves_last_applied_delta_hash | | | | |
-| tests/security_recovery_audit.rs::audit_checkpoint_roundtrip_identity_continuity | | | | |
-| tests/security_recovery_audit.rs::audit_commit_version_consecutive_apply | | | | |
-| tests/security_recovery_audit.rs::audit_commit_version_first_apply | | | | |
-| tests/security_recovery_audit.rs::audit_equal_version_different_content_is_rejected | | | | |
-| tests/security_recovery_audit.rs::audit_equal_version_same_content_is_idempotent | | | | |
-| tests/security_recovery_audit.rs::audit_equal_version_same_content_preserves_root | | | | |
-| tests/security_recovery_audit.rs::audit_last_applied_delta_hash_genesis_is_zero | | | | |
-| tests/security_recovery_audit.rs::audit_last_applied_delta_hash_updates_on_apply | | | | |
-| tests/security_recovery_audit.rs::audit_link_authorize_intent_requires_both_endpoints | | | | |
-| tests/security_recovery_audit.rs::audit_link_kernel_commit_rejects_without_target_cap | | | | |
-| tests/security_recovery_audit.rs::audit_link_no_preauth_but_commit_gates | | | | |
-| tests/security_recovery_audit.rs::audit_link_worldservice_commit_rejects_without_target_cap | | | | |
-| tests/security_recovery_audit.rs::audit_link_worldservice_machine_parity | | | | |
-| tests/security_recovery_audit.rs::audit_link_worldservice_succeeds_with_target_cap | | | | |
-| tests/security_recovery_audit.rs::audit_recover_max_version_ignores_txcommitted_but_apply_sets_engine | | | | |
-| tests/security_recovery_audit.rs::audit_recovery_commit_recovery_chain | | | | |
-| tests/security_recovery_audit.rs::audit_recovery_occ_baseline_matches_version | | | | |
-| tests/security_recovery_audit.rs::audit_recovery_receipts_since_sees_history | | | | |
-| tests/security_recovery_audit.rs::audit_recovery_restores_global_version | | | | |
-| tests/security_recovery_audit.rs::audit_recovery_version_continues_after_restart | | | | |
-| tests/security_recovery_audit.rs::audit_rejected_delta_is_atomic | | | | |
-| tests/security_recovery_audit.rs::audit_repeated_wal_replay_is_idempotent | | | | |
-| tests/security_recovery_audit.rs::audit_stale_version_is_rejected | | | | |
-| tests/security_recovery_audit.rs::audit_version_gap_is_rejected | | | | |
-| tests/security_recovery_audit.rs::audit_wal_corrupt_crc_preserves_prior | | | | |
-| tests/security_recovery_audit.rs::audit_wal_duplicate_birth_id_in_new_tx | | | | |
-| tests/security_recovery_audit.rs::audit_wal_duplicate_capability_grant | | | | |
-| tests/security_recovery_audit.rs::audit_wal_duplicate_link_records | | | | |
-| tests/security_recovery_audit.rs::audit_wal_duplicate_transaction_committed | | | | |
-| tests/security_recovery_audit.rs::audit_wal_empty_delta_bumps_version | | | | |
-| tests/security_recovery_audit.rs::audit_wal_illegal_field_values | | | | |
-| tests/security_recovery_audit.rs::audit_wal_out_of_order_version | | | | |
-| tests/security_recovery_audit.rs::audit_wal_replay_committed_delta_idempotent | | | | |
-| tests/security_recovery_audit.rs::audit_write_cross_object_still_denied | | | | |
-| tests/snapshot_restore_roundtrip.rs::body_serde_module_empty_rule | | | | |
-| tests/snapshot_restore_roundtrip.rs::body_serde_module_with_rule | | | | |
-| tests/snapshot_restore_roundtrip.rs::body_serde_state | | | | |
-| tests/snapshot_restore_roundtrip.rs::cap_graph_roundtrip_empty | | | | |
-| tests/snapshot_restore_roundtrip.rs::cap_graph_roundtrip_with_grants | | | | |
-| tests/snapshot_restore_roundtrip.rs::scope_roundtrip_empty | | | | |
-| tests/snapshot_restore_roundtrip.rs::scope_roundtrip_with_data | | | | |
-| tests/snapshot_restore_roundtrip.rs::topology_roundtrip_empty | | | | |
-| tests/strength_adversarial.rs::s_a01_illegal_grantor | | | | |
-| tests/strength_adversarial.rs::s_a02_grantor_grantee_swap_foreign_resource | | | | |
-| tests/strength_adversarial.rs::s_a03_cross_object_write_without_cap | | | | |
-| tests/strength_adversarial.rs::s_a04_self_access_exemption_boundary | | | | |
-| tests/strength_adversarial.rs::s_a05_abort_invalidates_pending_capability | | | | |
-| tests/strength_adversarial.rs::s_a06_revoke_then_use_denied | | | | |
-| tests/strength_adversarial.rs::s_a07_unauthorized_freeze | | | | |
-| tests/strength_adversarial.rs::s_a08_unauthorized_death | | | | |
-| tests/strength_adversarial.rs::s_a09_link_without_capability | | | | |
-| tests/strength_adversarial.rs::s_a10_grantor_does_not_become_grantee | | | | |
-| tests/strength_adversarial.rs::s_b01_session_cannot_see_uncommitted_writes | | | | |
-| tests/strength_adversarial.rs::s_b02_session_cannot_use_other_pending_cap | | | | |
-| tests/strength_adversarial.rs::s_b03_abort_clears_pending_objects | | | | |
-| tests/strength_adversarial.rs::s_b04_ended_session_rejected | | | | |
-| tests/strength_adversarial.rs::s_b05_nonexistent_session | | | | |
-| tests/strength_adversarial.rs::s_c01_concurrent_different_objects | | | | |
-| tests/strength_adversarial.rs::s_c02_concurrent_session_lifecycle | | | | |
-| tests/strength_adversarial.rs::s_c03_concurrent_same_object_writes | | | | |
-| tests/strength_adversarial.rs::s_e01_stress_100_objects | | | | |
-| tests/strength_adversarial.rs::s_e02_stress_many_writes_one_tx | | | | |
-| tests/strength_adversarial.rs::s_e03_stress_1000_objects | | | | |
-| tests/strength_adversarial.rs::s_e04_stress_wide_capability_graph | | | | |
-| tests/strength_adversarial.rs::s_g01_nonexistent_object_ops | | | | |
-| tests/strength_adversarial.rs::s_g02_object_id_zero_boundary | | | | |
-| tests/strength_adversarial.rs::s_h01_empty_and_large_payload | | | | |
-| tests/strength_adversarial.rs::s_h02_multiple_overwrite_same_state | | | | |
-| tests/strength_adversarial.rs::s_r01_recovery_idempotent | | | | |
-| tests/strength_adversarial.rs::s_r02_complex_world_recovery_stable | | | | |
-| tests/strength_adversarial.rs::s_t01_double_commit | | | | |
-| tests/strength_adversarial.rs::s_t02_double_abort | | | | |
-| tests/strength_adversarial.rs::s_t03_commit_then_abort | | | | |
-| tests/strength_adversarial.rs::s_t04_abort_then_commit | | | | |
-| tests/strength_adversarial.rs::s_t05_multiple_sessions_allowed | | | | |
-| tests/strength_adversarial.rs::s_w01_truncated_final_record_no_panic | | | | |
-| tests/strength_adversarial.rs::s_w02_single_byte_corruption_no_panic | | | | |
-| tests/strength_adversarial.rs::s_w03_empty_wal | | | | |
-| tests/strength_adversarial.rs::s_w04_duplicate_wal_line | | | | |
-| tests/transaction/commit.rs::t1_commit_persists_state | | | | |
-| tests/transaction/commit.rs::test_aborted_tx_commit_must_fail | | | | |
-| tests/transaction/commit.rs::test_committed_tx_abort_must_be_noop | | | | |
-| tests/transaction/commit.rs::test_concurrent_commit_and_isolation_invariants | | | | |
-| tests/transaction/commit.rs::test_effect_persisted_in_transaction_delta | | | | |
-| tests/transaction/commit.rs::test_effect_survives_wal_recovery | | | | |
-| tests/transaction/conflict.rs::t2_conflict_detection | | | | |
-| tests/transaction/conflict.rs::test_blind_write_write_conflict | | | | |
-| tests/transaction/isolation.rs::t3_snapshot_isolation_read_own_writes | | | | |
-| tests/transaction/isolation.rs::t4_abort_rollback_all | | | | |
-| tests/wal_recovery_equivalence.rs::cross_tx_link_then_death_cascade | | | | |
-| tests/wal_recovery_equivalence.rs::cross_tx_unlink_then_death_no_cascade | | | | |
-| tests/wal_recovery_equivalence.rs::equivalence_birth_and_link | | | | |
-| tests/wal_recovery_equivalence.rs::equivalence_death_cascade | | | | |
-| tests/wal_recovery_equivalence.rs::equivalence_full_lifecycle | | | | |
-| tests/wal_recovery_equivalence.rs::equivalence_multi_object_topology | | | | |
-| tests/wal_recovery_equivalence.rs::equivalence_single_birth | | | | |
-| tests/wal_recovery_invariants.rs::recovery_invariant_birth_freeze_then_death | | | | |
-| tests/wal_recovery_invariants.rs::recovery_invariant_birth_then_death | | | | |
-| tests/wal_recovery_invariants.rs::recovery_invariant_link_then_unlink | | | | |
-| tests/wal_recovery_invariants.rs::recovery_invariant_owner_death_removes_link | | | | |
-| tests/wal_recovery_object.rs::aborted_object_not_recovered | | | | |
-| tests/wal_recovery_object.rs::object_birth_survives_recovery | | | | |
-| tests/wal_recovery_object.rs::object_link_survives_recovery | | | | |
-| tests/wal_recovery_robustness.rs::corrupted_wal_early_byte | | | | |
-| tests/wal_recovery_robustness.rs::corrupted_wal_middle_byte | | | | |
-| tests/wal_recovery_robustness.rs::empty_wal_recovery_succeeds | | | | |
-| tests/wal_recovery_robustness.rs::recovery_is_idempotent | | | | |
-| tests/wal_recovery_robustness.rs::truncated_wal_last_10_bytes | | | | |
-| tests/wal_recovery_robustness.rs::truncated_wal_last_200_bytes | | | | |
-| tests/wal_recovery_robustness.rs::truncated_wal_last_50_bytes | | | | |
-| tests/world_demo.rs::world_demo_multi_object_birth_write_link_commit_recover | | | | |
+| tests/meta_verification_comments.rs::all_test_files_have_doc_comments | D | integration | NOT_USED | INT-04 |
+| tests/multi_object_transaction_matrix.rs::s01_birth_ab_write_ab_commit | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_matrix.rs::s02_birth_ab_link_ab_write_a_commit | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_matrix.rs::s03_birth_ab_write_a_link_ab_commit | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_matrix.rs::s04_grant_a_to_b_on_c_write_b_commit | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s05_grant_a_to_b_on_c_link_b_c_commit | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s06_grant_then_write_b_link_b_to_a_commit | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s06b_grant_on_c_does_not_authorize_link_to_a | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s07_multi_object_abort_no_residual_state | B | transaction | FORBIDDEN | TX-05 |
+| tests/multi_object_transaction_matrix.rs::s08_grant_then_abort_leaves_no_capability | B | transaction | FORBIDDEN | TX-05 |
+| tests/multi_object_transaction_matrix.rs::s09_grant_commit_wal_recovery_consistent | C | recovery | FORBIDDEN | REC-09 |
+| tests/multi_object_transaction_matrix.rs::s10_grant_abort_wal_recovery_no_residual_cap | C | recovery | FORBIDDEN | REC-09 |
+| tests/multi_object_transaction_matrix.rs::s11_grantor_does_not_become_holder | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s12_grantee_further_grant_semantics | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s_extra_a_three_object_grant_write_link_commit | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s_extra_b_multiple_grants_same_tx | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s_extra_c_abort_then_new_tx_cannot_use_grant | B | transaction | FORBIDDEN | TX-05 |
+| tests/multi_object_transaction_matrix.rs::s_extra_d_grant_commit_new_session_uses_cap | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s_extra_e_consecutive_cross_object_writes_no_drift | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_matrix.rs::s_extra_f_link_unlink_with_grant | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_matrix.rs::s_extra_g_multiple_object_switches_before_commit | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_matrix.rs::s_extra_h_grant_then_switch_identity_and_return | B | capability | FORBIDDEN | CAP-13 |
+| tests/multi_object_transaction_regression.rs::test_a_multi_object_abort_leaves_no_partial_state | B | transaction | FORBIDDEN | TX-05 |
+| tests/multi_object_transaction_regression.rs::test_b_cross_session_capability_isolation | B | transaction | FORBIDDEN | TX-06 |
+| tests/multi_object_transaction_regression.rs::test_c_wal_recovery_multi_object_link_no_duplication | C | recovery | FORBIDDEN | REC-09 |
+| tests/object/birth.rs::o1_object_birth_creates_isolated_entity | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_alive_to_dead | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_birth_alive | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_birth_freeze_dead | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_death_irreversible | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_depends_on_invalidation | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_frozen_rejects_link | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_owns_cascade | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_owns_chain_cascade | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_references_no_cascade | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/lifecycle.rs::lifecycle_self_link_rejected | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object/memory.rs::memory_isolated_per_object | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/object_birth_self_call.rs::root_can_call_into_object_it_just_birthed | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/receipt.rs::receipt_after_matches_root_hash | A | kernel | FORBIDDEN | DET-01 |
+| tests/receipt.rs::receipt_before_after_consistency | A | kernel | FORBIDDEN | DET-01 |
+| tests/receipt.rs::receipt_replay_consistency | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay.rs::replay_different_ops_different_hash | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay.rs::replay_empty_wal_returns_nonzero | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay.rs::replay_equals_recovery_idle | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay.rs::wal_replay_is_deterministic | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_determinism.rs::object_ops_are_deterministic | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_determinism.rs::same_wal_same_state | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_determinism.rs::state_machine_replay_is_deterministic | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_determinism.rs::wal_contains_full_world | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_engine_test.rs::replay_engine_sees_births | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_engine_test.rs::replay_engine_sees_capability | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::empty_world_root_hash_is_deterministic | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::root_hash_changes_on_birth | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::root_hash_changes_on_link | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::root_hash_changes_on_write | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::root_hash_order_independent | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_link_two_children.rs::root_can_link_two_self_birthed_children_without_call | A | kernel | FORBIDDEN | OBJ-01 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_empty_vs_nonempty_vec | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_enum_variants | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_every_semantic_field | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_excludes_commit_version | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_excludes_tx_id | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_includes_actor_id | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_option_some_none | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_same_delta_equal | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_string_boundary_safe | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_canonical_identity_vec_order_matters | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_checkpoint_preserves_last_applied_delta_hash | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_checkpoint_roundtrip_identity_continuity | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_commit_version_consecutive_apply | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_commit_version_first_apply | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_equal_version_different_content_is_rejected | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_equal_version_same_content_is_idempotent | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_equal_version_same_content_preserves_root | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_last_applied_delta_hash_genesis_is_zero | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_last_applied_delta_hash_updates_on_apply | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_authorize_intent_requires_both_endpoints | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_kernel_commit_rejects_without_target_cap | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_no_preauth_but_commit_gates | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_worldservice_commit_rejects_without_target_cap | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_worldservice_machine_parity | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_link_worldservice_succeeds_with_target_cap | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recover_max_version_ignores_txcommitted_but_apply_sets_engine | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recovery_commit_recovery_chain | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recovery_occ_baseline_matches_version | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recovery_receipts_since_sees_history | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recovery_restores_global_version | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_recovery_version_continues_after_restart | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_rejected_delta_is_atomic | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_repeated_wal_replay_is_idempotent | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_stale_version_is_rejected | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_version_gap_is_rejected | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_corrupt_crc_preserves_prior | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_duplicate_birth_id_in_new_tx | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_duplicate_capability_grant | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_duplicate_link_records | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_duplicate_transaction_committed | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_empty_delta_bumps_version | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_illegal_field_values | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_out_of_order_version | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_wal_replay_committed_delta_idempotent | C | recovery | FORBIDDEN | REC-06 |
+| tests/security_recovery_audit.rs::audit_write_cross_object_still_denied | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::body_serde_module_empty_rule | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::body_serde_module_with_rule | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::body_serde_state | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::cap_graph_roundtrip_empty | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::cap_graph_roundtrip_with_grants | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::scope_roundtrip_empty | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::scope_roundtrip_with_data | C | recovery | FORBIDDEN | REC-06 |
+| tests/snapshot_restore_roundtrip.rs::topology_roundtrip_empty | C | recovery | FORBIDDEN | REC-06 |
+| tests/strength_adversarial.rs::s_a01_illegal_grantor | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a02_grantor_grantee_swap_foreign_resource | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a03_cross_object_write_without_cap | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a04_self_access_exemption_boundary | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a05_abort_invalidates_pending_capability | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a06_revoke_then_use_denied | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a07_unauthorized_freeze | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a08_unauthorized_death | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a09_link_without_capability | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_a10_grantor_does_not_become_grantee | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_b01_session_cannot_see_uncommitted_writes | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_b02_session_cannot_use_other_pending_cap | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_b03_abort_clears_pending_objects | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_b04_ended_session_rejected | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_b05_nonexistent_session | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_c01_concurrent_different_objects | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_c02_concurrent_session_lifecycle | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_c03_concurrent_same_object_writes | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_e01_stress_100_objects | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_e02_stress_many_writes_one_tx | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_e03_stress_1000_objects | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_e04_stress_wide_capability_graph | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_g01_nonexistent_object_ops | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_g02_object_id_zero_boundary | B | capability | FORBIDDEN | CAP-14 |
+| tests/strength_adversarial.rs::s_h01_empty_and_large_payload | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_h02_multiple_overwrite_same_state | B | kernel | FORBIDDEN | KER-02 |
+| tests/strength_adversarial.rs::s_r01_recovery_idempotent | C | recovery | FORBIDDEN | REC-10 |
+| tests/strength_adversarial.rs::s_r02_complex_world_recovery_stable | C | recovery | FORBIDDEN | REC-10 |
+| tests/strength_adversarial.rs::s_t01_double_commit | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_t02_double_abort | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_t03_commit_then_abort | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_t04_abort_then_commit | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_t05_multiple_sessions_allowed | B | transaction | FORBIDDEN | TX-07 |
+| tests/strength_adversarial.rs::s_w01_truncated_final_record_no_panic | C | recovery | FORBIDDEN | REC-10 |
+| tests/strength_adversarial.rs::s_w02_single_byte_corruption_no_panic | C | recovery | FORBIDDEN | REC-10 |
+| tests/strength_adversarial.rs::s_w03_empty_wal | C | recovery | FORBIDDEN | REC-10 |
+| tests/strength_adversarial.rs::s_w04_duplicate_wal_line | C | recovery | FORBIDDEN | REC-10 |
+| tests/transaction/commit.rs::t1_commit_persists_state | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/commit.rs::test_aborted_tx_commit_must_fail | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/commit.rs::test_committed_tx_abort_must_be_noop | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/commit.rs::test_concurrent_commit_and_isolation_invariants | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/commit.rs::test_effect_persisted_in_transaction_delta | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/commit.rs::test_effect_survives_wal_recovery | C | recovery | FORBIDDEN | REC-08 |
+| tests/transaction/conflict.rs::t2_conflict_detection | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/conflict.rs::test_blind_write_write_conflict | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/isolation.rs::t3_snapshot_isolation_read_own_writes | B | transaction | FORBIDDEN | TX-04 |
+| tests/transaction/isolation.rs::t4_abort_rollback_all | B | transaction | FORBIDDEN | TX-04 |
+| tests/wal_recovery_equivalence.rs::cross_tx_link_then_death_cascade | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::cross_tx_unlink_then_death_no_cascade | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::equivalence_birth_and_link | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::equivalence_death_cascade | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::equivalence_full_lifecycle | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::equivalence_multi_object_topology | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_equivalence.rs::equivalence_single_birth | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_invariants.rs::recovery_invariant_birth_freeze_then_death | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_invariants.rs::recovery_invariant_birth_then_death | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_invariants.rs::recovery_invariant_link_then_unlink | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_invariants.rs::recovery_invariant_owner_death_removes_link | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_object.rs::aborted_object_not_recovered | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_object.rs::object_birth_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_object.rs::object_link_survives_recovery | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::corrupted_wal_early_byte | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::corrupted_wal_middle_byte | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::empty_wal_recovery_succeeds | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::recovery_is_idempotent | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::truncated_wal_last_10_bytes | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::truncated_wal_last_200_bytes | C | recovery | FORBIDDEN | REC-06 |
+| tests/wal_recovery_robustness.rs::truncated_wal_last_50_bytes | C | recovery | FORBIDDEN | REC-06 |
+| tests/world_demo.rs::world_demo_multi_object_birth_write_link_commit_recover | D | integration | NOT_USED | INT-02 |

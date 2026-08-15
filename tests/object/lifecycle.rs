@@ -81,6 +81,10 @@ fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
     kernel.handle(&mut tx, KernelCall::Commit).unwrap();
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_birth_alive() {
     let tk = new_kernel();
@@ -88,6 +92,10 @@ fn lifecycle_birth_alive() {
     assert_eq!(tk.kernel.get_object_state(obj), Some(ObjectState::Alive));
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_birth_freeze_dead() {
     let tk = new_kernel();
@@ -98,6 +106,10 @@ fn lifecycle_birth_freeze_dead() {
     assert_eq!(tk.kernel.get_object_state(obj), Some(ObjectState::Dead));
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_frozen_rejects_link() {
     let tk = new_kernel();
@@ -149,6 +161,10 @@ fn lifecycle_frozen_rejects_link() {
     );
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_owns_cascade() {
     let tk = new_kernel();
@@ -160,6 +176,10 @@ fn lifecycle_owns_cascade() {
     assert!(tk.kernel.is_object_dead(b), "OWNS must cascade");
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_depends_on_invalidation() {
     let tk = new_kernel();
@@ -175,6 +195,10 @@ fn lifecycle_depends_on_invalidation() {
     );
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_references_no_cascade() {
     let tk = new_kernel();
@@ -187,6 +211,10 @@ fn lifecycle_references_no_cascade() {
     assert!(!tk.kernel.has_link(a, b), "REFERENCES link must be removed");
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_self_link_rejected() {
     let tk = new_kernel();
@@ -203,6 +231,10 @@ fn lifecycle_self_link_rejected() {
     assert!(result.is_err(), "self-link must be rejected");
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_death_irreversible() {
     let tk = new_kernel();
@@ -215,6 +247,10 @@ fn lifecycle_death_irreversible() {
     assert!(result.is_err(), "re-death must be rejected");
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_alive_to_dead() {
     let tk = new_kernel();
@@ -223,6 +259,10 @@ fn lifecycle_alive_to_dead() {
     assert_eq!(tk.kernel.get_object_state(obj), Some(ObjectState::Dead));
 }
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn lifecycle_owns_chain_cascade() {
     let tk = new_kernel();

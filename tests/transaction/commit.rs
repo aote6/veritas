@@ -2,6 +2,10 @@ use crate::common::new_kernel;
 use veritas_kernel::kernel::KernelCall;
 use veritas_kernel::test_api::KernelTestExt;
 
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn t1_commit_persists_state() {
     let tk = new_kernel();
@@ -27,6 +31,10 @@ fn t1_commit_persists_state() {
 // ============================================================
 
 /// 验证 Effect 在 commit 后出现在 TransactionDelta 中
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn test_effect_persisted_in_transaction_delta() {
     let tk = new_kernel();
@@ -64,6 +72,10 @@ fn test_effect_persisted_in_transaction_delta() {
 }
 
 /// 验证 WAL recovery 能恢复 TransactionCommitted 中的 effects
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-08
 #[test]
 fn test_effect_survives_wal_recovery() {
     let tk = new_kernel();
@@ -111,6 +123,10 @@ fn test_effect_survives_wal_recovery() {
 // ============================================================
 
 /// F-007 单线程不变量：ABORT 后不能 COMMIT
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn test_aborted_tx_commit_must_fail() {
     let tk = new_kernel();
@@ -147,6 +163,10 @@ fn test_aborted_tx_commit_must_fail() {
 }
 
 /// F-007: COMMIT 成功后 ABORT 必须是 no-op 或失败
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn test_committed_tx_abort_must_be_noop() {
     let tk = new_kernel();
@@ -177,6 +197,10 @@ fn test_committed_tx_abort_must_be_noop() {
 
 /// F-007 并发不变量：验证高并发下 COMMIT 与冲突/Abort 的原子互斥与隔离性
 /// 不破坏生产 API 封装，验证一个事务只能终态一次，绝对不产生二义性
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn test_concurrent_commit_and_isolation_invariants() {
     use std::sync::{Arc, Barrier};

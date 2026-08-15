@@ -25,6 +25,10 @@ fn temp_wal(name: &str) -> String {
 /// root(current_object == 0) birth 一个新对象后，用 CALL 显式进入它，
 /// 必须成功——即使 root 从未被 object_birth 额外授予任何 capability，
 /// 新对象的 self-AdminCap 也应当已被 attach 到本事务 ctx。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn root_can_call_into_object_it_just_birthed() {
     let kernel = Kernel::with_wal_path(temp_wal("birth_self_call_root"));

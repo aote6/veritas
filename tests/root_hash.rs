@@ -12,6 +12,10 @@ mod common;
 
 /// 空世界 root hash 在多次计算中保持确定。
 /// 失败意味着空状态根非确定性。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn empty_world_root_hash_is_deterministic() {
     let tk1 = common::new_kernel();
@@ -24,6 +28,10 @@ fn empty_world_root_hash_is_deterministic() {
 
 /// Write 操作改变 root hash。
 /// 失败意味着状态变更未反映到状态根。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn root_hash_changes_on_write() {
     let tk = common::new_kernel();
@@ -40,6 +48,10 @@ fn root_hash_changes_on_write() {
 
 /// ObjectBirth 改变 root hash。
 /// 失败意味着对象创建未反映到状态根。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn root_hash_changes_on_birth() {
     let tk = common::new_kernel();
@@ -67,6 +79,10 @@ fn root_hash_changes_on_birth() {
 
 /// ObjectLink 改变 root hash。
 /// 失败意味着拓扑变更未反映到状态根。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn root_hash_changes_on_link() {
     let tk = common::new_kernel();
@@ -122,6 +138,10 @@ fn root_hash_changes_on_link() {
 
 /// 相同内容不同应用顺序产生相同 root hash。
 /// 失败意味着 root hash 对顺序敏感，破坏规范承诺。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn root_hash_order_independent() {
     let tk1 = common::new_kernel();

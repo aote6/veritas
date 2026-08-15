@@ -47,6 +47,10 @@ fn birth(kernel: &Kernel) -> u64 {
 
 /// P29.1: Object created and committed must survive WAL recovery.
 /// This is the minimal replay test: birth → crash → recover → verify.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn object_birth_survives_recovery() {
     let wal_path = format!("target/test_obj_birth_recovery_{}.wal", std::process::id());
@@ -78,6 +82,10 @@ fn object_birth_survives_recovery() {
 
 /// P29.1: Object birth + link must both survive recovery.
 /// Verifies topology is rebuilt correctly from WAL.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn object_link_survives_recovery() {
     let wal_path = format!("target/test_obj_link_recovery_{}.wal", std::process::id());
@@ -139,6 +147,10 @@ fn object_link_survives_recovery() {
 }
 
 /// P29.1: Aborted object must NOT appear after recovery.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn aborted_object_not_recovered() {
     let wal_path = format!("target/test_abort_recovery_{}.wal", std::process::id());

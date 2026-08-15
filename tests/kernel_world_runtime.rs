@@ -26,6 +26,10 @@ fn make_birth_module() -> ModuleImage {
 
 /// Module A 对象经 runtime execute 对 Module B 可见。
 /// 失败意味着跨模块执行/可见性不变量被破坏。
+/// @category: D
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: INT-02
 #[test]
 fn module_a_object_visible_to_module_b_through_runtime_execute() {
     let kernel = Arc::new(Kernel::new());

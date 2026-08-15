@@ -16,6 +16,10 @@ fn temp_wal(name: &str) -> String {
 
 /// 多对象 birth/write/link/commit/recover 端到端演示路径正确。
 /// 失败意味着核心世界演化路径在 recovery 后不一致。
+/// @category: D
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: INT-02
 #[test]
 fn world_demo_multi_object_birth_write_link_commit_recover() {
     let wal_path = temp_wal("world_demo");

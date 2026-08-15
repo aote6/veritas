@@ -12,6 +12,10 @@
 use std::fs;
 use std::path::Path;
 
+/// @category: D
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: INT-04
 #[test]
 fn all_test_files_have_doc_comments() {
     let tests_dir = Path::new("tests");

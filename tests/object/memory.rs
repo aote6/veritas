@@ -3,6 +3,10 @@ use veritas_kernel::kernel::{KernelCall, TrapResult};
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectType;
 
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: OBJ-01
 #[test]
 fn memory_isolated_per_object() {
     let tk = new_kernel();

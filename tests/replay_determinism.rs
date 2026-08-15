@@ -58,6 +58,10 @@ fn wal_path(prefix: &str) -> String {
 }
 
 /// P30.1: Same WAL → identical Engine state
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn same_wal_same_state() {
     let path = wal_path("same");
@@ -87,6 +91,10 @@ fn same_wal_same_state() {
 }
 
 /// P30.1: WAL reconstruction must be deterministic
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn state_machine_replay_is_deterministic() {
     let path = wal_path("det");
@@ -121,6 +129,10 @@ fn state_machine_replay_is_deterministic() {
 }
 
 /// P30.1: WAL with object operations must replay deterministically
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn object_ops_are_deterministic() {
     let path = wal_path("objops");
@@ -170,6 +182,10 @@ fn object_ops_are_deterministic() {
 }
 
 /// P30.2: WAL contains full world state — objects and topology
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
 #[test]
 fn wal_contains_full_world() {
     let path = wal_path("full");

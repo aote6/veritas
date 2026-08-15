@@ -97,6 +97,10 @@ fn test_corrupted_wal(corrupt_offset: usize, corrupt_byte: u8) {
 
 /// P29.5: Idempotent recovery — recovering twice from the same WAL
 /// must produce the same state.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn recovery_is_idempotent() {
     let wal_path = format!("target/test_idempotent_{}.wal", std::process::id());
@@ -151,6 +155,10 @@ fn recovery_is_idempotent() {
 }
 
 /// P29.5: Empty WAL recovery must succeed (no objects).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn empty_wal_recovery_succeeds() {
     let wal_path = format!("target/test_empty_{}.wal", std::process::id());
@@ -172,6 +180,10 @@ fn empty_wal_recovery_succeeds() {
 
 /// 截断最后 10 字节的 WAL 被正确处理。
 /// 失败意味着短截断未被检测。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn truncated_wal_last_10_bytes() {
     test_truncated_wal(10);
@@ -179,6 +191,10 @@ fn truncated_wal_last_10_bytes() {
 
 /// 截断最后 50 字节的 WAL 被正确处理。
 /// 失败意味着中等截断未被检测。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn truncated_wal_last_50_bytes() {
     test_truncated_wal(50);
@@ -186,6 +202,10 @@ fn truncated_wal_last_50_bytes() {
 
 /// 截断最后 200 字节的 WAL 被正确处理。
 /// 失败意味着大截断未被检测。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn truncated_wal_last_200_bytes() {
     test_truncated_wal(200);
@@ -193,6 +213,10 @@ fn truncated_wal_last_200_bytes() {
 
 /// 中间字节损坏的 WAL 被正确处理。
 /// 失败意味着中间损坏可导致非法恢复。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn corrupted_wal_middle_byte() {
     test_corrupted_wal(20, 0xFF);
@@ -200,6 +224,10 @@ fn corrupted_wal_middle_byte() {
 
 /// 早期字节损坏的 WAL 被正确处理。
 /// 失败意味着早期损坏可导致非法恢复。
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn corrupted_wal_early_byte() {
     test_corrupted_wal(5, 0x00);

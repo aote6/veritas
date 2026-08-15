@@ -36,6 +36,10 @@ fn run_bounded(machine: &mut Machine, max_steps: usize) {
 }
 
 /// E2E-1: 单对象闭环 — birth -> CALL -> WRITE -> RETURN -> COMMIT -> HALT
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-03
 #[test]
 fn e2e_1_single_object_closure() {
     let src = r#"
@@ -79,6 +83,10 @@ fn e2e_1_single_object_closure() {
 
 /// E2E-2: 动态寄存器数据流 — 对象 id 经 ADD 复制到 R2 后，
 /// 该寄存器值（而非原始 R0）被用作 CALL 的目标 operand。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-03
 #[test]
 fn e2e_2_dynamic_register_dataflow() {
     let src = r#"
@@ -122,6 +130,10 @@ fn e2e_2_dynamic_register_dataflow() {
 
 /// E2E-3: Birth + Write + Link 全链路 — 直接跑项目根目录的 world_demo.vasm，
 /// 保证这个测试和实际交付的 demo 文件是同一份东西，不会脱节。
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-03
 #[test]
 fn e2e_3_birth_write_link_full_chain() {
     let src = std::fs::read_to_string("world_demo.vasm")
@@ -163,6 +175,10 @@ fn e2e_3_birth_write_link_full_chain() {
 /// E2E-4: 跨对象非法操作必须失败 —
 /// 事务1 birth 并 commit 对象 A；事务2（全新 ctx，同一个 kernel）
 /// 在从未被授予任何 capability 的情况下尝试 CALL 进 A，必须被拒绝。
+/// @category: B
+/// @layer: capability
+/// @testworld: FORBIDDEN
+/// @req: CAP-15
 #[test]
 fn e2e_4_illegal_cross_tx_call_denied() {
     let wal = fresh_wal("e2e4");

@@ -176,6 +176,10 @@ fn commit_freeze(kernel: &Kernel, id: u64) {
 }
 
 /// P29.3: Single object birth → recovery equivalence
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn equivalence_single_birth() {
     assert_recovery_equivalence(&[&|e| {
@@ -184,6 +188,10 @@ fn equivalence_single_birth() {
 }
 
 /// P29.3: Two objects + link → recovery equivalence
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn equivalence_birth_and_link() {
     assert_recovery_equivalence(&[&|e| {
@@ -194,6 +202,10 @@ fn equivalence_birth_and_link() {
 }
 
 /// P29.3: Birth → freeze → death → recovery equivalence
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn equivalence_full_lifecycle() {
     assert_recovery_equivalence(&[&|e| {
@@ -204,6 +216,10 @@ fn equivalence_full_lifecycle() {
 }
 
 /// P29.3: Multi-object topology → recovery equivalence
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn equivalence_multi_object_topology() {
     assert_recovery_equivalence(&[&|e| {
@@ -232,6 +248,10 @@ fn equivalence_multi_object_topology() {
 }
 
 /// P29.3: Death cascade → recovery equivalence
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn equivalence_death_cascade() {
     assert_recovery_equivalence(&[&|e| {
@@ -248,6 +268,10 @@ fn equivalence_death_cascade() {
 /// Recovery must NOT cascade to the unlinked target — topology
 /// at death time reflects the unlink, so OWNS closure must not
 /// include the previously-owned object.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn cross_tx_unlink_then_death_no_cascade() {
     let wal_path = format!(
@@ -294,6 +318,10 @@ fn cross_tx_unlink_then_death_no_cascade() {
 
 /// Same as above, but OWNS link is never unlinked.
 /// Death of A must cascade to B.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn cross_tx_link_then_death_cascade() {
     let wal_path = format!(

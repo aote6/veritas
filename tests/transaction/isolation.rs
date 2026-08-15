@@ -3,6 +3,10 @@ use veritas_kernel::kernel::KernelCall;
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::AbortReason;
 
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn t3_snapshot_isolation_read_own_writes() {
     let tk = new_kernel();
@@ -32,6 +36,10 @@ fn t3_snapshot_isolation_read_own_writes() {
     assert_eq!(value, vec![1], "After abort, must see committed snapshot");
 }
 
+/// @category: B
+/// @layer: transaction
+/// @testworld: FORBIDDEN
+/// @req: TX-04
 #[test]
 fn t4_abort_rollback_all() {
     let tk = new_kernel();

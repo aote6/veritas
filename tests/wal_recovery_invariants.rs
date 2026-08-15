@@ -97,6 +97,10 @@ fn unlink(kernel: &Kernel, from: u64, to: u64) {
 
 /// P29.2: Birth → Death sequence must be correctly replayed.
 /// After recovery, object must be Dead (not Alive, not missing).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn recovery_invariant_birth_then_death() {
     let wal_path = format!("target/test_inv_birth_death_{}.wal", std::process::id());
@@ -139,6 +143,10 @@ fn recovery_invariant_birth_then_death() {
 
 /// P29.2: Birth → Freeze → Death sequence.
 /// After recovery, final state must be Dead (not Frozen).
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn recovery_invariant_birth_freeze_then_death() {
     let wal_path = format!(
@@ -182,6 +190,10 @@ fn recovery_invariant_birth_freeze_then_death() {
 
 /// P29.2: Birth → Link → Unlink.
 /// After recovery, link must not exist, objects must be alive.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn recovery_invariant_link_then_unlink() {
     let wal_path = format!("target/test_inv_link_unlink_{}.wal", std::process::id());
@@ -223,6 +235,10 @@ fn recovery_invariant_link_then_unlink() {
 
 /// P29.2: Birth → Link → Death of owner.
 /// After recovery: owner Dead, link gone, no dangling edges.
+/// @category: C
+/// @layer: recovery
+/// @testworld: FORBIDDEN
+/// @req: REC-06
 #[test]
 fn recovery_invariant_owner_death_removes_link() {
     let wal_path = format!("target/test_inv_owner_death_{}.wal", std::process::id());
