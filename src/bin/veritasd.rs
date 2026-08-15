@@ -11,6 +11,11 @@ use veritas_kernel::kernel::Kernel;
 use veritas_kernel::types::ObjectState;
 use veritas_kernel::world_api::{ReceiptView, WorldService};
 
+
+fn root_hex(root: &[u8; 32]) -> String {
+    hex::encode(root)
+}
+
 fn state_str(s: ObjectState) -> &'static str {
     match s {
         ObjectState::Alive => "Alive",
@@ -42,8 +47,8 @@ fn receipt_json(r: &ReceiptView) -> Value {
         .collect();
     json!({
         "tx_id": r.tx_id,
-        "before_root": r.before_root,
-        "after_root": r.after_root,
+        "before_root": root_hex(&r.before_root),
+        "after_root": root_hex(&r.after_root),
         "version": r.version,
         "delta": {
             "actor_id": delta.actor_id,
@@ -69,7 +74,7 @@ fn handle(world: &WorldService, req: &Value) -> Value {
             json!({
                 "ok": true,
                 "version": info.version,
-                "state_root": info.state_root,
+                "state_root": root_hex(&info.state_root),
                 "object_count": info.object_count,
             })
         }

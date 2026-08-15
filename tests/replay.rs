@@ -26,7 +26,7 @@ fn replay_empty_wal_returns_nonzero() {
     drop(k);
 
     let replay_hash = Kernel::replay(&wal_path);
-    assert_ne!(replay_hash, 0);
+    assert_ne!(replay_hash, [0u8; 32]);
     assert_eq!(
         replay_hash, idle_hash,
         "Replay of empty WAL must equal idle Recovery root_hash"

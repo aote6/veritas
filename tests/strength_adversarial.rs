@@ -1060,7 +1060,7 @@ fn s_e01_stress_100_objects() {
     let k2 = Kernel::with_wal_path(wal.clone());
     assert_eq!(k2.list_object_ids().len(), 100);
     assert_eq!(k2.state_root(), root);
-    eprintln!("s_e01: 100 objects in {:?}, root={}", elapsed, root);
+    eprintln!("s_e01: 100 objects in {:?}, root={:?}", elapsed, root);
     cleanup(&wal);
 }
 
@@ -1116,7 +1116,7 @@ fn s_e03_stress_1000_objects() {
     let k2 = Kernel::with_wal_path(wal.clone());
     assert_eq!(k2.list_object_ids().len(), 1000);
     assert_eq!(k2.state_root(), root);
-    eprintln!("s_e03: 1000 objects in {:?}, root={}", elapsed, root);
+    eprintln!("s_e03: 1000 objects in {:?}, root={:?}", elapsed, root);
     cleanup(&wal);
 }
 

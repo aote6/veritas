@@ -20,7 +20,7 @@ pub struct PendingInstruction {
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub program_hash: u64,
-    pub input_root: u64,
+    pub input_root: [u8; 32],
     pub trace: TraceRecorder,
     pub events: EventRecorder,
     pub writes: WriteSet,
@@ -31,7 +31,7 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn new(program_hash: u64, input_root: u64) -> Self {
+    pub fn new(program_hash: u64, input_root: [u8; 32]) -> Self {
         Self {
             program_hash,
             input_root,
@@ -103,17 +103,17 @@ mod tests {
 
     #[test]
     fn test_context_finalize_produces_receipt() {
-        let ctx = ExecutionContext::new(42, 100);
-        let receipt = crate::receipt::ReceiptBuilder::build(&ctx, 200);
+        let ctx = ExecutionContext::new(42, [100u8; 32]);
+        let receipt = crate::receipt::ReceiptBuilder::build(&ctx, [200u8; 32]);
         assert_eq!(receipt.program_hash, 42);
-        assert_eq!(receipt.input_root, 100);
-        assert_eq!(receipt.output_root, 200);
+        assert_eq!(receipt.input_root, [100u8; 32]);
+        assert_eq!(receipt.output_root, [200u8; 32]);
         assert!(receipt.verify());
     }
 
     #[test]
     fn test_stats_count_instructions_and_writes() {
-        let mut ctx = ExecutionContext::new(1, 0);
+        let mut ctx = ExecutionContext::new(1, [0u8; 32]);
         ctx.record_instruction(InstructionTrace {
             pc: 0,
             opcode: 1,

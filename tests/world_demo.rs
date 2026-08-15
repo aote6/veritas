@@ -43,7 +43,7 @@ fn world_demo_multi_object_birth_write_link_commit_recover() {
 
     let receipt = world.tx_commit(sid).expect("single commit failed");
     println!(
-        "demo commit: tx_id={} before_root={} after_root={}",
+        "demo commit: tx_id={} before_root={:?} after_root={:?}",
         receipt.tx_id, receipt.before_root, receipt.after_root
     );
 

@@ -23,7 +23,7 @@ fn empty_world_root_hash_is_deterministic() {
     let h1 = tk1.kernel.test_engine().root_hash();
     let h2 = tk2.kernel.test_engine().root_hash();
     assert_eq!(h1, h2);
-    assert_ne!(h1, 0);
+    assert_ne!(h1, [0u8; 32]);
 }
 
 /// Write 操作改变 root hash。

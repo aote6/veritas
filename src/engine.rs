@@ -463,13 +463,8 @@ impl VeritasEngine {
             .snapshot_capabilities();
         let scopes = self.scope_registry.snapshot_all_scopes();
 
-        // state_commitment: root_hash() over the five State components only
-        let state_commitment = {
-            let h = self.state_root();
-            let mut bytes = [0u8; 32];
-            bytes[0..8].copy_from_slice(&h.to_le_bytes());
-            bytes
-        };
+        // state_commitment: SHA-256 root over the five State components only
+        let state_commitment = self.state_root();
 
         let global_version = self.global_version.load(Ordering::Acquire);
         let object_id_counter = self.object_id_counter.load(Ordering::Acquire);
@@ -511,13 +506,13 @@ impl VeritasEngine {
         true
     }
 
-    pub fn state_root(&self) -> u64 {
+    pub fn state_root(&self) -> [u8; 32] {
         self.root_hash()
     }
 
     // ========== Stage 3.1: RootHash ==========
 
-    /// FNV-1a 确定性哈希。
+    /// FNV-1a 确定性哈希（仅供 debug_root_components 使用）。
     fn deterministic_hash(bytes: &[u8]) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
         for &byte in bytes {
@@ -527,7 +522,7 @@ impl VeritasEngine {
         h
     }
 
-    /// 多个 u64 的 LE 8字节拼接后 FNV 哈希。
+    /// 多个 u64 的 LE 8字节拼接后 FNV 哈希（仅供调试路径兼容）。
     fn hash_u64s(items: &[u64]) -> u64 {
         let mut buf = Vec::with_capacity(items.len() * 8);
         for v in items {
@@ -549,34 +544,35 @@ impl VeritasEngine {
         Self::deterministic_hash(&buf)
     }
 
-    /// 计算 WorldState 五组件的确定性根哈希。
+    /// 计算 WorldState 五组件的确定性根哈希（SHA-256）。
     ///
-    /// 五组件：StateStore, ObjectRegistry, Topology,
-    ///         CapabilityGraph, ScopeRegistry。
-    /// 每组件各自排序后独立哈希，最终 H(h1, h2, h3, h4, h5)。
-    pub fn root_hash(&self) -> u64 {
+    /// 五组件按固定顺序连续编码后做一次 SHA-256：
+    /// StateStore → ObjectRegistry → Topology → CapabilityGraph → ScopeRegistry。
+    /// 每组件内部排序规则与历史 FNV 实现一致；CapabilityId / ObjectBody 仍不进入 root。
+    pub fn root_hash(&self) -> [u8; 32] {
+        let mut buf = Vec::new();
+
         // 1. StateStore — Address 升序
         let mut entries = self.state_store.all_entries();
         entries.sort_by_key(|(addr, _)| *addr);
-        let h1 = Self::hash_each(&entries, |(addr, entry), buf| {
+        for (addr, entry) in &entries {
             buf.extend_from_slice(&addr.object_id.to_le_bytes());
             buf.extend_from_slice(&addr.state_id.to_le_bytes());
             buf.extend_from_slice(&entry.value);
             buf.extend_from_slice(&entry.version.to_le_bytes());
-        });
+        }
 
-        // 2. ObjectRegistry — ObjectId 升序
+        // 2. ObjectRegistry — ObjectId 升序（ObjectBody 不进入）
         let mut records: Vec<(ObjectId, crate::types::ObjectRecord)> = {
             let reg = self.object_registry.lock().unwrap();
             reg.iter().map(|(id, r)| (*id, r.clone())).collect()
         };
         records.sort_by_key(|(id, _)| *id);
-        let h2 = Self::hash_each(&records, |(id, r), buf| {
+        for (id, r) in &records {
             buf.extend_from_slice(&id.to_le_bytes());
             buf.push(r.state as u8);
             buf.push(r.object_type as u8);
-            // ObjectBody 不进入 — Memory 内容属于 StateStore
-        });
+        }
 
         // 3. Topology — (from, to, link_type) 升序
         let mut edges = {
@@ -589,12 +585,11 @@ impl VeritasEngine {
                 .then(a.to.cmp(&b.to))
                 .then((a.link_type as u8).cmp(&(b.link_type as u8)))
         });
-
-        let h3 = Self::hash_each(&edges, |e, buf| {
+        for e in &edges {
             buf.extend_from_slice(&e.from.to_le_bytes());
             buf.extend_from_slice(&e.to.to_le_bytes());
             buf.push(e.link_type as u8);
-        });
+        }
 
         // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
         let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
@@ -618,17 +613,17 @@ impl VeritasEngine {
                 .then(a.2.cmp(&b.2))
                 .then(a.3.cmp(&b.3))
         });
-        let h4 = Self::hash_each(&grants, |g, buf| {
+        for g in &grants {
             buf.extend_from_slice(&g.0.to_le_bytes());
             buf.extend_from_slice(&g.1.to_le_bytes());
             buf.extend_from_slice(&g.2.to_le_bytes());
             buf.extend_from_slice(g.3.as_bytes());
-        });
+        }
 
         // 5. ScopeRegistry — ScopeId 升序，members 内部也排序
         let mut scopes = self.scope_registry.all_scopes();
         scopes.sort_by_key(|(id, _)| *id);
-        let h5 = Self::hash_each(&scopes, |(id, entry), buf| {
+        for (id, entry) in &scopes {
             buf.extend_from_slice(&id.to_le_bytes());
             let mut members = entry.members.clone();
             members.sort();
@@ -636,10 +631,9 @@ impl VeritasEngine {
                 buf.extend_from_slice(&m.to_le_bytes());
             }
             buf.extend_from_slice(&entry.struct_version.to_le_bytes());
-        });
+        }
 
-        // 最终: H(h1, h2, h3, h4, h5)
-        Self::hash_u64s(&[h1, h2, h3, h4, h5])
+        crate::crypto::sha256(&buf)
     }
 
     /// 调试用：返回五组件各自独立 hash，用于定位状态差异。

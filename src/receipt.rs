@@ -3,8 +3,8 @@ use crate::execution::ExecutionContext;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionReceipt {
     pub program_hash: u64,
-    pub input_root: u64,
-    pub output_root: u64,
+    pub input_root: [u8; 32],
+    pub output_root: [u8; 32],
     pub trace_hash: u64,
     pub write_set_hash: u64,
     pub event_hash: u64,
@@ -45,7 +45,7 @@ impl ReceiptBuilder {
         }
         h
     }
-    pub fn build(ctx: &ExecutionContext, output_root: u64) -> ExecutionReceipt {
+    pub fn build(ctx: &ExecutionContext, output_root: [u8; 32]) -> ExecutionReceipt {
         ExecutionReceipt {
             program_hash: ctx.program_hash,
             input_root: ctx.input_root,
@@ -69,8 +69,8 @@ mod tests {
     fn test_receipt_verify_rejects_zero() {
         let r = ExecutionReceipt {
             program_hash: 0,
-            input_root: 1,
-            output_root: 2,
+            input_root: [1u8; 32],
+            output_root: [2u8; 32],
             trace_hash: 3,
             write_set_hash: 4,
             event_hash: 0,
@@ -86,8 +86,8 @@ mod tests {
     fn test_receipt_matches_detects_difference() {
         let r1 = ExecutionReceipt {
             program_hash: 1,
-            input_root: 2,
-            output_root: 3,
+            input_root: [2u8; 32],
+            output_root: [3u8; 32],
             trace_hash: 4,
             write_set_hash: 5,
             event_hash: 6,

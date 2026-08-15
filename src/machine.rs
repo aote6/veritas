@@ -184,7 +184,7 @@ impl Machine {
             flags: FlagsRegister::default(),
             ctx,
             trap_frame: None,
-            execution: crate::execution::ExecutionContext::new(0, 0),
+            execution: crate::execution::ExecutionContext::new(0, [0u8; 32]),
             call_stack: Vec::new(),
         }
     }
@@ -787,7 +787,7 @@ impl Machine {
         self.program = program;
         self.status = MachineStatus::Ready;
         self.trap_frame = None;
-        self.execution = crate::execution::ExecutionContext::new(0, 0);
+        self.execution = crate::execution::ExecutionContext::new(0, [0u8; 32]);
         Ok(self)
     }
 
@@ -843,7 +843,7 @@ impl Machine {
         crate::receipt::ReceiptBuilder::build(&self.execution, self.state_root())
     }
 
-    pub fn state_root(&self) -> u64 {
+    pub fn state_root(&self) -> [u8; 32] {
         self.kernel.state_root()
     }
 

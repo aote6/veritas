@@ -106,9 +106,13 @@ fn forge_e2e_create_write_read_commit_observe() {
     let r = send(&cmd);
     assert_eq!(r["ok"], true);
     let receipt = &r["receipt"];
-    assert!(receipt["before_root"].as_u64().unwrap() > 0);
-    assert!(receipt["after_root"].as_u64().unwrap() > 0);
-    assert_ne!(receipt["before_root"], receipt["after_root"]);
+    let before = receipt["before_root"].as_str().expect("before_root hex");
+    let after = receipt["after_root"].as_str().expect("after_root hex");
+    assert_eq!(before.len(), 64);
+    assert_eq!(after.len(), 64);
+    assert_ne!(before, after);
+    assert_ne!(before, "0".repeat(64));
+    assert_ne!(after, "0".repeat(64));
     assert_eq!(
         receipt["delta"]["objects_created"][0].as_u64().unwrap(),
         obj_id
@@ -126,8 +130,8 @@ fn forge_e2e_create_write_read_commit_observe() {
         receipt["version"].as_u64().unwrap()
     );
     assert_eq!(
-        r["state_root"].as_u64().unwrap(),
-        receipt["after_root"].as_u64().unwrap()
+        r["state_root"].as_str().unwrap(),
+        receipt["after_root"].as_str().unwrap()
     );
     assert!(r["object_count"].as_u64().unwrap() >= 2);
 

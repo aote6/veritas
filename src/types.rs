@@ -626,9 +626,9 @@ pub struct TransactionReceipt {
     pub tx_id: TxId,
     /// Commitment algorithm version. 1 = SHA-256.
     pub commitment_algorithm: u8,
-    pub before_root: u64,
+    pub before_root: [u8; 32],
     pub delta: TransactionDelta,
-    pub after_root: u64,
+    pub after_root: [u8; 32],
 }
 
 impl TransactionDelta {

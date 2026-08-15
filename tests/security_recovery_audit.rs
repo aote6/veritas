@@ -129,7 +129,7 @@ struct WorldSnap {
     ids: Vec<u64>,
     links: Vec<(u64, u64, u8)>,
     caps: Vec<(u64, u64, u64, bool)>,
-    root: u64,
+    root: [u8; 32],
     version: u64,
 }
 
@@ -437,7 +437,7 @@ fn audit_recovery_restores_global_version() {
     let wal = temp_wal("ver_restore");
     let versions_before: Vec<u64>;
     let final_version: u64;
-    let final_root: u64;
+    let final_root: [u8; 32];
     let object_count: usize;
 
     {

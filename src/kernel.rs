@@ -172,7 +172,7 @@ impl Kernel {
     /// Replay: 从 WAL 重放全部已提交事务，返回最终 WorldState 根哈希。
     /// 从空 WorldState 出发，不保留引擎用于后续操作。
     /// 用于验证 WAL 的确定性——Replay(WAL) == 原始执行结束时的 root_hash()。
-    pub fn replay(wal_path: &str) -> u64 {
+    pub fn replay(wal_path: &str) -> [u8; 32] {
         let (records, _) =
             crate::wal::RecoveryManager::recover(wal_path).unwrap_or_else(|_| (vec![], 0));
         let ordered_deltas = crate::wal::build_ordered_deltas(&records);
@@ -332,7 +332,7 @@ impl Kernel {
         self.engine.restore_checkpoint(snap)
     }
 
-    pub fn state_root(&self) -> u64 {
+    pub fn state_root(&self) -> [u8; 32] {
         self.engine.state_root()
     }
 

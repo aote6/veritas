@@ -80,8 +80,8 @@ fn receipt_before_after_consistency() {
     k.test_write(&mut tx, 0, vec![42]).unwrap();
     let receipt = k.test_commit(&mut tx).unwrap();
 
-    assert_ne!(receipt.before_root, 0);
-    assert_ne!(receipt.after_root, 0);
+    assert_ne!(receipt.before_root, [0u8; 32]);
+    assert_ne!(receipt.after_root, [0u8; 32]);
     assert_ne!(receipt.before_root, receipt.after_root);
     assert_eq!(receipt.after_root, k.test_engine().root_hash());
 }

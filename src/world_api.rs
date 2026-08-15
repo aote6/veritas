@@ -18,7 +18,7 @@ pub type SessionId = u64;
 #[derive(Debug, Clone)]
 pub struct WorldInfo {
     pub version: Version,
-    pub state_root: u64,
+    pub state_root: [u8; 32],
     pub object_count: usize,
 }
 
@@ -38,8 +38,8 @@ pub struct LinkInfo {
 #[derive(Debug, Clone)]
 pub struct ReceiptView {
     pub tx_id: u64,
-    pub before_root: u64,
-    pub after_root: u64,
+    pub before_root: [u8; 32],
+    pub after_root: [u8; 32],
     pub version: Version,
     pub delta: TransactionDeltaView,
 }
@@ -541,8 +541,8 @@ impl WorldService {
             .filter(|d| d.commit_version > since_version)
             .map(|d| ReceiptView {
                 tx_id: d.tx_id,
-                before_root: 0,
-                after_root: 0,
+                before_root: [0u8; 32],
+                after_root: [0u8; 32],
                 version: d.commit_version,
                 delta: TransactionDeltaView::from_delta(&d),
             })

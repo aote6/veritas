@@ -23,7 +23,7 @@ struct EngineSnapshot {
     object_ids: HashSet<u64>,
     object_states: Vec<(u64, ObjectState)>,
     links: Vec<(u64, u64)>,
-    state_root: u64,
+    state_root: [u8; 32],
 }
 
 impl EngineSnapshot {
