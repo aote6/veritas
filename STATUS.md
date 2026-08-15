@@ -1934,3 +1934,47 @@ commitment_hash 字段保留，正式语义为 State Identity 载体，不是整
 | Q2 | commitment_hash 字段最终命名 | 未裁定，倾向 state_commitment |
 | Q3 | State Commitment 与 Delta Identity 算法迁移顺序 | 未裁定 |
 | Q4 | restore_checkpoint() 验证语义与时机 | 未裁定，依赖 Q3 |
+
+
+## Phase 2B: State Commitment Hash Migration — 2026-08-15
+
+### 完成内容
+
+State Commitment 从 FNV-1a u64 迁移到 SHA-256 [u8;32]。
+
+- src/crypto.rs：手写 SHA-256，FIPS 180-4，无依赖，无 unsafe，12 个测试向量全过
+- root_hash() -> [u8; 32]：五组件编码顺序和排序规则不变，单缓冲连续拼接后 sha256
+- state_root() -> [u8; 32]：跟随 root_hash
+- create_checkpoint()：直接使用 state_root()，删除 u64 零扩展
+- TransactionReceipt.before_root / after_root -> [u8; 32]
+- WorldSnapshot 增加 commitment_algorithm: u8 = 1
+- TransactionReceipt 增加 commitment_algorithm: u8 = 1
+- veritasd / Forge JSON 输出 root 改为 64 字符 hex
+
+### 未修改
+
+- Delta Identity / content_hash / last_applied_delta_hash 未动（Phase 2D）
+- debug_root_components() 仍返回 u64 五元组（诊断工具）
+- 五组件排序规则不变
+- CapabilityId 仍排除
+- ObjectBody 仍排除
+
+### 验证结果
+
+- cargo test --all：354 passed，0 failed
+- Verification Map Phase 1：239/239 PASS
+- Verification Map Phase 2：0 violations PASS
+- git diff --check：干净
+
+### 相关 commit
+
+- 7215e8d feat: add SHA-256 primitive
+- 65a7c60 feat: add commitment_algorithm version field
+- 806ed34 feat: Phase 2B — migrate State Commitment to SHA-256
+
+### 下一步
+
+Phase 2C：Checkpoint Commitment Verification
+- restore_checkpoint() 恢复后重新计算 state_root()
+- 与 snapshot.state_commitment 比对
+- 不匹配则拒绝恢复
