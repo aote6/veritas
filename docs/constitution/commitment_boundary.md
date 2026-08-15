@@ -356,3 +356,52 @@ This decision must be reopened if any of the following occurs:
 - new code evidence contradicts the Phase 0 audit.
 
 Until such a revision occurs, this document is the authoritative boundary for State Identity, Delta Identity, and Continuation Identity.
+
+## 11. Commitment Algorithm Versioning
+
+### 11.1 原则
+
+State Commitment 的语义永久不变：
+
+State Commitment = H(canonical five-component World State)
+
+但 H 的具体算法不绑定在 World State 语义中。算法是可替换的密码学边界。
+
+### 11.2 当前算法
+
+Phase 2B 起，State Commitment 采用：
+
+- 算法：SHA-256
+- 输出：[u8; 32]
+- 实现：手写，无外部依赖，位于 src/crypto.rs
+- 算法版本号：1
+
+### 11.3 算法版本字段
+
+WorldSnapshot 增加：
+
+commitment_algorithm: u8
+
+当前值 1 = SHA-256。
+
+未来引入新算法时：
+
+- 2 = SHA-512/256 或其他已裁定算法
+- state_commitment 字段宽度随算法版本变化
+- restore / verify 必须先读 commitment_algorithm，再选对应哈希函数
+
+### 11.4 迁移规则
+
+- 禁止在同一 WorldSnapshot 中混用两种 commitment 算法。
+- 禁止在未更新 commitment_algorithm 的情况下改变哈希算法。
+- 禁止在未正式修订本 ADR 的情况下新增算法版本。
+- 算法升级只影响 State Commitment 的生成与验证，不改变五组件语义。
+- 旧 checkpoint 在算法升级后不再可验证，除非提供显式迁移路径。
+
+### 11.5 为什么不是 BLAKE3
+
+BLAKE3 在无依赖约束下自写实现约 500 行，chunk 状态机和边界处理复杂度高，测试向量少。SHA-256 自写约 250 行，算法简单，官方测试向量极多，跨平台验证生态最成熟。Veritas 无外部协议要求必须使用 BLAKE3。
+
+### 11.6 为什么不是 SHA-512
+
+SHA-512 提高了量子碰撞余量，但代价是 state_commitment 字段宽度从 32 变 64，所有 Receipt / checkpoint / replay 结构迁移成本高。当前威胁模型下 SHA-256 的碰撞安全性已足够。真正的长期量子风险在签名/认证层，不在 State Commitment 层。
