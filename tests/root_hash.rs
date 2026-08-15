@@ -168,3 +168,70 @@ fn root_hash_order_independent() {
         tk2.kernel.test_engine().root_hash()
     );
 }
+/// Independent golden vector: reconstruct the canonical encoding of the
+/// world produced by `common::new_kernel()` and assert that
+/// `root_hash()` equals `sha256(that buffer)`.
+///
+/// This does **not** call any engine hashing helper. The expected digest is
+/// built from the documented five-component encoding only.
+///
+/// World produced by `new_kernel()`:
+///   1. ObjectBirth → ObjectId 1 (StateObject, Alive) + self AdminCap
+///   2. Write state_id=0 with value = 0u64 LE bytes under object 1
+///      → StateStore entry version = 2 (second commit)
+///   Topology empty, ScopeRegistry empty.
+///
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
+#[test]
+fn root_hash_matches_independent_sha256_golden_vector() {
+    let tk = common::new_kernel();
+    let root = tk.root_object;
+    let actual = tk.kernel.test_engine().root_hash();
+
+    let mut buf: Vec<u8> = Vec::new();
+
+    {
+        let object_id: u64 = root;
+        let state_id: u64 = 0;
+        let value: [u8; 8] = 0u64.to_le_bytes();
+        let version: u64 = 2;
+        buf.extend_from_slice(&object_id.to_le_bytes());
+        buf.extend_from_slice(&state_id.to_le_bytes());
+        buf.extend_from_slice(&value);
+        buf.extend_from_slice(&version.to_le_bytes());
+    }
+
+    {
+        let id: u64 = root;
+        let state: u8 = 0;
+        let object_type: u8 = 0;
+        buf.extend_from_slice(&id.to_le_bytes());
+        buf.push(state);
+        buf.push(object_type);
+    }
+
+    {
+        let granted_by: u64 = root;
+        let root_holder: u64 = root;
+        let resource: u64 = root;
+        let capability_type = b"AdminCap";
+        buf.extend_from_slice(&granted_by.to_le_bytes());
+        buf.extend_from_slice(&root_holder.to_le_bytes());
+        buf.extend_from_slice(&resource.to_le_bytes());
+        buf.extend_from_slice(capability_type);
+    }
+
+    let expected = veritas_kernel::crypto::sha256(&buf);
+    assert_eq!(
+        actual, expected,
+        "root_hash() must equal independent SHA-256 of the documented canonical encoding.\n\
+         root_object={root}\n\
+         actual  ={actual:02x?}\n\
+         expected={expected:02x?}\n\
+         canonical_len={}",
+        buf.len()
+    );
+}

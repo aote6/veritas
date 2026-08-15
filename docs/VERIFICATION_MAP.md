@@ -119,6 +119,7 @@
 | tests/root_hash.rs::root_hash_changes_on_birth | A | kernel | FORBIDDEN | DET-01 |
 | tests/root_hash.rs::root_hash_changes_on_link | A | kernel | FORBIDDEN | DET-01 |
 | tests/root_hash.rs::root_hash_changes_on_write | A | kernel | FORBIDDEN | DET-01 |
+| tests/root_hash.rs::root_hash_matches_independent_sha256_golden_vector | A | kernel | FORBIDDEN | DET-01 |
 | tests/root_hash.rs::root_hash_order_independent | A | kernel | FORBIDDEN | DET-01 |
 | tests/root_link_two_children.rs::root_can_link_two_self_birthed_children_without_call | A | kernel | FORBIDDEN | OBJ-01 |
 | tests/security_recovery_audit.rs::audit_canonical_identity_empty_vs_nonempty_vec | C | recovery | FORBIDDEN | REC-06 |
