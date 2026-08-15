@@ -2157,7 +2157,7 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
     let h = kernel.get_last_applied_delta_hash();
     assert_ne!(h, ZERO_HASH);
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     assert_eq!(
         snap.last_applied_delta_hash, h,
         "create_checkpoint must persist last_applied_delta_hash"
@@ -2178,7 +2178,7 @@ fn audit_checkpoint_preserves_last_applied_delta_hash() {
     kernel.test_apply(&d2);
     assert_ne!(kernel.get_last_applied_delta_hash(), h);
 
-    assert!(kernel.restore_checkpoint(&snap));
+    assert!(kernel.test_restore_checkpoint(&snap));
     assert_eq!(
         kernel.get_last_applied_delta_hash(),
         h,
@@ -2214,7 +2214,7 @@ fn audit_checkpoint_roundtrip_identity_continuity() {
     let ver_a = kernel.get_global_version();
     let root_a = kernel.test_engine().root_hash();
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
 
     let d2 = make_delta(
         2,
@@ -2231,7 +2231,7 @@ fn audit_checkpoint_roundtrip_identity_continuity() {
     kernel.test_apply(&d2);
     assert_ne!(kernel.get_last_applied_delta_hash(), hash_a);
 
-    assert!(kernel.restore_checkpoint(&snap));
+    assert!(kernel.test_restore_checkpoint(&snap));
     assert_eq!(kernel.get_global_version(), ver_a);
     assert_eq!(kernel.get_last_applied_delta_hash(), hash_a);
     assert_eq!(kernel.test_engine().root_hash(), root_a);

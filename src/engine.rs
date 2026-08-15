@@ -451,7 +451,8 @@ impl VeritasEngine {
     }
 
     /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
-    pub fn create_checkpoint(&self) -> WorldSnapshot {
+    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         let tx_id = self.tx_mgr.current_tx_id();
         let state_entries = self.state_store.snapshot();
         let objects = self.snapshot_objects();
@@ -492,7 +493,8 @@ impl VeritasEngine {
     }
 
     /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
-    pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         self.global_version
             .store(snap.global_version, Ordering::SeqCst);
         self.object_id_counter

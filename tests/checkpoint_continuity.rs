@@ -87,7 +87,7 @@ fn checkpoint_restore_world_continuity() {
     k_cont.test_write(&mut ctxw, 1, b"hello".to_vec()).unwrap();
     k_cont.handle(&mut ctxw, KernelCall::Commit).unwrap();
     let root1 = k_cont.state_root();
-    let meta = k_cont.create_checkpoint();
+    let meta = k_cont.test_create_checkpoint();
     let (gv1, oid1, gs1) = (
         meta.global_version,
         meta.object_id_counter,
@@ -102,7 +102,7 @@ fn checkpoint_restore_world_continuity() {
     k_cont.test_write(&mut ctxw2, 2, b"world".to_vec()).unwrap();
     k_cont.handle(&mut ctxw2, KernelCall::Commit).unwrap();
     let root_final = k_cont.state_root();
-    let final_cont = k_cont.create_checkpoint();
+    let final_cont = k_cont.test_create_checkpoint();
 
     let k_rest = Kernel::new();
     let mut ctx = k_rest.test_begin();
@@ -115,11 +115,11 @@ fn checkpoint_restore_world_continuity() {
     assert_eq!(o1r, o1);
     assert_eq!(cap1r, cap1);
     assert_eq!(k_rest.state_root(), root1);
-    let snap = k_rest.create_checkpoint();
+    let snap = k_rest.test_create_checkpoint();
     assert_eq!(snap.global_version, gv1);
     assert_eq!(snap.object_id_counter, oid1);
     assert_eq!(snap.grant_sequence, gs1);
-    k_rest.restore_checkpoint(&snap);
+    k_rest.test_restore_checkpoint(&snap);
 
     let mut ctx2 = k_rest.test_begin();
     let o2r = birth(&k_rest, &mut ctx2);
@@ -131,7 +131,7 @@ fn checkpoint_restore_world_continuity() {
     assert_eq!(o2r, o2);
     assert_eq!(cap2r, cap2);
     assert_eq!(k_rest.state_root(), root_final);
-    let final_rest = k_rest.create_checkpoint();
+    let final_rest = k_rest.test_create_checkpoint();
     assert_eq!(final_rest.global_version, final_cont.global_version);
     assert_eq!(final_rest.object_id_counter, final_cont.object_id_counter);
     assert_eq!(final_rest.grant_sequence, final_cont.grant_sequence);
@@ -153,15 +153,15 @@ fn capability_identity_survives_checkpoint_restore() {
     let cap_b = grant(&kernel, &mut ctx, o1, o2, "read");
     assert_ne!(cap_a, cap_b);
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let ids_before: Vec<_> = snap
         .capability_records
         .iter()
         .map(|r| r.capability_id)
         .collect();
     assert!(ids_before.contains(&cap_a) && ids_before.contains(&cap_b));
-    kernel.restore_checkpoint(&snap);
-    let snap2 = kernel.create_checkpoint();
+    kernel.test_restore_checkpoint(&snap);
+    let snap2 = kernel.test_create_checkpoint();
     let ids_after: Vec<_> = snap2
         .capability_records
         .iter()
@@ -195,7 +195,7 @@ fn object_death_no_ghost_state_after_checkpoint() {
         .handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid })
         .unwrap();
     kernel.handle(&mut ctx3, KernelCall::Commit).unwrap();
-    let snap_dead = kernel.create_checkpoint();
+    let snap_dead = kernel.test_create_checkpoint();
     assert!(!snap_dead
         .state_entries
         .iter()
@@ -206,9 +206,9 @@ fn object_death_no_ghost_state_after_checkpoint() {
         .any(|o| o.id == oid && o.lifecycle_state == ObjectState::Dead));
     let root_dead = kernel.state_root();
     assert_ne!(root_alive, root_dead);
-    kernel.restore_checkpoint(&snap_dead);
+    kernel.test_restore_checkpoint(&snap_dead);
     assert!(!kernel
-        .create_checkpoint()
+        .test_create_checkpoint()
         .state_entries
         .iter()
         .any(|(a, _)| a.object_id == oid));
@@ -230,15 +230,15 @@ fn checkpoint_preserves_state_entry_versions() {
     let mut ctx2 = kernel.test_begin_in_object(oid);
     kernel.test_write(&mut ctx2, 1, b"v1".to_vec()).unwrap();
     kernel.handle(&mut ctx2, KernelCall::Commit).unwrap();
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let v_before: Vec<_> = snap
         .state_entries
         .iter()
         .map(|(a, e)| (*a, e.version))
         .collect();
-    kernel.restore_checkpoint(&snap);
+    kernel.test_restore_checkpoint(&snap);
     let v_after: Vec<_> = kernel
-        .create_checkpoint()
+        .test_create_checkpoint()
         .state_entries
         .iter()
         .map(|(a, e)| (*a, e.version))

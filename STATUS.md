@@ -1811,3 +1811,40 @@ Checkpoint restore 和 WAL append 是两个独立的 recovery/persistence 边界
 保持 pub 是文档化的内部机制，veritasd 未暴露。是否收紧为 pub(crate)
 取决于后续 external-crate boundary test 和 TRAP-only 收敛的决策，
 不在本次审计范围内。
+
+## P1b Follow-up: Checkpoint API Boundary Closure — 2026-08-15
+
+### 背景
+
+Checkpoint/Snapshot 是在 P1b（Engine 15 mutation methods pub → pub(crate)）完成之后同一天加入的（PR1-PR4），因此逃过了原 mutation-surface 收敛。
+
+虽然 veritasd/WorldService 未暴露 checkpoint 命令，但 Kernel/Engine 的 checkpoint 方法仍为 pub，且 WorldSnapshot 所有字段 pub，外部 Rust crate 可构造任意 snapshot 并调用 restore 篡改状态。
+
+### 修复
+
+| API | 之前 | 之后 |
+|-----|------|------|
+| Engine::create_checkpoint | pub | pub(crate) |
+| Engine::restore_checkpoint | pub | pub(crate) |
+| Kernel::create_checkpoint | pub | pub(crate) |
+| Kernel::restore_checkpoint | pub | pub(crate) |
+
+四个方法均添加 `#[allow(dead_code)] // test-only integration path via KernelTestExt`。
+
+### 测试迁移
+
+- test_api 新增 `test_create_checkpoint` / `test_restore_checkpoint`
+- 6 个测试文件迁移到 test_ 前缀
+- 全量测试：339 passed / 0 failed
+
+### 审计工具
+
+- Verification Map：PASS（236/236）
+- Instruction Dispatch：2 MISSING（Read/Write legacy，已知）
+- cargo check --all-targets：无 checkpoint dead_code 警告
+
+### 未做（后续独立审计）
+
+- WorldSnapshot 字段私有化
+- restore 内容验证（commitment_hash / version / capability 合法性）
+- compile-fail 红测试（trybuild 基础设施尚未引入）

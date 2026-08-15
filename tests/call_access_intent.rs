@@ -287,9 +287,9 @@ fn call_permission_survives_checkpoint() {
     let callee = birth_under(&kernel, caller);
     let _cap = grant(&kernel, caller, caller, callee);
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let kernel2 = Kernel::with_wal_path(temp_wal("call_ckpt2"));
-    assert!(kernel2.restore_checkpoint(&snap));
+    assert!(kernel2.test_restore_checkpoint(&snap));
 
     // authorize_intent via engine (same path CALL uses)
     let mut ctx = kernel2.test_begin_in_object(caller);

@@ -322,11 +322,13 @@ impl Kernel {
         self.engine.snapshot_links()
     }
 
-    pub fn create_checkpoint(&self) -> WorldSnapshot {
+    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
     }
 
-    pub fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         self.engine.restore_checkpoint(snap)
     }
 

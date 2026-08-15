@@ -52,10 +52,9 @@ fn checkpoint_full_roundtrip_all_five_components() {
     let kernel = world.kernel();
     build_world(&world);
 
-    let engine = kernel.test_engine();
-    let snap1 = engine.create_checkpoint();
-    engine.restore_checkpoint(&snap1);
-    let snap2 = engine.create_checkpoint();
+    let snap1 = kernel.test_create_checkpoint();
+    kernel.test_restore_checkpoint(&snap1);
+    let snap2 = kernel.test_create_checkpoint();
 
     assert_eq!(snap1.objects, snap2.objects, "ObjectRegistry");
     assert_eq!(snap1.links, snap2.links, "Topology");
@@ -80,11 +79,10 @@ fn checkpoint_restore_then_continue_execution() {
     let kernel = world.kernel();
     build_world(&world);
 
-    let engine = kernel.test_engine();
-    let snap = engine.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
 
     // restore
-    engine.restore_checkpoint(&snap);
+    kernel.test_restore_checkpoint(&snap);
 
     // 继续执行：创建第三个 Object
     let mut ctx = kernel.test_begin();
@@ -99,7 +97,7 @@ fn checkpoint_restore_then_continue_execution() {
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
 
     // 验证 Object 3 存在
-    let snap_after = engine.create_checkpoint();
+    let snap_after = kernel.test_create_checkpoint();
     assert!(
         snap_after.objects.iter().any(|o| o.id == 3),
         "Object 3 should exist after resume"
@@ -120,14 +118,13 @@ fn checkpoint_restore_idempotent() {
     let kernel = world.kernel();
     build_world(&world);
 
-    let engine = kernel.test_engine();
-    let snap = engine.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
 
-    engine.restore_checkpoint(&snap);
-    let snap1 = engine.create_checkpoint();
+    kernel.test_restore_checkpoint(&snap);
+    let snap1 = kernel.test_create_checkpoint();
 
-    engine.restore_checkpoint(&snap);
-    let snap2 = engine.create_checkpoint();
+    kernel.test_restore_checkpoint(&snap);
+    let snap2 = kernel.test_create_checkpoint();
 
     assert_eq!(snap1.objects, snap2.objects);
     assert_eq!(snap1.links, snap2.links);
@@ -148,16 +145,15 @@ fn checkpoint_root_hash_consistent() {
     let kernel = world.kernel();
     build_world(&world);
 
-    let engine = kernel.test_engine();
-    let _root_before = engine.state_root();
-    let snap = engine.create_checkpoint();
+    let _root_before = kernel.test_engine().state_root();
+    let snap = kernel.test_create_checkpoint();
 
-    engine.restore_checkpoint(&snap);
-    let _root_after = engine.state_root();
+    kernel.test_restore_checkpoint(&snap);
+    let _root_after = kernel.test_engine().state_root();
 
     // 恢复后 state_root 应与创建快照时一致
-    let snap2 = engine.create_checkpoint();
-    let snap3 = engine.create_checkpoint();
+    let snap2 = kernel.test_create_checkpoint();
+    let snap3 = kernel.test_create_checkpoint();
     assert_eq!(
         snap2.state_entries, snap3.state_entries,
         "连续两次 create_checkpoint 应该一致（世界未变）"
@@ -178,8 +174,7 @@ fn checkpoint_counter_roundtrip() {
     let kernel = world.kernel();
     build_world(&world);
 
-    let engine = kernel.test_engine();
-    let snap = engine.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
 
     // 验证快照包含计数器
     assert!(
@@ -196,8 +191,8 @@ fn checkpoint_counter_roundtrip() {
     );
 
     // restore 后计数器一致
-    engine.restore_checkpoint(&snap);
-    let snap2 = engine.create_checkpoint();
+    kernel.test_restore_checkpoint(&snap);
+    let snap2 = kernel.test_create_checkpoint();
     assert_eq!(
         snap.global_version, snap2.global_version,
         "global_version should survive roundtrip"
@@ -222,7 +217,7 @@ fn checkpoint_counter_roundtrip() {
         )
         .unwrap();
     kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
-    let snap3 = engine.create_checkpoint();
+    let snap3 = kernel.test_create_checkpoint();
     assert!(
         snap3.object_id_counter > snap.object_id_counter,
         "object_id_counter should advance after restore"

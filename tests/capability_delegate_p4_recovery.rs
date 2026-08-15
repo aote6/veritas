@@ -120,10 +120,10 @@ fn t1_delegate_survives_checkpoint() {
     assert!(kernel.test_engine().holds_capability(cap, a));
     assert!(kernel.test_engine().holds_capability(cap, b));
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let wal2 = temp_wal("t1b");
     let k2 = Kernel::with_wal_path(wal2);
-    assert!(k2.restore_checkpoint(&snap));
+    assert!(k2.test_restore_checkpoint(&snap));
     assert!(k2.test_engine().holds_capability(cap, a));
     assert!(k2.test_engine().holds_capability(cap, b));
 }
@@ -154,7 +154,7 @@ fn t2_multilevel_delegate_tree() {
         );
     }
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let records: Vec<_> = snap
         .capability_records
         .iter()
@@ -246,10 +246,10 @@ fn t5_wal_replay_equals_checkpoint_and_live() {
     );
     assert_eq!(live_holds, (true, true, true));
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let wal_ckpt = temp_wal("t5_ckpt");
     let k_ckpt = Kernel::with_wal_path(wal_ckpt);
-    assert!(k_ckpt.restore_checkpoint(&snap));
+    assert!(k_ckpt.test_restore_checkpoint(&snap));
     assert_eq!(
         (
             k_ckpt.test_engine().holds_capability(cap, a),

@@ -208,7 +208,7 @@ fn kernel_capability_revoke_survives_checkpoint() {
     assert!(!kernel.test_engine().holds_capability(cap, o1));
     assert!(!kernel.test_engine().holds_capability(cap, o2));
 
-    let snap = kernel.create_checkpoint();
+    let snap = kernel.test_create_checkpoint();
     let wal2 = format!(
         "{}/test_cap_revoke_ckpt2_{}.wal",
         std::env::temp_dir().display(),
@@ -216,7 +216,7 @@ fn kernel_capability_revoke_survives_checkpoint() {
     );
     let _ = std::fs::remove_file(&wal2);
     let kernel2 = Kernel::with_wal_path(wal2);
-    assert!(kernel2.restore_checkpoint(&snap));
+    assert!(kernel2.test_restore_checkpoint(&snap));
 
     assert!(!kernel2.test_engine().holds_capability(cap, o1));
     assert!(!kernel2.test_engine().holds_capability(cap, o2));
