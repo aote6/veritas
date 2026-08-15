@@ -522,15 +522,6 @@ impl VeritasEngine {
         h
     }
 
-    /// 多个 u64 的 LE 8字节拼接后 FNV 哈希（仅供调试路径兼容）。
-    fn hash_u64s(items: &[u64]) -> u64 {
-        let mut buf = Vec::with_capacity(items.len() * 8);
-        for v in items {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
-        Self::deterministic_hash(&buf)
-    }
-
     /// 对集合中每个元素调用 encode 函数拼接字节，最后 FNV 哈希。
     /// 调用方负责在传入前排序。
     fn hash_each<T, F>(items: &[T], encode: F) -> u64
