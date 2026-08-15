@@ -1017,7 +1017,8 @@ impl TransactionDelta {
     /// Content hash of this Delta for identity comparison.
     /// Uses the same FNV-1a byte hash as the rest of the kernel; result is
     /// expanded to 32 bytes (first 8 = LE u64, remainder zero) to match
-    /// the Hash / state_commitment width used elsewhere.
+    /// the same [u8; 32] width as state_commitment.
+    /// Note: content_hash still uses FNV-1a; algorithm migration is Phase 2D.
     pub fn content_hash(&self) -> [u8; 32] {
         delta_content_hash(&self.canonical_identity_bytes())
     }

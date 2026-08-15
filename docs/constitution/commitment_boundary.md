@@ -1,6 +1,9 @@
 # Commitment Boundary Decision
 
 Status: ACCEPTED
+
+执行状态：Phase 2A ✅ / Phase 2B ✅ / Phase 2C 未开始 / Phase 2D 未开始
+当前 State Commitment：SHA-256，commitment_algorithm = 1
 Phase: 1 — Architecture Decision
 Predecessor: Phase 0 Read-Only State/Commitment Audit
 Date: 2026-08-15
