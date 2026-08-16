@@ -80,6 +80,7 @@ impl ScopeRegistry {
             for member in &snap.members {
                 entry.bind(*member);
             }
+            entry.struct_version = snap.struct_version;
             map.insert(snap.scope_id, entry);
         }
     }
@@ -93,6 +94,7 @@ impl ScopeRegistry {
                 scope_id: *id,
                 members: entry.members.clone(),
                 owner: entry.owner as crate::types::ObjectId,
+                struct_version: entry.struct_version,
             })
             .collect();
         result.sort_by_key(|s| s.scope_id);

@@ -1095,4 +1095,5 @@ pub struct ScopeSnapshot {
     pub scope_id: ScopeId,
     pub members: Vec<StateId>,
     pub owner: ObjectId,
+    pub struct_version: Version,
 }

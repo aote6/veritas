@@ -37,6 +37,9 @@
 | tests/capability_revoke.rs::kernel_capability_revoke_not_holder_errors | B | capability | FORBIDDEN | CAP-10 |
 | tests/capability_revoke.rs::kernel_capability_revoke_survives_checkpoint | C | recovery | FORBIDDEN | REC-04 |
 | tests/capability_revoke.rs::kernel_capability_revoke_wal_replay | C | recovery | FORBIDDEN | REC-04 |
+| tests/checkpoint_commitment_p2c_recovery.rs::green_valid_checkpoint_restore_matches_root_hash | C | recovery | FORBIDDEN | REC-12 |
+| tests/checkpoint_commitment_p2c_recovery.rs::red1_tampered_state_commitment_rejects_restore | C | recovery | FORBIDDEN | REC-12 |
+| tests/checkpoint_commitment_p2c_recovery.rs::red2_tampered_entry_value_rejects_restore_without_pollution | C | recovery | FORBIDDEN | REC-12 |
 | tests/checkpoint_continuity.rs::capability_identity_survives_checkpoint_restore | C | recovery | FORBIDDEN | REC-06 |
 | tests/checkpoint_continuity.rs::checkpoint_preserves_state_entry_versions | C | recovery | FORBIDDEN | REC-06 |
 | tests/checkpoint_continuity.rs::checkpoint_restore_world_continuity | C | recovery | FORBIDDEN | REC-06 |

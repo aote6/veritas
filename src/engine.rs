@@ -489,6 +489,56 @@ impl VeritasEngine {
     /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+        if snap.commitment_algorithm != 1 {
+            return false;
+        }
+
+        let objects: Vec<(crate::types::ObjectId, u8, u8)> = snap
+            .objects
+            .iter()
+            .map(|o| (o.id, o.lifecycle_state as u8, o.object_type as u8))
+            .collect();
+
+        let links: Vec<(crate::types::ObjectId, crate::types::ObjectId, u8)> = snap
+            .links
+            .iter()
+            .map(|l| (l.from, l.to, l.link_type as u8))
+            .collect();
+
+        let capability_grants: Vec<(
+            crate::types::ObjectId,
+            crate::types::ObjectId,
+            crate::types::ObjectId,
+            String,
+        )> = snap
+            .capability_records
+            .iter()
+            .filter(|r| r.parent.is_none())
+            .map(|r| (r.granted_by, r.holder, r.resource, r.capability_type.clone()))
+            .collect();
+
+        let scopes: Vec<(
+            crate::types::ScopeId,
+            Vec<crate::types::StateId>,
+            crate::types::Version,
+        )> = snap
+            .scopes
+            .iter()
+            .map(|s| (s.scope_id, s.members.clone(), s.struct_version))
+            .collect();
+
+        let computed = crate::engine::state_commitment_from_components(
+            &snap.state_entries,
+            &objects,
+            &links,
+            &capability_grants,
+            &scopes,
+        );
+
+        if computed != snap.state_commitment {
+            return false;
+        }
+
         self.global_version
             .store(snap.global_version, Ordering::SeqCst);
         self.object_id_counter
@@ -541,49 +591,28 @@ impl VeritasEngine {
     /// StateStore → ObjectRegistry → Topology → CapabilityGraph → ScopeRegistry。
     /// 每组件内部排序规则与历史 FNV 实现一致；CapabilityId / ObjectBody 仍不进入 root。
     pub fn root_hash(&self) -> [u8; 32] {
-        let mut buf = Vec::new();
+        let entries = self.state_store.all_entries();
 
-        // 1. StateStore — Address 升序
-        let mut entries = self.state_store.all_entries();
-        entries.sort_by_key(|(addr, _)| *addr);
-        for (addr, entry) in &entries {
-            buf.extend_from_slice(&addr.object_id.to_le_bytes());
-            buf.extend_from_slice(&addr.state_id.to_le_bytes());
-            buf.extend_from_slice(&entry.value);
-            buf.extend_from_slice(&entry.version.to_le_bytes());
-        }
-
-        // 2. ObjectRegistry — ObjectId 升序（ObjectBody 不进入）
-        let mut records: Vec<(ObjectId, crate::types::ObjectRecord)> = {
+        let objects: Vec<(crate::types::ObjectId, u8, u8)> = {
             let reg = self.object_registry.lock().unwrap();
-            reg.iter().map(|(id, r)| (*id, r.clone())).collect()
+            reg.iter()
+                .map(|(id, r)| (*id, r.state as u8, r.object_type as u8))
+                .collect()
         };
-        records.sort_by_key(|(id, _)| *id);
-        for (id, r) in &records {
-            buf.extend_from_slice(&id.to_le_bytes());
-            buf.push(r.state as u8);
-            buf.push(r.object_type as u8);
-        }
 
-        // 3. Topology — (from, to, link_type) 升序
-        let mut edges = {
+        let links: Vec<(crate::types::ObjectId, crate::types::ObjectId, u8)> = {
             let topo = self.topology.lock().unwrap();
-            topo.clone()
+            topo.iter()
+                .map(|e| (e.from, e.to, e.link_type as u8))
+                .collect()
         };
-        edges.sort_by(|a, b| {
-            a.from
-                .cmp(&b.from)
-                .then(a.to.cmp(&b.to))
-                .then((a.link_type as u8).cmp(&(b.link_type as u8)))
-        });
-        for e in &edges {
-            buf.extend_from_slice(&e.from.to_le_bytes());
-            buf.extend_from_slice(&e.to.to_le_bytes());
-            buf.push(e.link_type as u8);
-        }
 
-        // 4. CapabilityGraph — 语义内容排序（不含 CapabilityId）
-        let mut grants: Vec<(ObjectId, ObjectId, ObjectId, String)> = {
+        let capability_grants: Vec<(
+            crate::types::ObjectId,
+            crate::types::ObjectId,
+            crate::types::ObjectId,
+            String,
+        )> = {
             let cap_graph = self.capability_graph.lock().unwrap();
             cap_graph
                 .all_grants()
@@ -598,33 +627,19 @@ impl VeritasEngine {
                 })
                 .collect()
         };
-        grants.sort_by(|a, b| {
-            a.0.cmp(&b.0)
-                .then(a.1.cmp(&b.1))
-                .then(a.2.cmp(&b.2))
-                .then(a.3.cmp(&b.3))
-        });
-        for g in &grants {
-            buf.extend_from_slice(&g.0.to_le_bytes());
-            buf.extend_from_slice(&g.1.to_le_bytes());
-            buf.extend_from_slice(&g.2.to_le_bytes());
-            buf.extend_from_slice(g.3.as_bytes());
-        }
 
-        // 5. ScopeRegistry — ScopeId 升序，members 内部也排序
-        let mut scopes = self.scope_registry.all_scopes();
-        scopes.sort_by_key(|(id, _)| *id);
-        for (id, entry) in &scopes {
-            buf.extend_from_slice(&id.to_le_bytes());
-            let mut members = entry.members.clone();
-            members.sort();
-            for m in &members {
-                buf.extend_from_slice(&m.to_le_bytes());
-            }
-            buf.extend_from_slice(&entry.struct_version.to_le_bytes());
-        }
+        let scopes: Vec<(
+            crate::types::ScopeId,
+            Vec<crate::types::StateId>,
+            crate::types::Version,
+        )> = self
+            .scope_registry
+            .all_scopes()
+            .into_iter()
+            .map(|(id, entry)| (id, entry.members.clone(), entry.struct_version))
+            .collect();
 
-        crate::crypto::sha256(&buf)
+        crate::engine::state_commitment_from_components(&entries, &objects, &links, &capability_grants, &scopes)
     }
 
     /// 调试用：返回五组件各自独立 hash，用于定位状态差异。
@@ -1968,4 +1983,78 @@ mod bootstrap_tests {
         engine.commit(&mut ctx).unwrap();
         engine.init_state(0, vec![1, 2, 3]);
     }
+}
+
+
+/// Phase 2C: State Commitment 的纯函数版本。
+pub fn state_commitment_from_components(
+    state_entries: &[(crate::types::Address, crate::types::StateEntry)],
+    objects: &[(crate::types::ObjectId, u8, u8)],
+    links: &[(crate::types::ObjectId, crate::types::ObjectId, u8)],
+    capability_grants: &[(
+        crate::types::ObjectId,
+        crate::types::ObjectId,
+        crate::types::ObjectId,
+        String,
+    )],
+    scopes: &[(
+        crate::types::ScopeId,
+        Vec<crate::types::StateId>,
+        crate::types::Version,
+    )],
+) -> [u8; 32] {
+    let mut buf = Vec::new();
+
+    let mut entries = state_entries.to_vec();
+    entries.sort_by_key(|(addr, _)| *addr);
+    for (addr, entry) in &entries {
+        buf.extend_from_slice(&addr.object_id.to_le_bytes());
+        buf.extend_from_slice(&addr.state_id.to_le_bytes());
+        buf.extend_from_slice(&entry.value);
+        buf.extend_from_slice(&entry.version.to_le_bytes());
+    }
+
+    let mut objs = objects.to_vec();
+    objs.sort_by_key(|(id, _, _)| *id);
+    for (id, state, object_type) in &objs {
+        buf.extend_from_slice(&id.to_le_bytes());
+        buf.push(*state);
+        buf.push(*object_type);
+    }
+
+    let mut edges = links.to_vec();
+    edges.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    for (from, to, link_type) in &edges {
+        buf.extend_from_slice(&from.to_le_bytes());
+        buf.extend_from_slice(&to.to_le_bytes());
+        buf.push(*link_type);
+    }
+
+    let mut grants = capability_grants.to_vec();
+    grants.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.cmp(&b.1))
+            .then(a.2.cmp(&b.2))
+            .then(a.3.cmp(&b.3))
+    });
+    for g in &grants {
+        buf.extend_from_slice(&g.0.to_le_bytes());
+        buf.extend_from_slice(&g.1.to_le_bytes());
+        buf.extend_from_slice(&g.2.to_le_bytes());
+        buf.extend_from_slice(g.3.as_bytes());
+    }
+
+    let mut scps = scopes.to_vec();
+    scps.sort_by_key(|(id, _, _)| *id);
+    for (id, members, struct_version) in &scps {
+        buf.extend_from_slice(&id.to_le_bytes());
+        let mut members = members.clone();
+        members.sort();
+        for m in &members {
+            buf.extend_from_slice(&m.to_le_bytes());
+        }
+        buf.extend_from_slice(&struct_version.to_le_bytes());
+    }
+
+    crate::crypto::sha256(&buf)
 }
