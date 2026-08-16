@@ -1,0 +1,16 @@
+module countdown_cn
+version 1.0.0
+    OBJECT_BIRTH 0
+    LOAD_CONST R4, 0
+    ADD R1, R0, R4
+    CALL R1, body
+    COMMIT
+    HALT
+body:
+    WRITE 0, "五"
+    WRITE 1, "四"
+    WRITE 2, "三"
+    WRITE 3, "二"
+    WRITE 4, "一"
+    WRITE 5, "零"
+    RETURN

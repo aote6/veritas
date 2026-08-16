@@ -1,0 +1,10 @@
+module countdown
+version 1.0.0
+    LOAD_CONST R0, 5
+    LOAD_CONST R1, 1
+    LOAD_CONST R2, 0
+loop:
+    SUB R0, R0, R1
+    CMP R0, R2
+    JNZ loop
+    HALT
