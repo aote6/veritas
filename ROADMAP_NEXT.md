@@ -1,48 +1,64 @@
 # Veritas 下一步推进计划
 
-最后更新: 2026-08-14
+最后更新: 2026-08-16
 
 ## 当前状态
-- cargo test: 332 passed（331 + meta_verification_comments）
-- Forge pytest: 210 passed（含 P0 CapabilityGrant 2 个 e2e）
-- P0 CapabilityGrant 链路闭合 ✅
-- P1-A world_demo.vasm Vertical Execution Proof ✅
-- P1-B 跨对象事务矩阵 + Grant 闭环审计 ✅（VASM-LIMITED，跨 session 由 WorldService/veritasd 承载）
-- 85 个缺失测试注释已补齐，meta 测试强制约束 ✅
-- docs/VERIFICATION_MAP.md 自动生成 ✅
+
+- cargo test: 245 passed, 0 failed
+- Verification Map: 245/245, Phase 1 + Phase 2 PASS
+- Checkpoint Integrity / Commitment Closure: FROZEN
+- Replay Continuity (P30.4 / P30.5): CLOSED
+- Global Architecture Audit: CLOSED（无 BLOCKER / 无新 MAJOR）
 
 ## 已完成
 
-### P0 CapabilityGrant 闭环 ✅
-### P1-A world_demo.vasm Vertical Execution Proof ✅
-### P1-B 跨对象事务矩阵 + Grant 闭环审计 ✅
+### Checkpoint Integrity 主线 ✅
+- Phase 0: 只读审计
+- Phase 1: ADR + Q1-Q4 裁定
+- Phase 2A: tx_id 移除 + commitment_hash → state_commitment
+- Phase 2B: State Commitment FNV-1a → SHA-256
+- Phase 2C: Checkpoint Commitment Verification
+- Phase 2D: Delta Identity FNV-1a → SHA-256
+- 长度前缀 + Commitment Domain 边界文档
 
-VASM-LIMITED 结论：
-- VASM 有 CAPABILITY_GRANT 指令
-- VASM 不支持跨 session（一次 module = 一个 transaction）
-- 跨 session grant 主链已由 WorldService/veritasd 测试覆盖
-- 不需要 VASM e2e demo
+### Stage 2（World State 完整性）✅ 全部完成
+1. WorldSnapshot 八组件 ✅
+2. StateEntry 真实 version ✅
+3. Object Death 清理 StateStore ✅
+4. Checkpoint 保存/恢复完整 Machine State ✅
+5. Recovery 计数器续接 ✅
+6. Replay 统一 TransactionDelta → apply() ✅
+7. root_hash SHA-256 ✅
 
-### 测试注释全覆盖 ✅
-- meta_verification_comments.rs 强制所有测试有 //! 和 /// 注释
-- 85 个缺失已补齐
-- gen_verification_map.py 自动生成 VERIFICATION_MAP
+### 测试基础设施 ✅
+- meta_verification_comments 强制所有测试有注释
+- gen_verification_map_fixed.py 生成带元数据的验证地图
+- check_verification_map.py Phase 1/2 全 PASS
 
-## 待完成
+## 已知未实现（设计如此或非阻塞）
 
-### 可选增强（非阻塞）
-A grant B on C -> commit -> WAL recovery -> 新 B session -> B 第一次依靠 recovered grant 操作 C -> 成功
+- MemoryAlloc：KernelCall 到达即空操作
+- Effect executor：recovery 保持 pending，无自动重放执行
+- Machine 完整寄存器/栈状态不进 WorldSnapshot（checkpoint 目标是 World State）
+- TRAP Savepoint/RollbackTo 名恒空（ABI 未完成）
+- grant → WAL recover → 新 session 用 recovered grant（可选增强）
 
-### Stage 2（World State 完整性，world.md 12 主线）
-1. WorldSnapshot 扩展为八组件
-2. StateEntry 真实 version
-3. Object Death 清理 StateStore
-4. Checkpoint 保存/恢复完整 Machine State
-5. Recovery 恢复计数器续接
-6. Replay 统一走 TransactionDelta -> apply()
-7. root_hash 升级 SHA-256
+## 下一阶段：Forge ↔ Veritas Identity / Capability Boundary Closure
 
-## 下一步：Forge Adapter
+先审计，不直接写 adapter。
 
-审查 Forge Intent -> capability/grant 语义 -> veritasd JSONL -> WorldService -> Kernel
-特别是 Forge 的 agent/task 身份如何对应 grantee/grantor/resource/capability_id
+审计对象：
+  Forge agent/task 身份
+    ↓
+  grantee / grantor / resource / capability_id
+    ↓
+  veritasd JSONL
+    ↓
+  WorldService
+    ↓
+  AccessIntent
+    ↓
+  Kernel authorization
+
+核心问题：
+  Forge 有没有可能把"谁在操作"弄丢、弄错、降级或绕过？
