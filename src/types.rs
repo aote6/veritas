@@ -1015,10 +1015,8 @@ impl TransactionDelta {
     }
 
     /// Content hash of this Delta for identity comparison.
-    /// Uses the same FNV-1a byte hash as the rest of the kernel; result is
-    /// expanded to 32 bytes (first 8 = LE u64, remainder zero) to match
-    /// the same [u8; 32] width as state_commitment.
-    /// Note: content_hash still uses FNV-1a; algorithm migration is Phase 2D.
+    /// Computed as SHA-256 over canonical_identity_bytes().
+    /// Returns the same [u8; 32] width as state_commitment.
     pub fn content_hash(&self) -> [u8; 32] {
         delta_content_hash(&self.canonical_identity_bytes())
     }
@@ -1028,7 +1026,7 @@ impl TransactionDelta {
 pub const ZERO_HASH: [u8; 32] = [0u8; 32];
 
 /// Hash canonical identity bytes into a 32-byte Hash value.
-/// Reuses the kernel's existing FNV-1a over bytes (no new algorithm).
+/// Uses SHA-256 (Phase 2D migration complete).
 pub fn delta_content_hash(identity_bytes: &[u8]) -> [u8; 32] {
     crate::crypto::sha256(identity_bytes)
 }
