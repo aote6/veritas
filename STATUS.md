@@ -2071,3 +2071,22 @@ Kernel::replay() 是唯一 replay 实现，走 TransactionDelta → apply() 唯�
 验证：
 - cargo test --all：245 passed，0 failed
 - Verification Map：245/245 PASS
+
+
+## Identity Binding Boundary Audit — 2026-08-16
+
+Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
+
+发现：
+- attach_identity 允许任意外部指定 Alive ObjectId 作为身份
+- Forge 用本地明文 .forge/world_identity 持久化 ObjectId
+- veritasd 是本地 stdin/stdout 进程，非网络服务
+- WRI v1 未定义外部主体到 World Object 的认证绑定
+
+定级：MINOR / KNOWN DESIGN GAP（本地单用户部署）
+不属于 Kernel Capability bypass / 身份模型漏洞。
+
+详细审计在 Forge 仓库：
+  docs/IDENTITY_BINDING_AUDIT.md
+
+未来多用户 / 网络部署时必须重开。
