@@ -200,6 +200,7 @@ fn root_hash_matches_independent_sha256_golden_vector() {
         let version: u64 = 2;
         buf.extend_from_slice(&object_id.to_le_bytes());
         buf.extend_from_slice(&state_id.to_le_bytes());
+        buf.extend_from_slice(&(value.len() as u64).to_le_bytes());
         buf.extend_from_slice(&value);
         buf.extend_from_slice(&version.to_le_bytes());
     }
@@ -221,6 +222,7 @@ fn root_hash_matches_independent_sha256_golden_vector() {
         buf.extend_from_slice(&granted_by.to_le_bytes());
         buf.extend_from_slice(&root_holder.to_le_bytes());
         buf.extend_from_slice(&resource.to_le_bytes());
+        buf.extend_from_slice(&(capability_type.len() as u64).to_le_bytes());
         buf.extend_from_slice(capability_type);
     }
 
@@ -233,5 +235,41 @@ fn root_hash_matches_independent_sha256_golden_vector() {
          expected={expected:02x?}\n\
          canonical_len={}",
         buf.len()
+    );
+}
+
+/// Adversarial: 可变长字段的拼接歧义必须被长度前缀消除。
+///
+/// ["a", "bc"] 与 ["ab", "c"] 必须产生不同的 commitment。
+///
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: DET-01
+#[test]
+fn root_hash_length_prefix_prevents_concatenation_ambiguity() {
+    let tk1 = common::new_kernel();
+    let root1 = tk1.root_object;
+
+    let mut tx1 = tk1.kernel.test_begin_in_object(root1);
+    tk1.kernel.test_write(&mut tx1, 1, b"a".to_vec()).unwrap();
+    tk1.kernel.test_write(&mut tx1, 2, b"bc".to_vec()).unwrap();
+    tk1.kernel.test_commit(&mut tx1).unwrap();
+
+    let h1 = tk1.kernel.test_engine().root_hash();
+
+    let tk2 = common::new_kernel();
+    let root2 = tk2.root_object;
+
+    let mut tx2 = tk2.kernel.test_begin_in_object(root2);
+    tk2.kernel.test_write(&mut tx2, 1, b"ab".to_vec()).unwrap();
+    tk2.kernel.test_write(&mut tx2, 2, b"c".to_vec()).unwrap();
+    tk2.kernel.test_commit(&mut tx2).unwrap();
+
+    let h2 = tk2.kernel.test_engine().root_hash();
+
+    assert_ne!(
+        h1, h2,
+        "length prefix must prevent concatenation ambiguity: ['a','bc'] vs ['ab','c']"
     );
 }

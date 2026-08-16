@@ -2010,6 +2010,7 @@ pub fn state_commitment_from_components(
     for (addr, entry) in &entries {
         buf.extend_from_slice(&addr.object_id.to_le_bytes());
         buf.extend_from_slice(&addr.state_id.to_le_bytes());
+        buf.extend_from_slice(&(entry.value.len() as u64).to_le_bytes());
         buf.extend_from_slice(&entry.value);
         buf.extend_from_slice(&entry.version.to_le_bytes());
     }
@@ -2041,6 +2042,7 @@ pub fn state_commitment_from_components(
         buf.extend_from_slice(&g.0.to_le_bytes());
         buf.extend_from_slice(&g.1.to_le_bytes());
         buf.extend_from_slice(&g.2.to_le_bytes());
+        buf.extend_from_slice(&(g.3.len() as u64).to_le_bytes());
         buf.extend_from_slice(g.3.as_bytes());
     }
 
@@ -2050,6 +2052,7 @@ pub fn state_commitment_from_components(
         buf.extend_from_slice(&id.to_le_bytes());
         let mut members = members.clone();
         members.sort();
+        buf.extend_from_slice(&(members.len() as u64).to_le_bytes());
         for m in &members {
             buf.extend_from_slice(&m.to_le_bytes());
         }

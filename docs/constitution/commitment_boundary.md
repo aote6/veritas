@@ -408,3 +408,69 @@ BLAKE3 在无依赖约束下自写实现约 500 行，chunk 状态机和边界�
 ### 11.6 为什么不是 SHA-512
 
 SHA-512 提高了量子碰撞余量，但代价是 state_commitment 字段宽度从 32 变 64，所有 Receipt / checkpoint / replay 结构迁移成本高。当前威胁模型下 SHA-256 的碰撞安全性已足够。真正的长期量子风险在签名/认证层，不在 State Commitment 层。
+
+
+## 12. Commitment Domain Field Boundary
+
+本节正式定义五组件中哪些字段进入 State Commitment，哪些不进入。
+
+### 12.1 进入 State Commitment 的字段
+
+StateStore:
+- object_id (LE u64)
+- state_id (LE u64)
+- value (u64 长度前缀 + 原始字节)
+- version (LE u64)
+
+ObjectRegistry:
+- id (LE u64)
+- lifecycle_state (u8)
+- object_type (u8)
+
+Topology:
+- from (LE u64)
+- to (LE u64)
+- link_type (u8)
+
+CapabilityGraph:
+- granted_by (LE u64)
+- root_holder (LE u64)
+- resource (LE u64)
+- capability_type (u64 长度前缀 + 原始字节)
+
+ScopeRegistry:
+- scope_id (LE u64)
+- members 数量 (u64)
+- 每个 member (LE u64，排序后)
+- struct_version (LE u64)
+
+### 12.2 不进入 State Commitment 的字段
+
+CapabilityGraph:
+- capability_id
+- active
+- parent
+- cascade_on_revoke
+- holder（非 root）
+
+ScopeRegistry:
+- owner
+
+ObjectRegistry:
+- metadata
+- payload (ObjectBody)
+
+### 12.3 编码规则
+
+- 所有可变长字段（value、capability_type）使用 u64 长度前缀
+- Scope members 使用 u64 数量前缀
+- 所有多字节整数使用 little-endian 编码
+- 各组件内部排序规则与 root_hash() 实现一致
+- 五组件按 StateStore → ObjectRegistry → Topology → CapabilityGraph → ScopeRegistry 顺序连续编码后一次 SHA-256
+
+### 12.4 边界原则
+
+Checkpoint 保存的数据可以多于 State Commitment 覆盖的数据。
+Commitment Domain 是 State Identity 的语义子集，不是 WorldSnapshot 的全部字段。
+恢复需要但不在 Commitment Domain 内的字段，其完整性由 checkpoint 载体保证，不由 State Commitment 保证。
+
