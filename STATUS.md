@@ -1978,3 +1978,39 @@ Phase 2C：Checkpoint Commitment Verification
 - restore_checkpoint() 恢复后重新计算 state_root()
 - 与 snapshot.state_commitment 比对
 - 不匹配则拒绝恢复
+
+
+## Phase 2C: Checkpoint Commitment Verification — 2026-08-16
+
+### 完成内容
+
+restore_checkpoint() 现在先验证 checkpoint commitment，通过后才恢复。
+
+- 新增纯函数 state_commitment_from_components()：五组件 canonical encoding + SHA-256，不访问 Engine 内部状态
+- root_hash() 改为调用纯函数：从 self 提取五组件语义数据后委托
+- restore_checkpoint() 先验证后恢复：
+  - commitment_algorithm != 1 → false
+  - 从 snap 计算 commitment，与 snap.state_commitment 比对
+  - 不匹配 → false，不碰 self 任何状态
+  - 匹配才执行恢复，返回 true
+- ScopeSnapshot 增加 struct_version 字段：修复 checkpoint 丢失 Scope struct_version 的 gap
+- 新增 3 个测试：
+  - RED 1：篡改 state_commitment → restore false
+  - RED 2：篡改 state_entries value → restore false 且目标 Engine 不被污染
+  - GREEN：合法 checkpoint → restore true 且 root_hash == snap.state_commitment
+
+### 验证结果
+
+- cargo test --all：全部通过
+- Verification Map：243/243，Phase 1 + Phase 2 全 PASS
+- git diff --check：干净
+
+### 相关 commit
+
+- 79c9297 feat: Phase 2C — checkpoint commitment verification with atomic reject
+
+### 下一步
+
+Phase 2D：Delta Identity Hash Migration
+- delta_content_hash() / last_applied_delta_hash 从 FNV-1a 迁移到 SHA-256
+- canonical_identity_bytes() 编码不变
