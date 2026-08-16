@@ -2043,3 +2043,17 @@ delta_content_hash() 从 FNV-1a 迁移到 SHA-256。
 State Commitment 和 Delta Identity 均已迁移到 SHA-256。
 restore_checkpoint 现在验证 commitment。
 Phase 0 发现的 F8 已关闭。
+
+
+## Checkpoint Integrity / Commitment Closure — FROZEN
+
+主线完成，无遗留 BLOCKER / MAJOR GAP。
+
+- State Commitment: SHA-256，canonical encoding 含长度前缀，无拼接歧义
+- Checkpoint Verification: restore 先验证后恢复，失败不污染
+- Delta Identity: SHA-256，canonical_identity_bytes 不变
+- Commitment Domain 字段边界: 已写入 ADR §12
+- Grok 审计问题 2.1-2.3 / 3.1-3.3: 全部处理
+
+冻结声明:
+Checkpoint Integrity / Commitment Closure — FROZEN
