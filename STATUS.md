@@ -2014,3 +2014,32 @@ restore_checkpoint() 现在先验证 checkpoint commitment，通过后才恢复�
 Phase 2D：Delta Identity Hash Migration
 - delta_content_hash() / last_applied_delta_hash 从 FNV-1a 迁移到 SHA-256
 - canonical_identity_bytes() 编码不变
+
+
+## Phase 2D: Delta Identity Hash Migration — 2026-08-16
+
+### 完成内容
+
+delta_content_hash() 从 FNV-1a 迁移到 SHA-256。
+
+- canonical_identity_bytes() 完全未变
+- content_hash() 接口未变
+- apply() equal-version 语义未变
+- last_applied_delta_hash 生命周期未变
+- 改动仅 1 行：crate::crypto::sha256(identity_bytes)
+
+### 验证结果
+
+- cargo test --all：全部通过
+- Verification Map：243/243 PASS
+- git diff --check：干净
+
+### 相关 commit
+
+- 46e4ecd feat: Phase 2D — migrate Delta content_hash to SHA-256
+
+### Checkpoint Integrity 主线完成
+
+State Commitment 和 Delta Identity 均已迁移到 SHA-256。
+restore_checkpoint 现在验证 commitment。
+Phase 0 发现的 F8 已关闭。
