@@ -112,6 +112,7 @@
 | tests/replay.rs::replay_empty_wal_returns_nonzero | A | kernel | FORBIDDEN | DET-01 |
 | tests/replay.rs::replay_equals_recovery_idle | A | kernel | FORBIDDEN | DET-01 |
 | tests/replay.rs::wal_replay_is_deterministic | A | kernel | FORBIDDEN | DET-01 |
+| tests/replay_continuity.rs::live_replay_checkpoint_three_way_equivalence | A | recovery | FORBIDDEN | DET-01 |
 | tests/replay_determinism.rs::object_ops_are_deterministic | A | kernel | FORBIDDEN | DET-01 |
 | tests/replay_determinism.rs::same_wal_same_state | A | kernel | FORBIDDEN | DET-01 |
 | tests/replay_determinism.rs::state_machine_replay_is_deterministic | A | kernel | FORBIDDEN | DET-01 |

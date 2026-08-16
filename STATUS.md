@@ -2057,3 +2057,17 @@ Phase 0 发现的 F8 已关闭。
 
 冻结声明:
 Checkpoint Integrity / Commitment Closure — FROZEN
+
+
+## P30.4 / P30.5 ReplayRecord Upgrade — CLOSED
+
+旧的 ReplayRecord / ReplayEngine / state_memory 早已删除。
+Kernel::replay() 是唯一 replay 实现，走 TransactionDelta → apply() 唯一路径。
+
+新增 tests/replay_continuity.rs：
+- live root_hash == WAL replay root_hash == checkpoint restore root_hash
+- 三路全等，正式闭合 P30.4 / P30.5
+
+验证：
+- cargo test --all：245 passed，0 failed
+- Verification Map：245/245 PASS
