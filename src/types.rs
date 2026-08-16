@@ -1030,16 +1030,7 @@ pub const ZERO_HASH: [u8; 32] = [0u8; 32];
 /// Hash canonical identity bytes into a 32-byte Hash value.
 /// Reuses the kernel's existing FNV-1a over bytes (no new algorithm).
 pub fn delta_content_hash(identity_bytes: &[u8]) -> [u8; 32] {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-    let mut h = FNV_OFFSET_BASIS;
-    for &b in identity_bytes {
-        h ^= b as u64;
-        h = h.wrapping_mul(FNV_PRIME);
-    }
-    let mut out = [0u8; 32];
-    out[0..8].copy_from_slice(&h.to_le_bytes());
-    out
+    crate::crypto::sha256(identity_bytes)
 }
 
 /// WorldSnapshot 是 Stage 3.4b 规范的恢复协议（Serialization Contract）
