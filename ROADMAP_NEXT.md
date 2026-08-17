@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- cargo test: 245 passed, 0 failed
+- cargo test: 360 passed, 0 failed
 - Verification Map: 245/245, Phase 1 + Phase 2 PASS
 - Checkpoint Integrity / Commitment Closure: FROZEN
 - Replay Continuity (P30.4 / P30.5): CLOSED

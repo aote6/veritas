@@ -2090,3 +2090,27 @@ Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
   docs/IDENTITY_BINDING_AUDIT.md
 
 未来多用户 / 网络部署时必须重开。
+
+## 2026-08-17 CREATE_OBJECT capability_grants 序列化修复
+
+**背景**：Forge 侧 CREATE_OBJECT 语义穿透需要 Receipt 携带结构化 capability_grants。审计发现 veritasd `receipt_json` 只输出 `capability_events` 字符串日志，Forge 的 `TransactionDelta.capability_grants` 在真实路径上永远为空。
+
+**修复**：
+- `src/bin/veritasd.rs` `receipt_json()` 新增 `capability_grants` 数组序列化
+- 字段：`capability_id` / `cap_type` / `grantor` / `grantee` / `resource`
+- 与 Forge `CapabilityGrantView` 字段一一对应
+
+**验证**：
+- 审计工具：
+  - `check_verification_map.py --phase1`：PASS
+  - `check_verification_map.py --phase2`：PASS
+  - `check_verification_map.py --phase2-strict`：PASS
+  - `audit_instruction_dispatch.py`：28/30（2 MISSING 为历史遗留 Read/Write，非本次引入）
+- `cargo test`：360 passed, 0 failed
+- Forge 侧真实 veritasd e2e：`capability_grants_cross_boundary` PASSED
+
+**遗留（非本次范围）**：
+- Read / Write 指令无执行路径（Kernel legacy 废弃后未迁移到 Trap ABI）
+- state_root 输出格式与 SHA-256 迁移不同步（见 Forge STATUS.md 2026-08-17 条目）
+
+**相关 commit**：veritas `待提交`

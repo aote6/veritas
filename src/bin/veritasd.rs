@@ -45,6 +45,19 @@ fn receipt_json(r: &ReceiptView) -> Value {
             })
         })
         .collect();
+    let capability_grants: Vec<Value> = delta
+        .capability_grants
+        .iter()
+        .map(|g| {
+            json!({
+                "capability_id": g.capability_id,
+                "cap_type": g.cap_type,
+                "grantor": g.grantor,
+                "grantee": g.grantee,
+                "resource": g.resource,
+            })
+        })
+        .collect();
     json!({
         "tx_id": r.tx_id,
         "before_root": root_hex(&r.before_root),
@@ -59,6 +72,7 @@ fn receipt_json(r: &ReceiptView) -> Value {
             "links_removed": delta.links_removed,
             "memory_written": memory,
             "capability_events": delta.capability_events,
+            "capability_grants": capability_grants,
             "effects": delta.effects,
         }
     })
