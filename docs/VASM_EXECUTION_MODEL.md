@@ -31,7 +31,7 @@
   有寄存器文件、有调用栈（CallFrame）、有 PC、支持 CALL/RETURN 身份切换。
   这是正式路径，CLI 的 veritas run、cargo test 里写的 E2E 测试，全部走这条。
 
-第二套：Executor（src/executor.rs）
+第二套：Executor（已删除，2026-08-11）
   独立实现，没有寄存器文件，遇到 Operand::Register 会直接报错，拒绝执行。
   截至 2026-08-10 审计，这个模块没有任何外部调用者，只在自己文件内部被引用。
   不要用它，也不要往里加功能，它是待清理的技术债，STATUS.md 里已经记了"待合并或废弃"。
@@ -184,7 +184,7 @@ is_halted() 永远返回 false，这个 while 循环永远不会退出。
 影响范围：cargo run --bin veritas -- run 这条 CLI 命令，
 只要跑的程序会触发 Trap，进程就会挂死，需要手动 kill。
 
-截至本文档写成时（2026-08-11），这个问题尚未修复，只是被绕开：
+截至本文档写成时（2026-08-11），这个问题尚未修复，只是被绕开（2026-08-14 已修复）：
 tests/machine/basic.rs 里所有 E2E 测试都没有用 Runtime::execute，
 而是自己写了一个带步数上限的循环（run_bounded 函数），
 手动匹配 Halted / Aborted / Trapped 三种终止状态，避免测试本身卡死。

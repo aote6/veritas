@@ -186,7 +186,7 @@ ReplayRecord missing Object/Link/Capability — ReplayEngine is StateMemory-only
 
 ## Documentation map
 
-See README. 162 tests pass.
+See README. 365 tests pass.
 
 
 ---
@@ -2114,14 +2114,14 @@ Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
   - `check_verification_map.py --phase2`：PASS
   - `check_verification_map.py --phase2-strict`：PASS
   - `audit_instruction_dispatch.py`：28/30（2 MISSING 为历史遗留 Read/Write，非本次引入）
-- `cargo test`：360 passed, 0 failed
+- `cargo test`：365 passed, 0 failed
 - Forge 侧真实 veritasd e2e：`capability_grants_cross_boundary` PASSED
 
 **遗留（非本次范围）**：
 - Read / Write 指令无执行路径（Kernel legacy 废弃后未迁移到 Trap ABI）
 - state_root 输出格式与 SHA-256 迁移不同步（见 Forge STATUS.md 2026-08-17 条目）
 
-**相关 commit**：veritas `待提交`
+**相关 commit**：099eb12 feat: veritasd receipt_json 序列化 capability_grants
 
 ## 2026-08-19 P30.4/P30.5/P30.6 HostCall/MemoryAlloc/dead_code + Forge E2E 验证
 
