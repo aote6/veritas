@@ -248,7 +248,7 @@ Runtime::execute(kernel, ModuleImage)
 - **分类**: **D 文档 drift**（实现为 **A/C 混合**：已实现且被测，但宪法标 Future）
 - **正确归类**: **C/B** — 实现超前于已冻结的 “Future Extension” 表述
 - **建议**: P1 — **改 Constitution 状态**（transaction.md §11 从“未实现”改为“已实现，标记为 experimental”）；**不要删实现**（有测试依赖）
-- **2026-08-19 状态**: 代码实现保持，宪法文档待更新（本次不动宪法）
+- **2026-08-19 状态**: ✅ 宪法已更新（transaction.md §11 改为“已实现，标记 experimental”），此项关闭
 ---
 
 ### 发现 #9 — root_hash = FNV-1a（u64）
@@ -411,7 +411,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 ### P1（双路径 / legacy 误判风险）
 
 1. 文档化 enter_object / begin_in_object 为 bootstrap，禁止新的无审计业务路径  
-2. Savepoint：更新 transaction.md（宪法 §11 从“未实现”改为“已实现 experimental”）— 本次不动宪法，待后续  
+2. Savepoint：✅ 已完成（2026-08-19，宪法 §11 已更新为 experimental）  
 3. TRAP Phase 1 vs 宪法表述对齐（文档）  
 4. Module 实现映射与 module.md 读者预期  
 5. Controller/TxManager 与 WAL 叙事职责说明  
