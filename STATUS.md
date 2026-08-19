@@ -2146,3 +2146,31 @@ Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
 - 6eba3e7 P30.4-P30.6: HostCall enum, MemoryAlloc initial impl, dead_code cleanup
 - 4f19dc2 chore: remove patch artifacts
 - 85e4184 fix: MemoryAlloc no empty-value pollution + checkpoint comments corrected
+
+## 2026-08-19 Forge Identity Boundary 审计
+
+**审计对象**：Forge → veritasd JSONL → WorldService → Kernel 身份链。
+
+**已确认漏洞链**：
+1. `tx_begin` 接受任意 `actor_id` 参数，无验证调用者是否持有该 Object 的 AdminCap
+2. Session 的 `capability_context` 被设置为攻击者指定的对象
+3. `authorize_intent` 的豁免条件 `target == capability_context` 被恒真短路
+4. 攻击者可以以任何对象的身份执行 `tx_write` / `tx_link` / `tx_capability_grant`
+
+**根因**：veritasd 信任客户端传入的 `actor_id` / `object_id`，没有验证客户端与 Object 的绑定关系。
+
+**当前定级**：KNOWN DESIGN GAP（本地单用户部署可接受，非网络服务）。
+
+**修复方向**（多用户/网络部署时）：
+- `attach_identity` 和 `tx_begin` 必须验证调用者持有该 Object 的 AdminCap
+- 或引入独立认证层（公钥/签名绑定到 ObjectId）
+
+**有保护的操作**（已验证）：
+- `tx_write` 跨对象写：需先通过 `authorize_intent(AccessIntent::Call)`
+- `tx_freeze_object` / `tx_death_object`：需先通过 `authorize_intent`
+- `tx_capability_grant` 跨身份 grant：需先通过 `authorize_intent`
+- `tx_link`：依赖 commit 时 `verify_capability` 验证（可接受但不够及时）
+
+**结论**：Forge E2E 基础功能可用；身份边界完整性问题当前不阻塞，但未来多用户/网络部署时必须重开。
+
+**相关 commit**：57a5f0c docs: update STATUS/ROADMAP/TEST_ARCHITECTURE/USAGE/VASM_EXECUTION_MODEL
