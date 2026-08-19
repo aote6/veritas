@@ -15,7 +15,6 @@ pub mod capability;
 pub mod controller;
 pub mod effect;
 pub mod engine;
-pub mod extension;
 pub mod guard;
 pub mod kernel;
 pub mod lock;
