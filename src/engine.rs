@@ -71,6 +71,8 @@ impl crate::types::ObjectState {
 impl VeritasEngine {
     /// Test probe: last commit's DependencyInvalidated pairs.
     /// Production consumers must use Effect/WAL path, not this API.
+    /// Marked allow(dead_code): only reached from Kernel wrapper / integration tests.
+    #[allow(dead_code)]
     pub fn last_dependency_invalidations(
         &self,
     ) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
@@ -451,6 +453,7 @@ impl VeritasEngine {
     }
 
     /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
+    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         let state_entries = self.state_store.snapshot();
@@ -487,6 +490,7 @@ impl VeritasEngine {
     }
 
     /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
+    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         if snap.commitment_algorithm != 1 {
@@ -861,6 +865,7 @@ impl VeritasEngine {
 
     /// Bootstrap-only: allowed only when the world is empty (no objects, version 0).
     /// Runtime state writes must go through Transaction → Commit → Apply.
+    #[allow(dead_code)] // bootstrap helper; not on active production path
     pub(crate) fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
         let version = self
             .global_version
@@ -995,6 +1000,69 @@ impl VeritasEngine {
 
         ctx.write_set.push(addr, value);
         Ok(())
+    }
+
+    /// P30.5 / constitution kernel.md §3.7: MEMORY_ALLOC
+    /// Allocate a new StateId slot in the target object's MemorySpace.
+    /// `size_hint` is advisory only and does not enter World State.
+    /// Allocation is transaction-local until commit (reserved via empty write_set entry).
+    pub(crate) fn memory_alloc(
+        &self,
+        ctx: &mut TransactionContext,
+        object_id: ObjectId,
+        _size_hint: u64,
+    ) -> Result<StateId, VeritasError> {
+        if ctx.is_aborted() {
+            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
+        }
+
+        // Object must exist (committed or pending birth) and not be Dead/Frozen.
+        {
+            let reg = self.object_registry.lock().unwrap();
+            match reg.get(&object_id) {
+                None => {
+                    if !ctx.pending_objects.contains(&object_id) {
+                        return Err(VeritasError::EngineError(format!(
+                            "Object {} does not exist",
+                            object_id
+                        )));
+                    }
+                }
+                Some(r) if r.is_dead() || r.is_frozen() => {
+                    return Err(VeritasError::PermissionDenied);
+                }
+                Some(_) => {}
+            }
+        }
+
+        // Authorization: self-access or capability-backed Write intent.
+        if ctx.current_object != object_id && ctx.capability_context != object_id {
+            self.authorize_intent(ctx, &crate::types::AccessIntent::Write(object_id))?;
+        }
+
+        // Deterministic next StateId: max over committed store + in-tx write_set for this object.
+        let mut max_id: Option<StateId> = None;
+        for (addr, _) in self.state_store.all_entries() {
+            if addr.object_id == object_id {
+                max_id = Some(max_id.map_or(addr.state_id, |m| m.max(addr.state_id)));
+            }
+        }
+        for (addr, _) in ctx.write_set.iter() {
+            if addr.object_id == object_id {
+                max_id = Some(max_id.map_or(addr.state_id, |m| m.max(addr.state_id)));
+            }
+        }
+
+        let new_id = match max_id {
+            Some(m) => m.saturating_add(1),
+            None => 0,
+        };
+
+        // Reserve the slot transactionally so subsequent allocs in the same tx advance.
+        let addr = crate::types::Address::new(object_id, new_id);
+        ctx.write_set.push(addr, Vec::new());
+
+        Ok(new_id)
     }
 
     pub(crate) fn effect(

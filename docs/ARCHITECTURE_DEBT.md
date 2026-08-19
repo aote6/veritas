@@ -1,6 +1,8 @@
 # Veritas Architecture Debt / Constitution Drift 审计报告
 
 **审计日期**: 2026-08-14  
+**状态更新**: 2026-08-19 — P30.4 Host Call 枚举统一、P30.5 MemoryAlloc 实现、P30.6 dead_code 标注已执行（见 STATUS.md）。分类统计中 DEAD CODE / 部分 TEST-ONLY 项已收敛。  
+
 **审计范围**: 代码考古 + 架构审计 + 宪法一致性审计  
 **约束**: 本轮**禁止**修改任何 `src/` 代码、测试逻辑、Constitution；唯一产物为本报告。  
 **数据来源**: `docs/VERIFICATION_MAP.md`、`docs/IDENTITY_MODEL.md`、`docs/constitution/*`、`ROADMAP_NEXT.md`、`STATUS.md`、`src/**`、`tests/**`、`bin/**` 的阅读与调用关系检索。
@@ -30,20 +32,20 @@ Veritas **已经是一个自洽、可运行的计算机内核原型**：Transact
 | A. ACTIVE CORE | 12+ | 主执行/身份/能力/事务/WAL 主链 |
 | B. ACTIVE BUT DRIFTED | 4 | 仍在用，与当前宪法/身份模型有偏差 |
 | C. LEGACY | 6 | 旧路径/旧抽象，仍有调用或兼容用途 |
-| D. DEAD CODE | 3 | 无外部活跃调用路径 |
+| D. DEAD CODE | 3→~1 | 无外部活跃调用路径（2026-08-19: test-only/bootstrap 已标注 allow(dead_code)） |
 | E. CONSTITUTION GAP | 3 | 宪法明确要求且非 Future、实现缺失或半成品 |
 | F. FUTURE EXTENSION | 3 | 宪法已标未来扩展，不算当前缺陷 |
 | G. TEST-ONLY | 2 | 仅测试入口 |
 | H. UNCERTAIN | 2 | 证据不足 |
 
-**清理优先级（仅建议，本轮不执行）**
+**清理优先级（2026-08-14 建议；2026-08-19 部分已执行）**
 
-| 优先级 | 数量 | 含义 |
-|--------|------|------|
-| P0 | 2 | 可能影响安全/语义一致性的 drift（需评估，非立即改 Kernel） |
-| P1 | 5 | 双路径 / 明显 legacy，易导致未来误判 |
-| P2 | 5 | 死代码、无用 wrapper、过时文档 |
-| P3 | 3 | 纯整理 |
+| 优先级 | 数量 | 含义 | 2026-08-19 状态 |
+|--------|------|------|----------------|
+| P0 | 2 | 可能影响安全/语义一致性的 drift（需评估，非立即改 Kernel） | Identity drift 已文档收口 |
+| P1 | 5 | 双路径 / 明显 legacy，易导致未来误判 | 仍开放 |
+| P2 | 5 | 死代码、无用 wrapper、过时文档 | **部分已执行**（HostCall 枚举、MemoryAlloc、dead_code 标注） |
+| P3 | 3 | 纯整理 | 仍开放 |
 
 **关键结论预览**
 

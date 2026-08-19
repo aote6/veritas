@@ -1,0 +1,128 @@
+diff --git a/src/engine.rs b/src/engine.rs
+--- a/src/engine.rs
++++ b/src/engine.rs
+@@ -997,6 +997,69 @@
+         Ok(())
+     }
+ 
++    /// P30.5 / constitution kernel.md §3.7: MEMORY_ALLOC
++    /// Allocate a new StateId slot in the target object's MemorySpace.
++    /// `size_hint` is advisory only and does not enter World State.
++    /// Allocation is transaction-local until commit (reserved via empty write_set entry).
++    pub(crate) fn memory_alloc(
++        &self,
++        ctx: &mut TransactionContext,
++        object_id: ObjectId,
++        _size_hint: u64,
++    ) -> Result<StateId, VeritasError> {
++        if ctx.is_aborted() {
++            return Err(VeritasError::Abort(AbortReason::AlreadyAborted));
++        }
++
++        // Object must exist (committed or pending birth) and not be Dead/Frozen.
++        {
++            let reg = self.object_registry.lock().unwrap();
++            match reg.get(&object_id) {
++                None => {
++                    if !ctx.pending_objects.contains(&object_id) {
++                        return Err(VeritasError::EngineError(format!(
++                            "Object {} does not exist",
++                            object_id
++                        )));
++                    }
++                }
++                Some(r) if r.is_dead() || r.is_frozen() => {
++                    return Err(VeritasError::PermissionDenied);
++                }
++                Some(_) => {}
++            }
++        }
++
++        // Authorization: self-access or capability-backed Write intent.
++        if ctx.current_object != object_id && ctx.capability_context != object_id {
++            self.authorize_intent(ctx, &crate::types::AccessIntent::Write(object_id))?;
++        }
++
++        // Deterministic next StateId: max over committed store + in-tx write_set for this object.
++        let mut max_id: Option<StateId> = None;
++        for (addr, _) in self.state_store.all_entries() {
++            if addr.object_id == object_id {
++                max_id = Some(max_id.map_or(addr.state_id, |m| m.max(addr.state_id)));
++            }
++        }
++        for (addr, _) in ctx.write_set.iter() {
++            if addr.object_id == object_id {
++                max_id = Some(max_id.map_or(addr.state_id, |m| m.max(addr.state_id)));
++            }
++        }
++
++        let new_id = match max_id {
++            Some(m) => m.saturating_add(1),
++            None => 0,
++        };
++
++        // Reserve the slot transactionally so subsequent allocs in the same tx advance.
++        let addr = crate::types::Address::new(object_id, new_id);
++        ctx.write_set.push(addr, Vec::new());
++
++        Ok(new_id)
++    }
++
+     pub(crate) fn effect(
+         &self,
+         ctx: &mut TransactionContext,
+
+diff --git a/src/kernel.rs b/src/kernel.rs
+--- a/src/kernel.rs
++++ b/src/kernel.rs
+@@ -256,9 +256,12 @@
+                     .capability_delegate(ctx, capability_id, from, to, cascade_on_revoke)?;
+                 Ok(TrapResult::Success)
+             }
+-            KernelCall::MemoryAlloc { .. } => {
+-                // MemoryAlloc not yet implemented
+-                Ok(TrapResult::Success)
++            KernelCall::MemoryAlloc {
++                object_id,
++                size_hint,
++            } => {
++                let state_id = self.engine.memory_alloc(ctx, object_id, size_hint)?;
++                Ok(TrapResult::StateId(state_id))
+             }
+             KernelCall::Abort { reason } => {
+                 self.engine.abort(ctx, reason);
+@@ -856,4 +859,34 @@
+             "recovered birth must still be Alive"
+         );
+     }
++
++    /// P30.5: MEMORY_ALLOC returns sequential StateIds starting at 0.
++    #[test]
++    fn memory_alloc_sequential_state_ids() {
++        let kernel = Kernel::new();
++        let mut ctx = kernel.begin();
++        // Birth object 42 with explicit id (current API)
++        kernel.engine().object_birth(&mut ctx, 42).unwrap();
++        ctx.enter_object(42);
++
++        let call0 = KernelCall::MemoryAlloc {
++            object_id: 42,
++            size_hint: 64,
++        };
++        let sid0 = match kernel.handle(&mut ctx, call0).unwrap() {
++            TrapResult::StateId(id) => id,
++            other => panic!("expected StateId, got {:?}", other),
++        };
++        assert_eq!(sid0, 0, "first alloc on empty object must be 0");
++
++        let call1 = KernelCall::MemoryAlloc {
++            object_id: 42,
++            size_hint: 128,
++        };
++        let sid1 = match kernel.handle(&mut ctx, call1).unwrap() {
++            TrapResult::StateId(id) => id,
++            other => panic!("expected StateId, got {:?}", other),
++        };
++        assert_eq!(sid1, 1, "second alloc must advance to 1");
++    }
+ }

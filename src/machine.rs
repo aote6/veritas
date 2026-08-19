@@ -575,10 +575,12 @@ impl Machine {
                 return Ok(());
             }
             Instruction::HostCall { call_id } => {
-                // P27: HostCall统一收口
-                match call_id {
-                    0..=3 => { /* valid, handled by host */ }
-                    _ => {
+                // P27/P30.4: HostCall 统一收口 — 合法 ID 由 host::HostCall 枚举定义
+                match crate::host::HostCall::from_id(call_id) {
+                    Some(_hc) => {
+                        // valid, handled by host (Time/Random/Write/Read/Spawn)
+                    }
+                    None => {
                         self.status =
                             MachineStatus::Trapped(crate::types::TrapReason::InvalidEncoding {
                                 pc: self.pc,

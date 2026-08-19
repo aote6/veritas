@@ -223,6 +223,7 @@ impl WorldService {
         }
     }
 
+    #[allow(dead_code)] // internal accessor; WorldService methods use self.kernel directly
     pub(crate) fn kernel(&self) -> &Arc<Kernel> {
         &self.kernel
     }

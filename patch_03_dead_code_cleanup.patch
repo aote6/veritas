@@ -1,0 +1,75 @@
+diff --git a/src/engine.rs b/src/engine.rs
+--- a/src/engine.rs
++++ b/src/engine.rs
+@@ -71,6 +71,8 @@
+ impl VeritasEngine {
+     /// Test probe: last commit's DependencyInvalidated pairs.
+     /// Production consumers must use Effect/WAL path, not this API.
++    /// Marked allow(dead_code): only reached from Kernel wrapper / integration tests.
++    #[allow(dead_code)]
+     pub fn last_dependency_invalidations(
+         &self,
+     ) -> Vec<(crate::types::ObjectId, crate::types::ObjectId)> {
+@@ -451,6 +453,7 @@
+     }
+ 
+     /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
++    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
+     #[allow(dead_code)] // test-only integration path via KernelTestExt
+     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
+         let state_entries = self.state_store.snapshot();
+@@ -487,6 +490,7 @@
+     }
+ 
+     /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
++    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
+     #[allow(dead_code)] // test-only integration path via KernelTestExt
+     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+         if snap.commitment_algorithm != 1 {
+@@ -861,6 +865,7 @@
+ 
+     /// Bootstrap-only: allowed only when the world is empty (no objects, version 0).
+     /// Runtime state writes must go through Transaction → Commit → Apply.
++    #[allow(dead_code)] // bootstrap helper; not on active production path
+     pub(crate) fn init_state(&self, state_id: StateId, initial_value: Vec<u8>) {
+         let version = self
+             .global_version
+
+diff --git a/src/kernel.rs b/src/kernel.rs
+--- a/src/kernel.rs
++++ b/src/kernel.rs
+@@ -285,6 +285,8 @@
+ 
+     // Each method delegates directly to the corresponding VeritasEngine method.
+ 
++    /// Test probe wrapper. Prefer Effect/WAL for production observation.
++    #[allow(dead_code)]
+     pub fn last_dependency_invalidations(&self) -> Vec<(ObjectId, ObjectId)> {
+         self.engine.last_dependency_invalidations()
+     }
+@@ -322,11 +324,13 @@
+         self.engine.snapshot_links()
+     }
+ 
++    /// TEST-ONLY: WorldSnapshot aggregation for integration tests via KernelTestExt.
+     #[allow(dead_code)] // test-only integration path via KernelTestExt
+     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
+         self.engine.create_checkpoint()
+     }
+ 
++    /// TEST-ONLY: restore from WorldSnapshot for integration tests via KernelTestExt.
+     #[allow(dead_code)] // test-only integration path via KernelTestExt
+     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
+         self.engine.restore_checkpoint(snap)
+
+diff --git a/src/world_api.rs b/src/world_api.rs
+--- a/src/world_api.rs
++++ b/src/world_api.rs
+@@ -223,6 +223,7 @@
+         }
+     }
+ 
++    #[allow(dead_code)] // internal accessor; WorldService methods use self.kernel directly
+     pub(crate) fn kernel(&self) -> &Arc<Kernel> {
+         &self.kernel
+     }

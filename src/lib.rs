@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod host;
 pub mod assembler;
 pub mod instruction;
 pub mod instruction_codec;

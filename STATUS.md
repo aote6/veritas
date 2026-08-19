@@ -1,6 +1,6 @@
 === Veritas Kernel STATUS ===
 
-Date: 2026-08-04
+Date: 2026-08-19
 Branch: main
 
 ## Current milestone
@@ -33,6 +33,10 @@ P28.1         - Machine dispatch closure: 30/30 reachable
 P29.1–P29.5   - WAL Recovery verification pyramid (24 tests)
 P30.1         - Deterministic Replay: same WAL → identical Engine state (4 tests)
 P30.2         - WAL full world state replay: object/link/capability (2 tests)
+P30.3         - Capability Identity Replay (grant_sequence + capability_id via WAL)
+P30.4         - Host Call 枚举统一（src/host.rs + Machine dispatch）
+P30.5         - MemoryAlloc 真实实现（engine.memory_alloc → TrapResult::StateId）
+P30.6         - dead_code 清理（test-only / bootstrap 方法标注）
 
 ### Recovery Verification Pyramid (P29)
 
@@ -52,6 +56,10 @@ P30.2         - WAL full world state replay: object/link/capability (2 tests)
   P30.3 — Capability Identity Replay ✅
   grant_sequence + capability_id now persist via WAL TransactionCommitted.
   restore_grant() uses the persisted sequence on recovery.
+
+### ReplayRecord Gap (open)
+
+> Note 2026-08-19: P30.4/P30.5/P30.6 closed HostCall enum shell, MemoryAlloc stub, and selected dead_code warnings.
 
 ### ReplayRecord Gap
 

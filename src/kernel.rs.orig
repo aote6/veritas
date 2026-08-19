@@ -288,8 +288,6 @@ impl Kernel {
 
     // Each method delegates directly to the corresponding VeritasEngine method.
 
-    /// Test probe wrapper. Prefer Effect/WAL for production observation.
-    #[allow(dead_code)]
     pub fn last_dependency_invalidations(&self) -> Vec<(ObjectId, ObjectId)> {
         self.engine.last_dependency_invalidations()
     }
@@ -327,13 +325,11 @@ impl Kernel {
         self.engine.snapshot_links()
     }
 
-    /// TEST-ONLY: WorldSnapshot aggregation for integration tests via KernelTestExt.
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
     }
 
-    /// TEST-ONLY: restore from WorldSnapshot for integration tests via KernelTestExt.
     #[allow(dead_code)] // test-only integration path via KernelTestExt
     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         self.engine.restore_checkpoint(snap)

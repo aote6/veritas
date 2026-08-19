@@ -1,6 +1,6 @@
 # Veritas 潜藏问题分析报告
 
-最后更新: 2026-08-10
+最后更新: 2026-08-19（状态标记更新）
 
 本文档基于 2026-08-10 的代码审查，识别 Veritas 中尚未修复的潜藏问题。
 
@@ -14,9 +14,9 @@
 
 | 优先级 | 问题 | 位置 | 风险 |
 |:---:|------|------|------|
-| P0 | world_api.rs 4 处 enter_object 绕过 | world_api.rs:333,353,373,437 | 后门 |
-| P0 | world_api.rs 注释承认的历史遗留 | world_api.rs:729-732 | 后门 |
-| P1 | 314 个 unwrap() | 全项目 | panic 崩溃 |
+| P0 | world_api.rs 4 处 enter_object 绕过 | world_api.rs:333,353,373,437 | **CLOSED by IDENTITY_DRIFT_AUDIT_20260814** |
+| P0 | world_api.rs 注释承认的历史遗留 | world_api.rs:729-732 | **CLOSED by IDENTITY_DRIFT_AUDIT_20260814** |
+| P1 | 314 个 unwrap() | 全项目 | **DEFERRED - 非阻塞** |
 | P1 | capability_context 直接赋值 | machine.rs:146,429,438 | 权限混乱 |
 | P2 | machine.rs 初始化 enter_object | machine.rs:145 | 隐式切换 |
 | P2 | bypass 注释 | world_api.rs:432,677 | 设计不一致 |
