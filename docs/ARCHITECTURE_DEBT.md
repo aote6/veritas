@@ -1,7 +1,7 @@
 # Veritas Architecture Debt / Constitution Drift 审计报告
 
 **审计日期**: 2026-08-14  
-**状态更新**: 2026-08-19 — P30.4 Host Call 枚举统一、P30.5 MemoryAlloc 实现、P30.6 dead_code 标注已执行（见 STATUS.md）。分类统计中 DEAD CODE / 部分 TEST-ONLY 项已收敛。  
+**状态更新**: 2026-08-19 — P30.4 Host Call 枚举统一、P30.5 MemoryAlloc 实现、P30.6 dead_code 标注已执行（见 STATUS.md）。Phase 2B/2C/2D 已完成：State Commitment 和 Delta Identity 均迁移到 SHA-256，Checkpoint Commitment Verification 落地，commit_version 准入状态机完整实现。分类统计中 DEAD CODE / 部分 TEST-ONLY 项已收敛。  
 
 **审计范围**: 代码考古 + 架构审计 + 宪法一致性审计  
 **约束**: 本轮**禁止**修改任何 `src/` 代码、测试逻辑、Constitution；唯一产物为本报告。  
@@ -240,25 +240,25 @@ Runtime::execute(kernel, ModuleImage)
 ---
 
 ### 发现 #8 — Savepoint / RollbackTo
-
-- **文件**: instruction、codec、assembler、machine、engine.savepoint/rollback、KernelCall  
-- **测试**: `capability_delegate_p4_recovery.rs` 使用 RollbackTo  
-- **Constitution**: transaction.md §11 **明确** “Savepoint 是未来扩展，当前版本未实现” — **与代码冲突**  
-- **分类**: **D 文档 drift** + 实现为 **A/C 混合**（已实现且被测，但宪法标 Future）  
-- **正确归类**: **C/B** — 实现超前于已冻结的 “Future Extension” 表述  
-- **建议**: P1 — **改 Constitution 状态**或标实现为 experimental；**不要删实现**（有测试依赖）
-
+### 发现 #8 — Savepoint / RollbackTo
+- **文件**: instruction、codec、assembler、machine、engine.savepoint/rollback、KernelCall
+- **测试**: `capability_delegate_p4_recovery.rs` 使用 RollbackTo
+- **代码状态**: 已完整实现且有回归测试锁定
+- **Constitution**: transaction.md §11 **仍写着** “Savepoint 是未来扩展，当前版本未实现” — **宪法滞后于代码**
+- **分类**: **D 文档 drift**（实现为 **A/C 混合**：已实现且被测，但宪法标 Future）
+- **正确归类**: **C/B** — 实现超前于已冻结的 “Future Extension” 表述
+- **建议**: P1 — **改 Constitution 状态**（transaction.md §11 从“未实现”改为“已实现，标记为 experimental”）；**不要删实现**（有测试依赖）
+- **2026-08-19 状态**: 代码实现保持，宪法文档待更新（本次不动宪法）
 ---
 
 ### 发现 #9 — root_hash = FNV-1a（u64）
-
-- **文件**: `src/engine.rs` ~516–627 `root_hash` / `hash_each`  
-- **Constitution**: world.md §9 — 当前 FNV-1a；**要求**密码学安全（SHA-256/BLAKE3）；算法可替换不进宪法正文细节  
-- **ROADMAP_NEXT**: Stage 2 项 “root_hash 升级 SHA-256”  
-- **分类**: **E** 相对第三方验证目标；**对内核可运行性与确定性回放**: **A**（确定性已满足）  
-- **是否必须现在实现**: **否**（非 Forge 阻塞；属 Stage 2）  
-- **建议**: P2/P3 路线图项；**不要**本轮改 Kernel
-
+### 发现 #9 — root_hash = SHA-256（已修复 ✅）
+- **文件**: `src/engine.rs` ~602 `root_hash` → `[u8; 32]`，`state_root` → `[u8; 32]`
+- **原状**: FNV-1a u64（非密码学安全）
+- **修复**: Phase 2B 完成 State Commitment 迁移到 SHA-256（`src/crypto.rs` 手写 FIPS 180-4，12 个测试向量全过）；Phase 2D 完成 Delta Identity 迁移
+- **Constitution**: world.md §9 要求密码学安全 — **已满足**
+- **分类**: **已关闭**（原 **E** → 已修复）
+- **2026-08-19 状态**: CLOSED。commitment_algorithm 版本字段已加入，checkpoint 恢复时验证 commitment
 ---
 
 ### 发现 #10 — ModuleObject / ModuleInstance
@@ -299,12 +299,12 @@ Runtime::execute(kernel, ModuleImage)
 ---
 
 ### 发现 #14 — commit_version / Delta Identity 宪法
-
-- **文件**: `docs/constitution/commit_version.md` 状态 “已冻结，待实现”  
-- **代码**: WAL/commit 有 version 字段；WorldSnapshot 含 global_version、object_id_counter、grant_sequence（types.rs ~1010+）— 较 world.md §3 旧“缺失”表**已前进**  
-- **分类**: **E** 完整 Delta Identity / apply 准入状态机未必闭环；**部分 A**  
-- **建议**: P1 对照实现与 commit_version.md 做专项（非本轮）
-
+### 发现 #14 — commit_version / Delta Identity 宪法（已落地 ✅）
+- **文件**: `docs/constitution/commit_version.md` + `docs/constitution/commitment_boundary.md` 已新增（第七份宪法 + ADR）
+- **代码**: apply() 版本准入状态机完整实现（engine.rs:1296-1325）：Case A stale reject / Case B equal-no-op-or-reject / Case C next-apply / Case D gap-reject
+- **Delta Identity**: canonical_identity_bytes() + content_hash() 使用 SHA-256；last_applied_delta_hash 持久化
+- **分类**: **已关闭**（原 **E** → 已落地）
+- **2026-08-19 状态**: CLOSED。Checkpoint Integrity / Commitment Closure 主线 FROZEN
 ---
 
 ### 发现 #15 — 过时文档与库存
@@ -330,11 +330,11 @@ Runtime::execute(kernel, ModuleImage)
 
 | 说法 | 事实是否正确 | 是否当前 Constitution 必需 | 性质 | 现在是否应处理 | 影响 Forge | 需改 Kernel |
 |------|-------------|---------------------------|------|----------------|------------|-------------|
-| 1. root_hash = FNV-1a | **是** | 密码学强度：world 要求升级；确定性：已满足 | 技术债 / Stage 2 | 否（非阻塞） | 否 | 否（现） |
+| 1. root_hash = FNV-1a | **已修复** | Phase 2B：SHA-256 已落地；checkpoint 验证已加 | 已关闭 | 已完成 | 否 | 已完成 |
 | 2. Kernel TRAP 化不完整 | **是**（理想模型 vs Phase 1） | 方向性；非已完成冻结项 | 架构演进 | 否 | 否 | 否（现） |
 | 3. ModuleObject / Instance 半成品 | **是** | module.md 完整模型未落地；映射表已承认 | 功能缺口 / 简化实现 | 否 | 低 | 否（现） |
 | 4. Host Call 未收敛 | **是**（空实现） | 非确定性宿主；非 World State | 缺口 / 非内核主链 | 否 | 低 | 否 |
-| 5. Savepoint 未实现 | **错误** | 宪法写 Future 未实现，**代码已实现且有测试** | **文档 drift** | 应改文档状态 | 否 | **不要删代码** |
+| 5. Savepoint 未实现 | **错误** | 代码已实现且有测试；宪法 transaction.md §11 仍写“未实现” | **文档 drift** | 应改宪法状态（本次不动） | 否 | **不要删代码** |
 
 **“80–85%”**: 拒绝作为度量。应以 **主链是否自洽可运行 + 安全不变量是否测试锁定** 评价。
 
@@ -382,7 +382,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 ### 9. 真正未实现但必须实现的？
 
 **对“内核原型成立”**: 无阻塞项。  
-**对宪法完整机器愿景**: ModuleInstance、密码学 root_hash、TRAP/Kernel Mode 纯化、Host 真实实现、commit_version 准入闭环 — 按 Stage 推进，**非本轮 P0 改 Kernel**。
+**对宪法完整机器愿景**: ModuleInstance、TRAP/Kernel Mode 纯化、Host 真实实现 — 按 Stage 推进。**已达成**: 密码学 root_hash（SHA-256）、commit_version 准入闭环、Delta Identity SHA-256、Checkpoint Commitment Verification。
 
 ### 10. 现在绝对不要动？
 
@@ -411,7 +411,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 ### P1（双路径 / legacy 误判风险）
 
 1. 文档化 enter_object / begin_in_object 为 bootstrap，禁止新的无审计业务路径  
-2. Savepoint：更新 transaction.md 或标 experimental  
+2. Savepoint：更新 transaction.md（宪法 §11 从“未实现”改为“已实现 experimental”）— 本次不动宪法，待后续  
 3. TRAP Phase 1 vs 宪法表述对齐（文档）  
 4. Module 实现映射与 module.md 读者预期  
 5. Controller/TxManager 与 WAL 叙事职责说明  
@@ -421,7 +421,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 1. Extension trait  
 2. ARCHITECTURE_INVENTORY / HIDDEN_ISSUES / IDENTITY_MODEL 末节过时段落  
 3. HostCall 空实现注释澄清  
-4. root_hash SHA-256 路线图（不实施）  
+4. root_hash SHA-256 — **已完成**（Phase 2B），此项关闭  
 5. 测试-only API 清单  
 
 ### P3（整理）
@@ -446,7 +446,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 | Module | **INCOMPLETE** | ModuleImage 可跑；Instance 模型未落地 |
 | TRAP | **DRIFT / INCOMPLETE** | ABI 与分支存在；非全量用户态 TRAP 门面 |
 | Host Call | **INCOMPLETE** | 指令在，宿主能力空 |
-| Version / Delta | **ACTIVE**（基础）；**INCOMPLETE**（commit_version 全文） | Snapshot 已含 counters；完整 Delta Identity 仍演进 |
+| Version / Delta | **ACTIVE / CLOSED** | apply() 准入状态机 + Delta Identity SHA-256 + Checkpoint Verification 已闭环 |
 
 ### Veritas 当前是否已经形成一个自洽的、可运行的计算机内核原型？
 
