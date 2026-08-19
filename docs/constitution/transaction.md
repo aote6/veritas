@@ -146,7 +146,7 @@ Snapshot 的边界是 Transaction，不是 Object。
 - call_stack 清空
 - 执行上下文失效
 
-## 11. Savepoint（未来扩展）
+## 11. Savepoint（已实现，标记 experimental）
 
 SAVEPOINT 和 ROLLBACK_TO:
 - 部分回滚 Transaction 内的操作
@@ -154,8 +154,11 @@ SAVEPOINT 和 ROLLBACK_TO:
 - ROLLBACK_TO 回滚到 Savepoint 的状态
 - call_stack 恢复到 Savepoint 时的状态
 
-注意: Savepoint 是未来扩展，当前版本未实现。
-当前版本仅支持完整的 COMMIT 或 ABORT。
+实现状态: 代码已完整实现（Instruction::Savepoint / KernelCall::Savepoint /
+engine.savepoint / engine.rollback_to），有回归测试覆盖
+（tests/capability_delegate_p4_recovery.rs）。
+标记为 experimental：语义已锁定，但 API 面仍可能调整。
+当前版本同时支持完整的 COMMIT 或 ABORT，以及 Savepoint 部分回滚。
 
 ## 12. Transaction 与 Kernel
 
@@ -182,7 +185,7 @@ SAVEPOINT 和 ROLLBACK_TO:
 | call_stack | machine.rs Vec<CallFrame> | 已实现 |
 | 跨 Object 事务 | machine.rs Call/Return | 同一 tx 内切换 current_object |
 | Snapshot | store.rs StateStore | 保持 |
-| Savepoint | engine.rs savepoint | 保持现状，未来扩展 |
+| Savepoint | engine.rs savepoint / rollback_to | 已实现，标记 experimental |
 
 ## 15. 实现要求
 
