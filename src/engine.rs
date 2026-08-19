@@ -452,9 +452,12 @@ impl VeritasEngine {
         Ok(())
     }
 
-    /// PR3: 从五组件聚合 WorldSnapshot。Engine 只做协调，不操作子模块内部。
-    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
-    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    /// WorldSnapshot aggregation from all five State components + Continuation Metadata.
+    ///
+    /// This is a constitutionally-required API (world.md §12.4). Currently exercised
+    /// via `KernelTestExt` in integration tests, but the checkpoint/restore path itself
+    /// is production infrastructure — not test scaffolding.
+    #[allow(dead_code)] // not yet called from bin/ production path; keep for Recovery/Checkpoint integration
     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         let state_entries = self.state_store.snapshot();
         let objects = self.snapshot_objects();
@@ -489,9 +492,11 @@ impl VeritasEngine {
         }
     }
 
-    /// PR3: 从 WorldSnapshot 恢复五组件 + 续行元数据。
-    /// TEST-ONLY: reached solely via `KernelTestExt` / integration tests. Not a production API.
-    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    /// Restore five State components + Continuation Metadata from a WorldSnapshot.
+    ///
+    /// Constitutionally-required counterpart to `create_checkpoint` (world.md §12.4).
+    /// Currently exercised via `KernelTestExt`; the path is production infrastructure.
+    #[allow(dead_code)] // not yet called from bin/ production path; keep for Recovery/Checkpoint integration
     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         if snap.commitment_algorithm != 1 {
             return false;
@@ -1005,7 +1010,10 @@ impl VeritasEngine {
     /// P30.5 / constitution kernel.md §3.7: MEMORY_ALLOC
     /// Allocate a new StateId slot in the target object's MemorySpace.
     /// `size_hint` is advisory only and does not enter World State.
-    /// Allocation is transaction-local until commit (reserved via empty write_set entry).
+    ///
+    /// Allocation is tracked only in `ctx.allocated_slots` (transaction-local).
+    /// It does **not** write to `write_set`, StateStore, or WAL — no empty-value
+    /// pollution of root_hash / recovery.
     pub(crate) fn memory_alloc(
         &self,
         ctx: &mut TransactionContext,
@@ -1040,7 +1048,8 @@ impl VeritasEngine {
             self.authorize_intent(ctx, &crate::types::AccessIntent::Write(object_id))?;
         }
 
-        // Deterministic next StateId: max over committed store + in-tx write_set for this object.
+        // Deterministic next StateId: max over committed store + in-tx writes
+        // + prior allocated_slots for this object.
         let mut max_id: Option<StateId> = None;
         for (addr, _) in self.state_store.all_entries() {
             if addr.object_id == object_id {
@@ -1052,15 +1061,19 @@ impl VeritasEngine {
                 max_id = Some(max_id.map_or(addr.state_id, |m| m.max(addr.state_id)));
             }
         }
+        for &(oid, sid) in &ctx.allocated_slots {
+            if oid == object_id {
+                max_id = Some(max_id.map_or(sid, |m| m.max(sid)));
+            }
+        }
 
         let new_id = match max_id {
             Some(m) => m.saturating_add(1),
             None => 0,
         };
 
-        // Reserve the slot transactionally so subsequent allocs in the same tx advance.
-        let addr = crate::types::Address::new(object_id, new_id);
-        ctx.write_set.push(addr, Vec::new());
+        // Transaction-local reservation only — does not enter World State.
+        ctx.allocated_slots.push((object_id, new_id));
 
         Ok(new_id)
     }
@@ -1997,6 +2010,7 @@ impl VeritasEngine {
             pending_capability_revokes_len: ctx.pending_capability_revokes.len(),
             pending_delegates_len: ctx.pending_delegates.len(),
             pending_calls_len: ctx.pending_calls.len(),
+            allocated_slots_len: ctx.allocated_slots.len(),
         });
 
         Ok(())
@@ -2031,6 +2045,7 @@ impl VeritasEngine {
             .truncate(sp.pending_capability_revokes_len);
         ctx.pending_delegates.truncate(sp.pending_delegates_len);
         ctx.pending_calls.truncate(sp.pending_calls_len);
+        ctx.allocated_slots.truncate(sp.allocated_slots_len);
 
         ctx.savepoints.truncate(index + 1);
 

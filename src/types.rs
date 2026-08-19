@@ -222,6 +222,8 @@ pub struct Savepoint {
     pub pending_capability_revokes_len: usize,
     pub pending_delegates_len: usize,
     pub pending_calls_len: usize,
+    /// MEMORY_ALLOC slots reserved in this transaction (not persisted to World State).
+    pub allocated_slots_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,6 +275,9 @@ pub struct TransactionContext {
     pub pending_delegates: Vec<PendingCapabilityDelegate>,
     /// Cross-object CALL targets attempted in this transaction (AccessIntent::Call).
     pub pending_calls: Vec<ObjectId>,
+    /// In-tx MEMORY_ALLOC reservations: (ObjectId, StateId). Not written to StateStore
+    /// or WAL — used only to make sequential allocs deterministic within a transaction.
+    pub allocated_slots: Vec<(ObjectId, StateId)>,
     pub aborted: bool,
     /// 当前执行上下文所属的Object。一切Read/Write在没有显式CALL切换的情况下，
     /// 隐式作用于这个Object的Memory Space——这是Memory宪法(memory.md)第4节
@@ -305,6 +310,7 @@ impl TransactionContext {
             pending_unlinks: Vec::new(),
             pending_freezes: Vec::new(),
             pending_deaths: Vec::new(),
+            allocated_slots: Vec::new(),
             aborted: false,
             capability_context: 0,
             current_object: 0,
@@ -350,6 +356,7 @@ impl TransactionContext {
         self.scope_write_set.clear();
         self.effect_queue = EffectQueue::default();
         self.savepoints.clear();
+        self.allocated_slots.clear();
         self.aborted = false;
     }
 }

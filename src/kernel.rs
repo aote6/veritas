@@ -327,14 +327,16 @@ impl Kernel {
         self.engine.snapshot_links()
     }
 
-    /// TEST-ONLY: WorldSnapshot aggregation for integration tests via KernelTestExt.
-    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    /// WorldSnapshot aggregation (world.md §12.4). Production infrastructure;
+    /// currently reached via `KernelTestExt` until bin/ wires Checkpoint I/O.
+    #[allow(dead_code)] // not yet called from bin/ production path; keep for Recovery/Checkpoint integration
     pub(crate) fn create_checkpoint(&self) -> WorldSnapshot {
         self.engine.create_checkpoint()
     }
 
-    /// TEST-ONLY: restore from WorldSnapshot for integration tests via KernelTestExt.
-    #[allow(dead_code)] // test-only integration path via KernelTestExt
+    /// Restore from WorldSnapshot (world.md §12.4). Production infrastructure;
+    /// currently reached via `KernelTestExt` until bin/ wires Checkpoint I/O.
+    #[allow(dead_code)] // not yet called from bin/ production path; keep for Recovery/Checkpoint integration
     pub(crate) fn restore_checkpoint(&self, snap: &WorldSnapshot) -> bool {
         self.engine.restore_checkpoint(snap)
     }
@@ -865,6 +867,7 @@ mod kernel_tests {
     }
 
     /// P30.5: MEMORY_ALLOC returns sequential StateIds starting at 0.
+    /// Allocations must not pollute StateStore with empty-value entries on commit.
     #[test]
     fn memory_alloc_sequential_state_ids() {
         let kernel = Kernel::new();
@@ -892,5 +895,19 @@ mod kernel_tests {
             other => panic!("expected StateId, got {:?}", other),
         };
         assert_eq!(sid1, 1, "second alloc must advance to 1");
+
+        // Commit: birth persists, but MEMORY_ALLOC must leave no empty StateStore entries.
+        let _receipt = kernel.commit(&mut ctx).unwrap();
+        let snap = kernel.engine().create_checkpoint();
+        let empty_for_42: Vec<_> = snap
+            .state_entries
+            .iter()
+            .filter(|(addr, entry)| addr.object_id == 42 && entry.value.is_empty())
+            .collect();
+        assert!(
+            empty_for_42.is_empty(),
+            "MEMORY_ALLOC must not write empty values into StateStore; found {:?}",
+            empty_for_42
+        );
     }
 }
