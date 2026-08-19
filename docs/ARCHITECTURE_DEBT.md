@@ -418,7 +418,7 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 
 ### P2（死代码 / 过时文档）
 
-1. Extension trait  
+1. Extension trait — ✅ 已删除（2026-08-19）  
 2. ARCHITECTURE_INVENTORY / HIDDEN_ISSUES / IDENTITY_MODEL 末节过时段落  
 3. HostCall 空实现注释澄清  
 4. root_hash SHA-256 — **已完成**（Phase 2B），此项关闭  
