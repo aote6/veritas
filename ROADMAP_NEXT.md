@@ -1,16 +1,22 @@
 # Veritas 下一步推进计划
 
-最后更新: 2026-08-16
+最后更新: 2026-08-19
 
 ## 当前状态
 
-- cargo test: 360 passed, 0 failed
+- cargo test: 365 passed, 0 failed
 - Verification Map: 245/245, Phase 1 + Phase 2 PASS
 - Checkpoint Integrity / Commitment Closure: FROZEN
 - Replay Continuity (P30.4 / P30.5): CLOSED
 - Global Architecture Audit: CLOSED（无 BLOCKER / 无新 MAJOR）
 
 ## 已完成
+
+### P30.4-P30.6 技术债清理 ✅（2026-08-19）
+- HostCall 枚举统一（src/host.rs）
+- MemoryAlloc 真实实现（allocated_slots 不污染 StateStore）
+- dead_code 清理 + checkpoint 注释修正
+- Forge E2E 全链路验证通过
 
 ### Checkpoint Integrity 主线 ✅
 - Phase 0: 只读审计
@@ -37,7 +43,6 @@
 
 ## 已知未实现（设计如此或非阻塞）
 
-- MemoryAlloc：KernelCall 到达即空操作
 - Effect executor：recovery 保持 pending，无自动重放执行
 - Machine 完整寄存器/栈状态不进 WorldSnapshot（checkpoint 目标是 World State）
 - TRAP Savepoint/RollbackTo 名恒空（ABI 未完成）

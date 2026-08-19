@@ -2122,3 +2122,27 @@ Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
 - state_root 输出格式与 SHA-256 迁移不同步（见 Forge STATUS.md 2026-08-17 条目）
 
 **相关 commit**：veritas `待提交`
+
+## 2026-08-19 P30.4/P30.5/P30.6 HostCall/MemoryAlloc/dead_code + Forge E2E 验证
+
+**背景**：上一轮（2026-08-17）完成 capability_grants 序列化修复后，继续清理无设计歧义的技术债，并验证 Forge 集成完整性。
+
+**完成内容**：
+- P30.4: HostCall 枚举统一（src/host.rs: Time/Random/Write/Read/Spawn）
+- P30.5: MemoryAlloc 真实实现（engine.memory_alloc → allocated_slots 事务内跟踪，不污染 StateStore）
+- P30.6: dead_code 清理（test-only/bootstrap 方法标注）
+- checkpoint 注释修正（TEST-ONLY → production infrastructure）
+
+**Forge E2E 验证**：
+- 手动启动 veritasd + JSONL 协议：ping → attach_identity → tx_begin → tx_create_object → tx_write → tx_read → tx_commit → list_objects → world_info
+- 全链路通过：身份分配（object_id=1）、对象创建（object_id=2）、AdminCap 自动授予、WAL 恢复（2 条记录）
+- Receipt 完整性确认：before_root → after_root 变化正确，delta 含 memory_written/objects_created/capability_grants
+
+**验证**：
+- cargo test：365 passed, 0 failed
+- 新增测试：host.rs 单元测试（4个）、memory_alloc_sequential_state_ids（含空值污染验证）
+
+**相关 commit**：
+- 6eba3e7 P30.4-P30.6: HostCall enum, MemoryAlloc initial impl, dead_code cleanup
+- 4f19dc2 chore: remove patch artifacts
+- 85e4184 fix: MemoryAlloc no empty-value pollution + checkpoint comments corrected

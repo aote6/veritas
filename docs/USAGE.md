@@ -85,3 +85,27 @@ cargo run --bin veritas -- run world_demo.vmod ./world_demo.wal
 ```bash
 cargo test
 ```
+
+---
+
+## 5. veritasd JSONL 接口（Forge）
+
+启动：
+```bash
+VERITAS_WAL=./world.wal ./target/debug/veritasd
+```
+
+命令示例（每行一个 JSON）：
+
+| 命令 | 示例 | 响应 |
+|------|------|------|
+| ping | `{"cmd":"ping"}` | `{"ok":true,"result":"pong"}` |
+| attach_identity | `{"cmd":"attach_identity"}` | `{"object_id":1,"ok":true}` |
+| whoami | `{"cmd":"whoami"}` | `{"object_id":1,"ok":true}` |
+| tx_begin | `{"cmd":"tx_begin"}` | `{"ok":true,"session_id":1}` |
+| tx_create_object | `{"cmd":"tx_create_object","session_id":1}` | `{"object_id":2,"ok":true}` |
+| tx_write | `{"cmd":"tx_write","session_id":1,"state_id":0,"value":"/hello.txt"}` | `{"ok":true}` |
+| tx_read | `{"cmd":"tx_read","session_id":1,"state_id":1}` | `{"ok":true,"value_hex":"..."}` |
+| tx_commit | `{"cmd":"tx_commit","session_id":1}` | `{"ok":true,"receipt":{...}}` |
+| list_objects | `{"cmd":"list_objects"}` | `{"objects":[{"id":1,"state":"Alive"}],"ok":true}` |
+| world_info | `{"cmd":"world_info"}` | `{"object_count":N,"state_root":"...","version":N}` |

@@ -163,7 +163,7 @@ inspect list 只显示对象和它们的存活状态，不显示 link 关系。
 
 ---
 
-## 8. 已知问题：Runtime::execute 遇到 Trap 会死循环
+## 8. 已修复：Runtime::execute 遇到 Trap 会死循环（2026-08-14 修复）
 
 src/runtime.rs 的 Runtime::execute() 内部循环写法：
 
@@ -189,7 +189,9 @@ tests/machine/basic.rs 里所有 E2E 测试都没有用 Runtime::execute，
 而是自己写了一个带步数上限的循环（run_bounded 函数），
 手动匹配 Halted / Aborted / Trapped 三种终止状态，避免测试本身卡死。
 
-修复思路（未实施）：把 is_halted() 的 matches! 里加上 MachineStatus::Trapped(_)，
+**状态更新（2026-08-14）**：已修复。`is_halted()` 已加入 `MachineStatus::Trapped(_)` 匹配。
+
+修复思路（已实施）：把 is_halted() 的 matches! 里加上 MachineStatus::Trapped(_)，
 或者给 Runtime::execute 单独加一层步数上限保护。哪种更合适取决于
 "CLI 遇到 Trap 应该报错退出还是打印 trap 原因"这个产品决策，未定，留给后续。
 

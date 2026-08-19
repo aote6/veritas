@@ -8,7 +8,7 @@
 
 | 层 | 位置 | 数量 | 性质 | 进入 Verification Map |
 |----|------|------|------|----------------------|
-| L0 | `src/**` `#[test]` | 103 | Unit / Implementation / Regression | ❌ 否 |
+| L0 | `src/**` `#[test]` | 129 | Unit / Implementation / Regression | ❌ 否 |
 | L1 | `tests/**` `#[test]` | 236 | System Verification / Frozen Guarantees | ✅ 是 |
 | L2 | 未来独立 | 0 | Product / External E2E | 未来决定 |
 
@@ -70,9 +70,9 @@
 
 | 项目 | 状态 |
 |------|------|
-| L0 单元测试 | 103 个，冻结 |
+| L0 单元测试 | 129 个，冻结 |
 | L1 系统验证 | 236 个，冻结 |
-| Verification Map | 236/236，CI 强制 |
+| Verification Map | 245/245，CI 强制 |
 | L0→L1 升级 | 0 个 |
 | P0 L1 保证缺口 | 无 |
 
