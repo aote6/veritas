@@ -533,6 +533,49 @@ impl VeritasEngine {
             return false;
         }
 
+        // Checkpoint Integrity — Commitment Domain referential integrity.
+        // State Commitment authenticates component bytes; it does not by itself
+        // guarantee that Topology / StateStore / Capability endpoints name
+        // objects that exist in ObjectRegistry. Constitution:
+        //   link.md §4.1: OBJECT_LINK requires from/to exist (and forbids self-loop)
+        //   memory.md: address = (ObjectId, StateId) within known objects
+        //   object death cleans StateStore for dead objects (no orphan state)
+        // Reject before mutation. Uses only fields already in WorldSnapshot.
+        {
+            use std::collections::HashSet;
+            let object_ids: HashSet<crate::types::ObjectId> =
+                snap.objects.iter().map(|o| o.id).collect();
+
+            for link in &snap.links {
+                if link.from == link.to {
+                    return false;
+                }
+                if !object_ids.contains(&link.from) || !object_ids.contains(&link.to) {
+                    return false;
+                }
+            }
+
+            for (addr, _) in &snap.state_entries {
+                if !object_ids.contains(&addr.object_id) {
+                    return false;
+                }
+            }
+
+            for rec in &snap.capability_records {
+                if !object_ids.contains(&rec.granted_by)
+                    || !object_ids.contains(&rec.holder)
+                    || !object_ids.contains(&rec.resource)
+                {
+                    return false;
+                }
+                if let Some(parent) = rec.parent {
+                    if !object_ids.contains(&parent) {
+                        return false;
+                    }
+                }
+            }
+        }
+
         let objects: Vec<(crate::types::ObjectId, u8, u8)> = snap
             .objects
             .iter()

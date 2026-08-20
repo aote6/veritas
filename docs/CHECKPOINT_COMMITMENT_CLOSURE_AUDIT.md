@@ -252,3 +252,30 @@ version=N 且 hash 为任意非零值的 checkpoint 在结构层仍可被接受�
 | Delta content_hash 不含 commit_version | 宪法要求，非缺陷 |
 | version=N ↔ content_hash(terminal_delta(N)) | RESIDUAL（需新 Serialization Contract） |
 | grant_sequence vs CapabilityGraph 下界 | RESIDUAL（snapshot 缺 sequence 字段） |
+
+### 6.4 Gap 5 — Commitment Domain referential integrity — CLOSED
+
+**根因**：
+State Commitment 只认证五组件字节内容。攻击者可篡改 links / state_entries /
+capability_records 中的 ObjectId 引用，并重算 `state_commitment` 使之匹配，
+`restore_checkpoint()` 仍会接受。恢复后的世界违反：
+
+- link.md §4.1：link 端点必须存在；禁止自环
+- memory.md：State 地址属于已知 Object
+- Capability 端点必须指向 ObjectRegistry 中的对象
+
+**最小修复**：
+在 `restore_checkpoint()` mutation 前，用 WorldSnapshot 已有字段校验：
+
+1. 每个 link：`from != to` 且 `from,to ∈ objects`
+2. 每个 state_entry：`addr.object_id ∈ objects`
+3. 每个 capability_record：`granted_by, holder, resource ∈ objects`；
+   若有 `parent`，则 `parent ∈ objects`
+
+不扩展 Serialization Contract，不把 Continuation 混入 State Commitment。
+
+**测试**：`tests/checkpoint_referential_integrity.rs`
+
+**仍为 residual**：
+- Gap 1 residual（terminal Delta binding）
+- grant_sequence 下界（CapabilitySemanticRecord 无 sequence 字段）
