@@ -533,18 +533,29 @@ impl VeritasEngine {
             return false;
         }
 
-        // Checkpoint Integrity — Commitment Domain referential integrity.
+        // Checkpoint Integrity — Commitment Domain structural + referential integrity.
         // State Commitment authenticates component bytes; it does not by itself
-        // guarantee that Topology / StateStore / Capability endpoints name
-        // objects that exist in ObjectRegistry. Constitution:
-        //   link.md §4.1: OBJECT_LINK requires from/to exist (and forbids self-loop)
-        //   memory.md: address = (ObjectId, StateId) within known objects
-        //   object death cleans StateStore for dead objects (no orphan state)
+        // guarantee uniqueness, forest shape, or that Topology / StateStore /
+        // Capability endpoints name objects that exist in ObjectRegistry.
+        // Constitution:
+        //   object.md: ObjectId globally unique, not reusable
+        //   link.md §4.1: OBJECT_LINK requires from/to exist; forbids self-loop;
+        //                 same-direction same-type Link must not repeat
+        //   memory.md: address = (ObjectId, StateId) within known objects;
+        //              Address keys are unique in StateStore
+        //   capability graph is a forest: one root per capability_id;
+        //              parent must be an existing holder of the same capability_id
         // Reject before mutation. Uses only fields already in WorldSnapshot.
         {
-            use std::collections::HashSet;
             let object_ids: HashSet<crate::types::ObjectId> =
                 snap.objects.iter().map(|o| o.id).collect();
+
+            // object.md: ObjectId unique in ObjectRegistry.
+            // Duplicate ids would make post-restore root_hash diverge from
+            // state_commitment (HashMap last-wins vs multi-encode commitment).
+            if object_ids.len() != snap.objects.len() {
+                return false;
+            }
 
             for link in &snap.links {
                 if link.from == link.to {
@@ -555,22 +566,117 @@ impl VeritasEngine {
                 }
             }
 
-            for (addr, _) in &snap.state_entries {
-                if !object_ids.contains(&addr.object_id) {
-                    return false;
+            // link.md §4.1: same-direction same-type Link must not repeat.
+            {
+                let mut seen_links: HashSet<(
+                    crate::types::ObjectId,
+                    crate::types::ObjectId,
+                    u8,
+                )> = HashSet::new();
+                for link in &snap.links {
+                    let key = (link.from, link.to, link.link_type as u8);
+                    if !seen_links.insert(key) {
+                        return false;
+                    }
                 }
             }
 
-            for rec in &snap.capability_records {
-                if !object_ids.contains(&rec.granted_by)
-                    || !object_ids.contains(&rec.holder)
-                    || !object_ids.contains(&rec.resource)
-                {
-                    return false;
-                }
-                if let Some(parent) = rec.parent {
-                    if !object_ids.contains(&parent) {
+            // memory.md: Address is unique key in StateStore.
+            {
+                let mut seen_addrs: HashSet<crate::types::Address> = HashSet::new();
+                for (addr, _) in &snap.state_entries {
+                    if !object_ids.contains(&addr.object_id) {
                         return false;
+                    }
+                    if !seen_addrs.insert(*addr) {
+                        return false;
+                    }
+                }
+            }
+
+            // CapabilitySemanticRecord forest integrity (no grant_sequence needed).
+            // Same capability_id shares grant metadata; exactly one root;
+            // parent must be a holder of the same capability_id; no self-parent;
+            // (capability_id, holder) unique.
+            {
+                let mut holder_keys: HashSet<(crate::types::CapabilityId, crate::types::ObjectId)> =
+                    HashSet::new();
+                let mut holders_by_cap: HashMap<
+                    crate::types::CapabilityId,
+                    HashSet<crate::types::ObjectId>,
+                > = HashMap::new();
+                let mut meta_by_cap: HashMap<
+                    crate::types::CapabilityId,
+                    (
+                        crate::types::ObjectId,
+                        crate::types::ObjectId,
+                        String,
+                    ),
+                > = HashMap::new();
+                let mut root_count: HashMap<crate::types::CapabilityId, u32> = HashMap::new();
+
+                for rec in &snap.capability_records {
+                    if !object_ids.contains(&rec.granted_by)
+                        || !object_ids.contains(&rec.holder)
+                        || !object_ids.contains(&rec.resource)
+                    {
+                        return false;
+                    }
+                    if let Some(parent) = rec.parent {
+                        if !object_ids.contains(&parent) {
+                            return false;
+                        }
+                        if parent == rec.holder {
+                            return false;
+                        }
+                    }
+                    if !holder_keys.insert((rec.capability_id, rec.holder)) {
+                        return false;
+                    }
+                    holders_by_cap
+                        .entry(rec.capability_id)
+                        .or_default()
+                        .insert(rec.holder);
+                    match meta_by_cap.get(&rec.capability_id) {
+                        Some((gb, res, ct)) => {
+                            if *gb != rec.granted_by
+                                || *res != rec.resource
+                                || *ct != rec.capability_type
+                            {
+                                return false;
+                            }
+                        }
+                        None => {
+                            meta_by_cap.insert(
+                                rec.capability_id,
+                                (
+                                    rec.granted_by,
+                                    rec.resource,
+                                    rec.capability_type.clone(),
+                                ),
+                            );
+                        }
+                    }
+                    if rec.parent.is_none() {
+                        *root_count.entry(rec.capability_id).or_insert(0) += 1;
+                    }
+                }
+
+                for (cap_id, holders) in &holders_by_cap {
+                    let roots = root_count.get(cap_id).copied().unwrap_or(0);
+                    if roots != 1 {
+                        return false;
+                    }
+                    for rec in snap
+                        .capability_records
+                        .iter()
+                        .filter(|r| r.capability_id == *cap_id)
+                    {
+                        if let Some(parent) = rec.parent {
+                            if !holders.contains(&parent) {
+                                return false;
+                            }
+                        }
                     }
                 }
             }

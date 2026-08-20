@@ -248,6 +248,8 @@ version=N 且 hash 为任意非零值的 checkpoint 在结构层仍可被接受�
 | State Commitment 五组件 SHA-256 验证 | CLOSED |
 | Continuity Version Identity genesis pairing | CLOSED (Gap 1) |
 | object_id_counter vs ObjectRegistry 不碰撞 | CLOSED (Gap 4) |
+| Commitment Domain referential integrity | CLOSED (Gap 5) |
+| Commitment Domain structural integrity | CLOSED (Gap 6) |
 | State ↔ Continuation 解耦 | 设计边界，不绑定 |
 | Delta content_hash 不含 commit_version | 宪法要求，非缺陷 |
 | version=N ↔ content_hash(terminal_delta(N)) | RESIDUAL（需新 Serialization Contract） |
@@ -276,6 +278,40 @@ capability_records 中的 ObjectId 引用，并重算 `state_commitment` 使之�
 
 **测试**：`tests/checkpoint_referential_integrity.rs`
 
-**仍为 residual**：
-- Gap 1 residual（terminal Delta binding）
-- grant_sequence 下界（CapabilitySemanticRecord 无 sequence 字段）
+### 6.5 Gap 6 — Commitment Domain structural integrity — CLOSED
+
+**根因**：
+State Commitment 与 Gap 5 引用检查仍允许「内部自洽但语义非法」的 snapshot：
+
+- 重复 ObjectId → HashMap last-wins，恢复后 root_hash ≠ state_commitment
+- 重复 Address / 重复 (from,to,type) Link → 同样导致承诺与恢复后世界漂移
+- CapabilitySemanticRecord 森林破损：无根 / 双根、parent 非本 cap 持有者、
+  自环 parent、同 cap 元数据不一致、重复 (capability_id, holder)
+
+这些都不需要 grant_sequence，也不需要 terminal Delta；仅用已有字段即可闭合。
+
+**宪法依据**：
+- object.md：ObjectId 全局唯一
+- link.md §4.1：同向同类型 Link 不可重复
+- memory.md：Address 是 StateStore 唯一键
+- capability 图是森林：每个 capability_id 恰有一个 root；parent 必须是同 cap 持有者
+
+**最小修复**：
+在 `restore_checkpoint()` mutation 前增加结构校验（仍仅使用 WorldSnapshot 字段）：
+
+1. `objects` 中 ObjectId 唯一
+2. `links` 中 (from, to, link_type) 唯一
+3. `state_entries` 中 Address 唯一
+4. CapabilitySemanticRecord：
+   - (capability_id, holder) 唯一
+   - 同 capability_id 共享 granted_by / resource / capability_type
+   - 每个 capability_id 恰有一个 parent=None 的 root
+   - parent ≠ holder；parent 必须出现在同 capability_id 的 holders 中
+
+**测试**：`tests/checkpoint_domain_structural_integrity.rs`（11 tests）
+
+**仍为 residual（当前 Serialization Contract 下不可闭合）**：
+- Gap 1 residual：terminal Delta 不在 snapshot 中，无法验证
+  `last_applied_delta_hash == content_hash(terminal_delta(N))`
+- grant_sequence 下界：CapabilitySemanticRecord 不持久化 sequence，
+  无法从 capability_id 反推 max sequence（capability_id 是单向哈希）

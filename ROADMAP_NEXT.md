@@ -9,6 +9,7 @@
   - Gap 1 (Continuity Version Identity genesis pairing): CLOSED
   - Gap 4 (object_id_counter vs ObjectRegistry non-collision): CLOSED
   - Gap 5 (Commitment Domain referential integrity): CLOSED
+  - Gap 6 (Commitment Domain structural integrity: uniqueness + capability forest): CLOSED
   - Residuals (need Serialization Contract extension): terminal-delta binding; grant_sequence lower bound
 - Replay Continuity (P30.4 / P30.5): CLOSED
 - Global Architecture Audit: CLOSED（无 BLOCKER / 无新 MAJOR）
@@ -32,6 +33,7 @@
 - Gap 1: Continuity Version Identity genesis pairing on restore ✅（2026-08-20）
 - Gap 4: object_id_counter must exceed every snapshotted ObjectId ✅（2026-08-20）
 - Gap 5: Commitment Domain referential integrity on restore ✅（2026-08-20）
+- Gap 6: Commitment Domain structural integrity (uniqueness + capability forest) ✅（2026-08-20）
 
 ### Stage 2（World State 完整性）✅ 全部完成
 1. WorldSnapshot 八组件 ✅
