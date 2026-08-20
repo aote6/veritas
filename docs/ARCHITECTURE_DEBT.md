@@ -228,18 +228,39 @@ Runtime::execute(kernel, ModuleImage)
 
 ---
 
-### 发现 #7 — Host Call
+### 发现 #7 — Host Call（现状审计完成，职责已钉死 ✅）
 
-- **文件**: `src/machine.rs` HostCall 分支 ~577–589  
-- **行为**: call_id 0..=3 接受后 **空操作**（注释 P27 统一收口）；非法 id → Trap  
-- **分类**: **E. CONSTITUTION GAP**（若要求真实 host_time 等）或 **F**（kernel.md 表：host_spawn 未实现；其余“当前实现”为 Rust 侧设想）  
-- **判断**: 指令与编解码存在，**运行时能力未收敛到真实宿主** → 对内核原型 **非阻塞**；对“完整机器 + 非确定性宿主”为缺口  
-- **影响 Forge**: 低  
-- **建议**: P2 — 不阻塞 Forge；勿与 Kernel 安全主链混谈
+- **文件**: `src/host.rs`（枚举定义）、`src/machine.rs:577-595`（分发）
+- **行为**: 合法 call_id（0-4）接受后空操作；非法 id → Trap(InvalidEncoding)
+- **分类**: **E. CONSTITUTION GAP** — 枚举和分发已收口，但无真实宿主实现
 
----
+**2026-08-20 审计结论**：
 
-### 发现 #8 — Savepoint / RollbackTo
+HostCall 现在的位置：
+- 定义：`src/host.rs` HostCall 枚举（Time/Random/Write/Read/Spawn）
+- 分发：`Machine::step` 中 `Instruction::HostCall { call_id }` 分支
+- 参数：仅 `call_id: u8`，无操作数传递
+- 返回值：无（合法调用空操作，不写寄存器）
+
+宪法 kernel.md 的定义：
+- Host Call = Machine 外部能力（环境提供），不是 Kernel Service
+- 调用方式：TRAP <host_call_id>（与 Kernel Service 不同 service_id 范围）
+- 非确定性（时间、随机数等），不进入 World State
+- 接口规范（非宪法正文）
+
+与 TRAP 化的关系：
+- Host Call 独立于 Kernel Service，有自己独立的 service_id 范围
+- **不是 TRAP 化的前置依赖**——TRAP 化可以独立推进
+- Host Call 的真实实现需要：TRAP + 外部环境接口 + 返回值传递机制
+
+当前缺口：
+1. 空实现（合法调用什么都不做）
+2. 无返回值（host_time 应返回时间戳到寄存器）
+3. 无参数传递（host_write 应传递内容指针）
+4. 与 TRAP ABI 的关系未定义（宪法说用 TRAP，但 Machine 直接分发）
+
+**建议**: 单独立项，不阻塞 TRAP 化。先定义 HostCall 的 ABI（参数/返回值/TRAP service_id），再实现。
+
 ### 发现 #8 — Savepoint / RollbackTo
 - **文件**: instruction、codec、assembler、machine、engine.savepoint/rollback、KernelCall
 - **测试**: `capability_delegate_p4_recovery.rs` 使用 RollbackTo
@@ -251,7 +272,6 @@ Runtime::execute(kernel, ModuleImage)
 - **2026-08-19 状态**: ✅ 宪法已更新（transaction.md §11 改为“已实现，标记 experimental”），此项关闭
 ---
 
-### 发现 #9 — root_hash = FNV-1a（u64）
 ### 发现 #9 — root_hash = SHA-256（已修复 ✅）
 - **文件**: `src/engine.rs` ~602 `root_hash` → `[u8; 32]`，`state_root` → `[u8; 32]`
 - **原状**: FNV-1a u64（非密码学安全）
@@ -316,7 +336,6 @@ Runtime::execute(kernel, ModuleImage)
 
 ---
 
-### 发现 #14 — commit_version / Delta Identity 宪法
 ### 发现 #14 — commit_version / Delta Identity 宪法（已落地 ✅）
 - **文件**: `docs/constitution/commit_version.md` + `docs/constitution/commitment_boundary.md` 已新增（第七份宪法 + ADR）
 - **代码**: apply() 版本准入状态机完整实现（engine.rs:1296-1325）：Case A stale reject / Case B equal-no-op-or-reject / Case C next-apply / Case D gap-reject
