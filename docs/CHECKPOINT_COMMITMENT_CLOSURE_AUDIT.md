@@ -193,3 +193,62 @@ Gap 3 不是缺陷，而是设计边界。
 - Q4 已裁定：verify after restoration, before accepting the checkpoint
 
 因此可以在 restore_checkpoint() 的现有 State Commitment 验证之后，增加 Continuation Consistency 验证。
+
+---
+
+## 6. 实施记录（2026-08-20）
+
+### 6.1 Gap 1 — CLOSED
+
+**实现**（commit 219fed8）：
+`restore_checkpoint()` 在任何 mutation 之前强制：
+
+```
+(global_version == 0)  ⇔  (last_applied_delta_hash == ZERO_HASH)
+```
+
+**测试**：`tests/checkpoint_continuation_integrity.rs`（6 tests）
+
+**Residual（架构级，本 Serialization Contract 下不可闭合）**：
+WorldSnapshot 不携带 terminal Delta，因此无法验证
+`last_applied_delta_hash == content_hash(terminal_delta(N))`。
+version=N 且 hash 为任意非零值的 checkpoint 在结构层仍可被接受。
+闭合该 residual 需要扩展 Serialization Contract（例如携带 terminal Delta identity），属下一阶段架构工作，不得用弱校验冒充闭合。
+
+### 6.2 Gap 4 — object_id_counter 与 ObjectRegistry 一致性 — CLOSED
+
+**根因**：
+`restore_checkpoint()` 独立恢复 `object_id_counter` 与 `objects`，不校验
+`∀ o ∈ objects: o.id < object_id_counter`。
+`next_object_id()` 返回当前 counter 再自增。若 counter ≤ max(object.id)，
+恢复后下一次 birth 会复用已存在的 ObjectId，违反 object.md「ObjectId 不可重用」。
+
+**宪法依据**：
+- object.md：ObjectId 不可重用
+- world.md：object_id_counter 决定下一次 ObjectId 分配
+
+**最小修复**：
+在 `restore_checkpoint()` mutation 前增加结构校验：
+若存在 `o.id >= snap.object_id_counter` 则 reject。
+仅使用 WorldSnapshot 已有字段，不扩展 Serialization Contract，
+不把 Continuation Metadata 混入 State Commitment。
+
+**测试**：`tests/checkpoint_object_id_counter_integrity.rs`
+
+**不在本 Gap 范围**：
+- `grant_sequence` 与 CapabilityGraph 的类似绑定：`CapabilitySemanticRecord`
+  不持久化 grant_sequence，无法从现有 snapshot 字段推导 max sequence；
+  属 residual / 架构扩展项。
+- Gap 1 residual（terminal Delta binding）：仍为架构级 residual。
+
+### 6.3 当前 Checkpoint Integrity 状态（Serialization Contract 边界内）
+
+| 项 | 状态 |
+|---|---|
+| State Commitment 五组件 SHA-256 验证 | CLOSED |
+| Continuity Version Identity genesis pairing | CLOSED (Gap 1) |
+| object_id_counter vs ObjectRegistry 不碰撞 | CLOSED (Gap 4) |
+| State ↔ Continuation 解耦 | 设计边界，不绑定 |
+| Delta content_hash 不含 commit_version | 宪法要求，非缺陷 |
+| version=N ↔ content_hash(terminal_delta(N)) | RESIDUAL（需新 Serialization Contract） |
+| grant_sequence vs CapabilityGraph 下界 | RESIDUAL（snapshot 缺 sequence 字段） |

@@ -1,12 +1,14 @@
 # Veritas 下一步推进计划
 
-最后更新: 2026-08-19
+最后更新: 2026-08-20
 
 ## 当前状态
 
-- cargo test: 365 passed, 0 failed
 - Verification Map: 245/245, Phase 1 + Phase 2 PASS
-- Checkpoint Integrity / Commitment Closure: FROZEN
+- Checkpoint Integrity / Commitment Closure: CLOSED under current Serialization Contract
+  - Gap 1 (Continuity Version Identity genesis pairing): CLOSED
+  - Gap 4 (object_id_counter vs ObjectRegistry non-collision): CLOSED
+  - Residuals (need Serialization Contract extension): terminal-delta binding; grant_sequence lower bound
 - Replay Continuity (P30.4 / P30.5): CLOSED
 - Global Architecture Audit: CLOSED（无 BLOCKER / 无新 MAJOR）
 
@@ -26,6 +28,8 @@
 - Phase 2C: Checkpoint Commitment Verification
 - Phase 2D: Delta Identity FNV-1a → SHA-256
 - 长度前缀 + Commitment Domain 边界文档
+- Gap 1: Continuity Version Identity genesis pairing on restore ✅（2026-08-20）
+- Gap 4: object_id_counter must exceed every snapshotted ObjectId ✅（2026-08-20）
 
 ### Stage 2（World State 完整性）✅ 全部完成
 1. WorldSnapshot 八组件 ✅

@@ -519,6 +519,20 @@ impl VeritasEngine {
             return false;
         }
 
+        // Constitution object.md: ObjectId 不可重用.
+        // world.md: object_id_counter 决定下一次 ObjectId 分配.
+        // next_object_id() returns the current counter then increments, so every
+        // existing id in the snapshot must be strictly less than the counter.
+        // Otherwise restore would accept a world that collides on the next birth.
+        // Structural check only — uses data already in WorldSnapshot.
+        if snap
+            .objects
+            .iter()
+            .any(|o| o.id >= snap.object_id_counter)
+        {
+            return false;
+        }
+
         let objects: Vec<(crate::types::ObjectId, u8, u8)> = snap
             .objects
             .iter()
@@ -1375,6 +1389,17 @@ impl VeritasEngine {
                     *object_id,
                     crate::types::ObjectRecord::new_state(*object_id),
                 );
+            }
+        }
+        // object.md: ObjectId 不可重用. world.md: object_id_counter 决定下一次分配.
+        // Production commit path advances the counter via next_object_id() before
+        // birth. test_apply / WAL replay may inject explicit birth ids; ensure the
+        // counter stays strictly above every applied id so create_checkpoint()
+        // cannot emit an inconsistent Continuity Metadata snapshot.
+        if let Some(max_id) = delta.births.iter().copied().filter(|&id| id != 0).max() {
+            let cur = self.object_id_counter.load(Ordering::Acquire);
+            if cur <= max_id {
+                self.object_id_counter.store(max_id + 1, Ordering::SeqCst);
             }
         }
 
