@@ -572,15 +572,18 @@ impl Machine {
             }
             Instruction::Trap { service_id } => {
                 // P28: TRAP unified kernel service call
-                // Decode registers via KernelCall::decode(), dispatch to Kernel::handle()
+                // Decode via KernelCall::decode_with_memory(), dispatch to Kernel::handle()
                 {
                     let r0 = self.registers.get_u64(0);
                     let r1 = self.registers.get_u64(1);
                     let r2 = self.registers.get_u64(2);
 
-                    let call = match crate::kernel::KernelCall::decode(service_id, r0, r1, r2) {
+                    let call = match crate::kernel::KernelCall::decode_with_memory(
+                        service_id, r0, r1, r2, &self.ram,
+                    ) {
                         Ok(call) => call,
                         Err(_) => {
+                            // Malformed ABI / unknown service → InvalidEncoding (fail-closed)
                             self.status =
                                 MachineStatus::Trapped(crate::types::TrapReason::InvalidEncoding {
                                     pc: self.pc,
@@ -602,7 +605,7 @@ impl Machine {
                         return Ok(());
                     }
 
-                    // Write result to r0
+                    // Write result to r0 (EffectKey as UTF-8 bytes per TRAP ABI freeze)
                     match result {
                         crate::kernel::TrapResult::ObjectId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));
@@ -613,7 +616,10 @@ impl Machine {
                         crate::kernel::TrapResult::StateId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));
                         }
-                        crate::kernel::TrapResult::EffectKey(_) => {}
+                        crate::kernel::TrapResult::EffectKey(key) => {
+                            self.registers
+                                .set(0, RegisterValue::Bytes(key.into_bytes()));
+                        }
                         crate::kernel::TrapResult::Success => {}
                         crate::kernel::TrapResult::Error(_) => unreachable!(),
                     }

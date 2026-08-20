@@ -79,11 +79,22 @@ pub enum KernelCall {
     },
 }
 // ===== Phase 1 Step 7: KernelCall ABI codec =====
+//
+// TRAP ABI (docs/TRAP_ABI_FREEZE.md):
+//   service_id 0–5, 12: register operands (r0/r1/r2)
+//   service_id 6–11:    r0 = address of little-endian parameter block in Machine RAM
+//
+// Parameter block header (all multi-byte fields little-endian):
+//   offset 0: u16 total_len
+//   offset 2: u8  field_count
+//   offset 3: fields...
+//
+// Decode failures (malformed blocks, OOB, bad UTF-8, illegal tags) return
+// VeritasError::EngineError so Machine maps them to TrapReason::InvalidEncoding.
 
 impl KernelCall {
-    /// Decode register values from a TRAP instruction into a KernelCall.
-    /// This is the Veritas TRAP ABI: service_id selects the operation,
-    /// r0/r1/r2 carry operands.
+    /// Register-only decode for simple services (0–5, 12).
+    /// Complex services 6–11 require [`decode_with_memory`].
     pub fn decode(
         service_id: u8,
         r0: u64,
@@ -120,18 +131,225 @@ impl KernelCall {
             3 => Ok(KernelCall::ObjectUnlink { from: r0, to: r1 }),
             4 => Ok(KernelCall::ObjectFreeze { object_id: r0 }),
             5 => Ok(KernelCall::Commit),
-            6 => Ok(KernelCall::Effect { payload: vec![] }),
-            7 => Ok(KernelCall::Savepoint {
-                name: String::new(),
+            12 => Ok(KernelCall::MemoryAlloc {
+                object_id: r0,
+                size_hint: r1,
             }),
-            8 => Ok(KernelCall::RollbackTo {
-                name: String::new(),
-            }),
+            6 | 7 | 8 | 9 | 10 | 11 => Err(crate::types::VeritasError::EngineError(format!(
+                "service_id {} requires parameter block (use decode_with_memory)",
+                service_id
+            ))),
             _ => Err(crate::types::VeritasError::EngineError(format!(
                 "Unknown kernel service_id: {}",
                 service_id
             ))),
         }
+    }
+
+    /// Full TRAP ABI decode: register services + RAM parameter blocks for 6–11.
+    pub fn decode_with_memory(
+        service_id: u8,
+        r0: u64,
+        r1: u64,
+        r2: u64,
+        memory: &crate::memory::Memory,
+    ) -> Result<Self, crate::types::VeritasError> {
+        match service_id {
+            0..=5 | 12 => Self::decode(service_id, r0, r1, r2),
+            6 => Self::decode_effect_block(r0, memory),
+            7 => Self::decode_name_block(r0, memory, true),
+            8 => Self::decode_name_block(r0, memory, false),
+            9 => Self::decode_capability_grant_block(r0, memory),
+            10 => Self::decode_capability_revoke_block(r0, memory),
+            11 => Self::decode_capability_delegate_block(r0, memory),
+            _ => Err(crate::types::VeritasError::EngineError(format!(
+                "Unknown kernel service_id: {}",
+                service_id
+            ))),
+        }
+    }
+
+    fn abi_err(msg: &str) -> crate::types::VeritasError {
+        crate::types::VeritasError::EngineError(msg.to_string())
+    }
+
+    /// Read a fixed-size parameter block; fail-closed on OOB / length mismatch.
+    fn read_param_block<'a>(
+        addr: u64,
+        memory: &'a crate::memory::Memory,
+    ) -> Result<&'a [u8], crate::types::VeritasError> {
+        let addr = addr as usize;
+        if addr >= memory.len() {
+            return Err(Self::abi_err("parameter block address OOB"));
+        }
+        let slice = memory
+            .slice_from(addr)
+            .map_err(|_| Self::abi_err("parameter block address OOB"))?;
+        if slice.len() < 3 {
+            return Err(Self::abi_err("parameter block header incomplete"));
+        }
+        let total_len = u16::from_le_bytes([slice[0], slice[1]]) as usize;
+        if total_len < 3 {
+            return Err(Self::abi_err("parameter block total_len < 3"));
+        }
+        if total_len > slice.len() {
+            return Err(Self::abi_err("parameter block total_len exceeds RAM"));
+        }
+        Ok(&slice[..total_len])
+    }
+
+    fn decode_effect_block(
+        addr: u64,
+        memory: &crate::memory::Memory,
+    ) -> Result<Self, crate::types::VeritasError> {
+        let block = Self::read_param_block(addr, memory)?;
+        let field_count = block[2];
+        if field_count != 1 {
+            return Err(Self::abi_err("Effect: field_count must be 1"));
+        }
+        if block.len() < 7 {
+            return Err(Self::abi_err("Effect: block too short for payload_len"));
+        }
+        let payload_len = u32::from_le_bytes([block[3], block[4], block[5], block[6]]) as usize;
+        let expected = 7 + payload_len;
+        if block.len() != expected {
+            return Err(Self::abi_err("Effect: total_len != 7 + payload_len"));
+        }
+        let payload = block[7..7 + payload_len].to_vec();
+        Ok(KernelCall::Effect { payload })
+    }
+
+    fn decode_name_block(
+        addr: u64,
+        memory: &crate::memory::Memory,
+        is_savepoint: bool,
+    ) -> Result<Self, crate::types::VeritasError> {
+        let block = Self::read_param_block(addr, memory)?;
+        let field_count = block[2];
+        if field_count != 1 {
+            return Err(Self::abi_err("name block: field_count must be 1"));
+        }
+        if block.len() < 5 {
+            return Err(Self::abi_err("name block: too short for name_len"));
+        }
+        let name_len = u16::from_le_bytes([block[3], block[4]]) as usize;
+        let expected = 5 + name_len;
+        if block.len() != expected {
+            return Err(Self::abi_err("name block: total_len != 5 + name_len"));
+        }
+        let name_bytes = &block[5..5 + name_len];
+        let name = std::str::from_utf8(name_bytes)
+            .map_err(|_| Self::abi_err("name block: invalid UTF-8"))?
+            .to_string();
+        if is_savepoint {
+            Ok(KernelCall::Savepoint { name })
+        } else {
+            Ok(KernelCall::RollbackTo { name })
+        }
+    }
+
+    fn decode_capability_grant_block(
+        addr: u64,
+        memory: &crate::memory::Memory,
+    ) -> Result<Self, crate::types::VeritasError> {
+        let block = Self::read_param_block(addr, memory)?;
+        let field_count = block[2];
+        if field_count != 4 {
+            return Err(Self::abi_err("CapabilityGrant: field_count must be 4"));
+        }
+        // Need at least: 3 header + 8 grantor + 8 grantee + 2 type_len = 21
+        if block.len() < 21 {
+            return Err(Self::abi_err("CapabilityGrant: block too short"));
+        }
+        let grantor = u64::from_le_bytes(block[3..11].try_into().unwrap());
+        let grantee = u64::from_le_bytes(block[11..19].try_into().unwrap());
+        let type_len = u16::from_le_bytes([block[19], block[20]]) as usize;
+        let type_end = 21 + type_len;
+        if block.len() < type_end + 8 {
+            return Err(Self::abi_err(
+                "CapabilityGrant: capability_type or resource OOB",
+            ));
+        }
+        let expected = type_end + 8;
+        if block.len() != expected {
+            return Err(Self::abi_err(
+                "CapabilityGrant: total_len does not match fields",
+            ));
+        }
+        let type_bytes = &block[21..type_end];
+        let capability_type = std::str::from_utf8(type_bytes)
+            .map_err(|_| Self::abi_err("CapabilityGrant: capability_type invalid UTF-8"))?
+            .to_string();
+        let resource = u64::from_le_bytes(block[type_end..type_end + 8].try_into().unwrap());
+        Ok(KernelCall::CapabilityGrant {
+            grantor,
+            grantee,
+            capability_type,
+            resource,
+        })
+    }
+
+    fn decode_capability_revoke_block(
+        addr: u64,
+        memory: &crate::memory::Memory,
+    ) -> Result<Self, crate::types::VeritasError> {
+        let block = Self::read_param_block(addr, memory)?;
+        let field_count = block[2];
+        if field_count != 3 {
+            return Err(Self::abi_err("CapabilityRevoke: field_count must be 3"));
+        }
+        if block.len() != 20 {
+            return Err(Self::abi_err("CapabilityRevoke: total_len must be 20"));
+        }
+        let capability_id = u64::from_le_bytes(block[3..11].try_into().unwrap());
+        let holder = u64::from_le_bytes(block[11..19].try_into().unwrap());
+        let cascade_override = match block[19] {
+            0 => None,
+            1 => Some(false),
+            2 => Some(true),
+            _ => {
+                return Err(Self::abi_err(
+                    "CapabilityRevoke: invalid cascade_tag (must be 0/1/2)",
+                ))
+            }
+        };
+        Ok(KernelCall::CapabilityRevoke {
+            capability_id,
+            holder,
+            cascade_override,
+        })
+    }
+
+    fn decode_capability_delegate_block(
+        addr: u64,
+        memory: &crate::memory::Memory,
+    ) -> Result<Self, crate::types::VeritasError> {
+        let block = Self::read_param_block(addr, memory)?;
+        let field_count = block[2];
+        if field_count != 4 {
+            return Err(Self::abi_err("CapabilityDelegate: field_count must be 4"));
+        }
+        if block.len() != 28 {
+            return Err(Self::abi_err("CapabilityDelegate: total_len must be 28"));
+        }
+        let capability_id = u64::from_le_bytes(block[3..11].try_into().unwrap());
+        let from = u64::from_le_bytes(block[11..19].try_into().unwrap());
+        let to = u64::from_le_bytes(block[19..27].try_into().unwrap());
+        let cascade_on_revoke = match block[27] {
+            0 => false,
+            1 => true,
+            _ => {
+                return Err(Self::abi_err(
+                    "CapabilityDelegate: cascade_on_revoke must be 0 or 1",
+                ))
+            }
+        };
+        Ok(KernelCall::CapabilityDelegate {
+            capability_id,
+            from,
+            to,
+            cascade_on_revoke,
+        })
     }
 }
 
