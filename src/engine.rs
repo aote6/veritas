@@ -502,6 +502,23 @@ impl VeritasEngine {
             return false;
         }
 
+        // Constitution commit_version.md §3.4 / §4:
+        // Continuity Version Identity = (global_version, last_applied_delta_hash)
+        // is an inseparable World State tuple. Genesis is closed as
+        // (0, ZERO_HASH). A checkpoint must not pair version 0 with a
+        // non-zero hash, nor a positive version with ZERO_HASH.
+        //
+        // WorldSnapshot does not carry the terminal Delta, so restore cannot
+        // recompute content_hash(terminal_delta(N)). Under the current
+        // Serialization Contract this genesis pairing is the strongest
+        // structural invariant enforceable without new architecture.
+        // Checked before any mutation so reject leaves Engine untouched.
+        let is_genesis_version = snap.global_version == 0;
+        let is_zero_hash = snap.last_applied_delta_hash == crate::types::ZERO_HASH;
+        if is_genesis_version != is_zero_hash {
+            return false;
+        }
+
         let objects: Vec<(crate::types::ObjectId, u8, u8)> = snap
             .objects
             .iter()
