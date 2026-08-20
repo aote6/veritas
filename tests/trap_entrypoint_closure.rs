@@ -149,7 +149,7 @@ fn machine_unknown_hostcall_invalid_encoding() {
     );
 }
 
-/// Machine E2E: ObjectBirth via TRAP vs legacy — same world + R0 id + AdminCap attached
+/// Compatibility E2E: legacy OBJECT_BIRTH vs TRAP 0 (same world). Legacy side is intentional.
 #[test]
 fn machine_e2e_object_birth_trap_vs_legacy() {
     let legacy = r#"
@@ -176,7 +176,7 @@ fn machine_e2e_object_birth_trap_vs_legacy() {
     assert_eq!(k_l.list_object_ids(), k_t.list_object_ids());
 }
 
-/// Machine E2E: Commit via TRAP 5 after birth matches legacy COMMIT world
+/// Compatibility E2E: legacy COMMIT vs TRAP 5. Legacy side is intentional.
 #[test]
 fn machine_e2e_commit_trap_vs_legacy() {
     let legacy = r#"

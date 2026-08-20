@@ -13,11 +13,11 @@ use veritas_kernel::runtime::Runtime;
 use veritas_kernel::test_api::KernelTestExt;
 use veritas_kernel::types::ObjectState;
 
-/// Module A: TRAP OBJECT_BIRTH → COMMIT → HALT
+/// Module A: TRAP 0 (ObjectBirth) → TRAP 5 (Commit) → HALT
 fn make_birth_module() -> ModuleImage {
     let instructions = vec![
-        Instruction::Trap { service_id: 0 }, // OBJECT_BIRTH
-        Instruction::Commit,
+        Instruction::Trap { service_id: 0 }, // ObjectBirth
+        Instruction::Trap { service_id: 5 }, // Commit
         Instruction::Halt,
     ];
     let image = ProgramImage::new(instructions);

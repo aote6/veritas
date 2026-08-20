@@ -1,8 +1,8 @@
-OBJECT_BIRTH 0
+TRAP 0
 LOAD_CONST R2, 0
 ADD R1, R0, R2
 CALL R1, target_sub
-COMMIT
+TRAP 5
 HALT
 
 target_sub:

@@ -35,21 +35,22 @@ fn root_can_call_into_object_it_just_birthed() {
     let mut machine = Machine::new(Arc::new(kernel));
     // machine 默认以 current_object == 0 (root) 启动，不显式调用 set_execution_object。
 
-    let birth_bytes = Instruction::ObjectBirth { object_id: 0 }.encode().unwrap();
-    assert_eq!(birth_bytes.len(), 9);
+    // Formal Kernel entry: TRAP 0 (ObjectBirth). Legacy ObjectBirth instruction remains for compatibility.
+    let birth_bytes = Instruction::Trap { service_id: 0 }.encode().unwrap();
+    assert_eq!(birth_bytes.len(), 2, "TRAP encoding is opcode+service_id");
 
     let mut image = birth_bytes;
     image.extend_from_slice(&Instruction::Halt.encode().unwrap());
     machine.ram_mut().write_bytes(0, &image).unwrap();
     machine.set_pc(0);
 
-    // 执行 OBJECT_BIRTH
+    // 执行 TRAP 0 (ObjectBirth)
     machine.step().unwrap();
     match machine.status() {
-        MachineStatus::Trapped(r) => panic!("OBJECT_BIRTH should not trap, got {:?}", r),
+        MachineStatus::Trapped(r) => panic!("TRAP ObjectBirth should not trap, got {:?}", r),
         _ => {}
     }
-    // 身份不应切换：OBJECT_BIRTH 不再自动 enter_object。
+    // 身份不应切换：ObjectBirth 不再自动 enter_object。
     assert_eq!(
         machine.current_object(),
         0,
@@ -60,7 +61,7 @@ fn root_can_call_into_object_it_just_birthed() {
     assert_ne!(new_id, 0, "birth must allocate a nonzero object id into R0");
 
     // 追加 CALL new_id, <entry_pc> 到内存里 HALT 之后的位置。
-    let call_target_pc = 9 /* birth */ + 1 /* halt */;
+    let call_target_pc = 2 /* TRAP */ + 1 /* halt */;
     let call_bytes = Instruction::Call {
         object_id: Operand::Immediate(new_id),
         entry_pc: 0, // 随便跳回 0 即可，我们只关心 CALL 本身是否被拒绝

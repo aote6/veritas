@@ -49,3 +49,16 @@ Read/Write/算术/跳转/Call/Return/Nop/Halt 等保持 Machine 执行语义。
 2. TRAP 只 decode + handle（Abort/ObjectBirth 的 Machine 后处理仅对齐生命周期与 CALL 授权）  
 3. HostCall ∉ KernelCall  
 4. 非法 ABI fail-closed  
+
+## Phase 1 user-facing migration (2026-08-20)
+
+All normal programs/tests/examples that *invoke* Kernel services now use TRAP.
+
+- `programs/*.vasm`, `world_demo.vasm`, `countdown_cn.vasm` → TRAP
+- `tests/machine/basic.rs`, `object_birth_self_call`, `root_link_two_children`, `kernel_world_runtime` → TRAP
+- **Retained legacy** (intentional):
+  - `tests/trap_equivalence.rs` — compatibility A/B vs TRAP
+  - `tests/trap_entrypoint_closure.rs` — legacy side of comparison tests
+  - `src/assembler.rs` mnemonics + unit tests — definition/compatibility
+  - `src/instruction*` variants + codec — not deleted (phase 2)
+  - `src/machine.rs` legacy execution arms — not deleted (phase 2)

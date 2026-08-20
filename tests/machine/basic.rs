@@ -35,7 +35,7 @@ fn run_bounded(machine: &mut Machine, max_steps: usize) {
     }
 }
 
-/// E2E-1: 单对象闭环 — birth -> CALL -> WRITE -> RETURN -> COMMIT -> HALT
+/// E2E-1: 单对象闭环 — TRAP 0 (birth) -> CALL -> WRITE -> RETURN -> TRAP 5 (commit) -> HALT
 /// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
@@ -46,11 +46,11 @@ fn e2e_1_single_object_closure() {
         module e2e1
         version 1.0.0
 
-        OBJECT_BIRTH 0
+        TRAP 0
         LOAD_CONST R3, 0
         ADD R1, R0, R3
         CALL R1, body
-        COMMIT
+        TRAP 5
         HALT
 
         body:
@@ -93,11 +93,11 @@ fn e2e_2_dynamic_register_dataflow() {
         module e2e2
         version 1.0.0
 
-        OBJECT_BIRTH 0
+        TRAP 0
         LOAD_CONST R5, 0
         ADD R2, R0, R5
         CALL R2, body
-        COMMIT
+        TRAP 5
         HALT
 
         body:
@@ -188,8 +188,8 @@ fn e2e_4_illegal_cross_tx_call_denied() {
         let src = r#"
             module e2e4_birth
             version 1.0.0
-            OBJECT_BIRTH 0
-            COMMIT
+            TRAP 0
+            TRAP 5
             HALT
         "#;
         let m = assemble_module(src).expect("assemble e2e4 birth");

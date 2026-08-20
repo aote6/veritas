@@ -1,18 +1,18 @@
 //! 验证: root 身份下连续 birth 两个子对象后，
-//! 是否可以不经 CALL、直接 OBJECT_LINK 建立两者关系。
+//! 是否可以不经 CALL、直接 TRAP ObjectLink 建立两者关系。
 //!
-//! 依据: OBJECT_BIRTH 执行时会把新对象的 self-AdminCap attach 到
-//! ctx.capabilities（三度修正的最终解法）。这个 attach 是 ctx 级别的
-//! 全局状态，不区分当前身份是谁。authorize_intent 的 has_pending 分支
-//! 里 ctx.capabilities.contains(cap_id) 这个 or 条件不要求 grantee
-//! 等于当前身份，所以理论上 root 不需要 CALL 进子对象就能引用它们
+//! 依据: ObjectBirth（TRAP 0）执行时会把新对象的 self-AdminCap attach 到
+//! ctx.capabilities。这个 attach 是 ctx 级别的全局状态，不区分当前身份。
+//! authorize_intent 的 has_pending 分支里 ctx.capabilities.contains(cap_id)
+//! 不要求 grantee 等于当前身份，所以 root 不需要 CALL 进子对象就能引用它们
 //! 已经 attach 的 cap 来完成 LINK。本测试验证这个推断是否成立。
+//!
+//! 正式入口: TRAP service_id（非 legacy Instruction::ObjectBirth/ObjectLink/Commit）。
 
 use std::sync::Arc;
-use veritas_kernel::instruction::{Instruction, Operand};
+use veritas_kernel::instruction::Instruction;
 use veritas_kernel::kernel::Kernel;
 use veritas_kernel::machine::{Machine, MachineStatus};
-use veritas_kernel::types::LinkType;
 
 fn temp_wal(name: &str) -> String {
     let mut p = std::env::temp_dir();
@@ -40,11 +40,11 @@ fn root_can_link_two_self_birthed_children_without_call() {
 
     let mut image: Vec<u8> = Vec::new();
 
-    // 1. OBJECT_BIRTH 0  -> A id in R0
-    image.extend_from_slice(&Instruction::ObjectBirth { object_id: 0 }.encode().unwrap());
+    // 1. TRAP 0 ObjectBirth -> A id in R0
+    image.extend_from_slice(&Instruction::Trap { service_id: 0 }.encode().unwrap());
     // 2. LOAD_CONST R2, 0
     image.extend_from_slice(&Instruction::LoadConst { reg: 2, val: 0 }.encode().unwrap());
-    // 3. ADD R1, R0, R2   (R1 = A id, preserved before next birth overwrites R0)
+    // 3. ADD R1, R0, R2   (R1 = A id)
     image.extend_from_slice(
         &Instruction::Add {
             dst: 1,
@@ -54,33 +54,61 @@ fn root_can_link_two_self_birthed_children_without_call() {
         .encode()
         .unwrap(),
     );
-    // 4. OBJECT_BIRTH 0  -> B id in R0
-    image.extend_from_slice(&Instruction::ObjectBirth { object_id: 0 }.encode().unwrap());
-    // 5. OBJECT_LINK R1, R0, owns   (A -> B)
+    // 4. TRAP 0 ObjectBirth -> B id in R0
+    image.extend_from_slice(&Instruction::Trap { service_id: 0 }.encode().unwrap());
+    // 5. Preserve B: ADD R3, R0, R2  (R3 = B; R2 still 0)
     image.extend_from_slice(
-        &Instruction::ObjectLink {
-            from: Operand::Register(1),
-            to: Operand::Register(0),
-            relation: LinkType::Owns,
+        &Instruction::Add {
+            dst: 3,
+            src1: 0,
+            src2: 2,
         }
         .encode()
         .unwrap(),
     );
-    // 6. COMMIT
-    image.extend_from_slice(&Instruction::Commit.encode().unwrap());
-    // 7. HALT
+    // 6. R0 = A: ADD R0, R1, R2
+    image.extend_from_slice(
+        &Instruction::Add {
+            dst: 0,
+            src1: 1,
+            src2: 2,
+        }
+        .encode()
+        .unwrap(),
+    );
+    // 7. R1 = B: ADD R1, R3, R2
+    image.extend_from_slice(
+        &Instruction::Add {
+            dst: 1,
+            src1: 3,
+            src2: 2,
+        }
+        .encode()
+        .unwrap(),
+    );
+    // 8. R2 = Owns (1)
+    image.extend_from_slice(&Instruction::LoadConst { reg: 2, val: 1 }.encode().unwrap());
+    // 9. TRAP 2 ObjectLink (R0=from, R1=to, R2=link_type)
+    image.extend_from_slice(&Instruction::Trap { service_id: 2 }.encode().unwrap());
+    // 10. TRAP 5 Commit
+    image.extend_from_slice(&Instruction::Trap { service_id: 5 }.encode().unwrap());
+    // 11. HALT
     image.extend_from_slice(&Instruction::Halt.encode().unwrap());
 
     machine.ram_mut().write_bytes(0, &image).unwrap();
     machine.set_pc(0);
 
     let step_names = [
-        "OBJECT_BIRTH(A)",
+        "TRAP0_BIRTH(A)",
         "LOAD_CONST",
-        "ADD",
-        "OBJECT_BIRTH(B)",
-        "OBJECT_LINK",
-        "COMMIT",
+        "ADD_R1",
+        "TRAP0_BIRTH(B)",
+        "ADD_R3",
+        "ADD_R0",
+        "ADD_R1",
+        "LOAD_CONST_LINKTYPE",
+        "TRAP2_LINK",
+        "TRAP5_COMMIT",
         "HALT",
     ];
     for name in step_names.iter() {

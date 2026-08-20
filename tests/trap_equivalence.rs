@@ -1,12 +1,14 @@
-//! TRAP 等价性测试：证明 Instruction::Trap 与旧式指令产生相同语义。
+//! TRAP ↔ legacy Instruction **compatibility** 等价性测试。
 //!
-//! 验证内容：对 6 个简单 KernelCall（ObjectBirth/ObjectDeath/ObjectLink/
+//! 正式 Kernel service 入口为 TRAP。本文件中使用 OBJECT_BIRTH / COMMIT 等
+//! 旧式助记符的一侧是 **legacy compatibility 对照**，不是推荐用法。
+//!
+//! 验证内容：对简单 KernelCall（ObjectBirth/ObjectDeath/ObjectLink/
 //! ObjectUnlink/ObjectFreeze/Commit），TRAP 路径和旧式指令路径产生
-//! 相同的 KernelCall、相同的事务结果、相同的 World State commitment。
+//! 相同的事务结果与 World State commitment。
 //!
-//! ObjectBirth 和 Commit 通过 Machine VASM 验证。
-//! ObjectFreeze 和 ObjectLink 通过 Kernel 层直接比较 KernelCall 语义验证，
-//! 因为 Machine 中这两个操作需要 test-only 的身份切换，不属于等价性范围。
+//! ObjectBirth 和 Commit 通过 Machine VASM 验证（legacy vs TRAP）。
+//! ObjectFreeze 和 ObjectLink 通过 Kernel 层直接比较 KernelCall 语义验证。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

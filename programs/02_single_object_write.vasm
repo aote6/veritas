@@ -1,4 +1,4 @@
-OBJECT_BIRTH 0
+TRAP 0
 WRITE R0, "hello without call"
-COMMIT
+TRAP 5
 HALT

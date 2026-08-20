@@ -1,10 +1,10 @@
 module countdown_cn
 version 1.0.0
-    OBJECT_BIRTH 0
+    TRAP 0
     LOAD_CONST R4, 0
     ADD R1, R0, R4
     CALL R1, body
-    COMMIT
+    TRAP 5
     HALT
 body:
     WRITE 0, "五"
