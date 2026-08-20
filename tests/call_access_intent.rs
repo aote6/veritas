@@ -28,7 +28,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -50,7 +50,7 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     cap
 }
 
@@ -69,7 +69,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -182,7 +182,7 @@ fn call_after_delegate_succeeds() {
                 },
             )
             .unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
     }
 
     let mut machine = Machine::new(Arc::new(kernel));
@@ -253,7 +253,7 @@ fn call_after_revoke_fails() {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     let mut machine = Machine::new(Arc::new(kernel));
     machine.set_execution_object(caller);

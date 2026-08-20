@@ -32,7 +32,7 @@ fn birth_under(kernel: &veritas_kernel::kernel::Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 

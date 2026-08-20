@@ -18,7 +18,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -37,7 +37,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -54,7 +54,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 /// STRICT: grantor must hold active AdminCap(resource).
@@ -76,7 +76,7 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     cap_id
 }
 
@@ -119,7 +119,7 @@ fn kernel_capability_revoke_cascade_downstream() {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(kernel.test_engine().holds_capability(cap, o1));
     assert!(!kernel.test_engine().holds_capability(cap, o2));
@@ -161,7 +161,7 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(kernel.test_engine().holds_capability(cap, o1));
     assert!(!kernel.test_engine().holds_capability(cap, o2));
@@ -203,7 +203,7 @@ fn kernel_capability_revoke_survives_checkpoint() {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(!kernel.test_engine().holds_capability(cap, o1));
     assert!(!kernel.test_engine().holds_capability(cap, o2));
@@ -253,7 +253,7 @@ fn kernel_capability_revoke_wal_replay() {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     assert!(!kernel.test_engine().holds_capability(cap, o1));
 
     // Fresh engine recovers WAL (grants then revokes)

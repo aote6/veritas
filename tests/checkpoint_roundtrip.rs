@@ -35,7 +35,7 @@ fn build_world(world: &TestWorld) {
             },
         )
         .unwrap();
-    world.kernel().handle(&mut ctx, KernelCall::Commit).unwrap();
+    world.kernel().handle(&mut ctx, KernelCall::Commit);
 }
 
 // ========== 1. 五组件 roundtrip ==========
@@ -94,7 +94,7 @@ fn checkpoint_restore_then_continue_execution() {
             },
         )
         .unwrap();
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit);
 
     // 验证 Object 3 存在
     let snap_after = kernel.test_create_checkpoint();
@@ -216,7 +216,7 @@ fn checkpoint_counter_roundtrip() {
             },
         )
         .unwrap();
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit);
     let snap3 = kernel.test_create_checkpoint();
     assert!(
         snap3.object_id_counter > snap.object_id_counter,

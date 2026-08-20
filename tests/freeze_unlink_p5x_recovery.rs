@@ -22,7 +22,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -40,7 +40,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -49,7 +49,7 @@ fn freeze(kernel: &Kernel, id: u64) {
     kernel
         .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn death(kernel: &Kernel, id: u64) {
@@ -57,7 +57,7 @@ fn death(kernel: &Kernel, id: u64) {
     kernel
         .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
@@ -83,7 +83,7 @@ fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn unlink(kernel: &Kernel, from: u64, to: u64) {
@@ -91,7 +91,7 @@ fn unlink(kernel: &Kernel, from: u64, to: u64) {
     kernel
         .handle(&mut tx, KernelCall::ObjectUnlink { from, to })
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 /// P5.x: Freeze → Death sequence survives recovery

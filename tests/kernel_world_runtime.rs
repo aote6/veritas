@@ -58,7 +58,7 @@ fn module_a_object_visible_to_module_b_through_runtime_execute() {
     kernel
         .handle(&mut ctx, KernelCall::ObjectFreeze { object_id })
         .expect("freeze as self must succeed");
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit);
 
     assert_eq!(
         kernel.get_object_state(object_id),

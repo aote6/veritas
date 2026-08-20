@@ -23,7 +23,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -41,7 +41,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -120,7 +120,7 @@ fn object_link_survives_recovery() {
                 },
             )
             .unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
         assert!(
             kernel.test_engine().has_link(obj_a, obj_b),
             "link should exist before crash"

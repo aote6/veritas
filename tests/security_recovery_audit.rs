@@ -60,7 +60,7 @@ fn birth_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -78,7 +78,7 @@ fn birth_kernel(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -96,7 +96,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -586,7 +586,7 @@ fn audit_recovery_occ_baseline_matches_version() {
         let a = birth_kernel(&k);
         let mut tx = k.test_begin_in_object(a);
         k.test_write(&mut tx, 0, b"v1".to_vec()).unwrap();
-        k.handle(&mut tx, KernelCall::Commit).unwrap();
+        k.handle(&mut tx, KernelCall::Commit);
         v_final = k.get_global_version();
     }
 
@@ -874,7 +874,7 @@ fn audit_wal_duplicate_capability_grant() {
             TrapResult::CapabilityId(id) => id,
             _ => panic!("cap id"),
         };
-        k.handle(&mut tx, KernelCall::Commit).unwrap();
+        k.handle(&mut tx, KernelCall::Commit);
         assert!(
             k.test_capability_records()
                 .iter()
@@ -1064,7 +1064,7 @@ fn audit_wal_replay_committed_delta_idempotent() {
         let a = birth_kernel(&k);
         let mut tx = k.test_begin_in_object(a);
         k.test_write(&mut tx, 0, b"data".to_vec()).unwrap();
-        k.handle(&mut tx, KernelCall::Commit).unwrap();
+        k.handle(&mut tx, KernelCall::Commit);
         let b = birth_kernel(&k);
         // link with shared creator path
         let mut tx = k.test_begin_in_object(a);

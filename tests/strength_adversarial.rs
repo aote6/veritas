@@ -82,7 +82,7 @@ fn birth_via_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -100,7 +100,7 @@ fn birth_via_kernel(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -360,7 +360,7 @@ fn s_a06_revoke_then_use_denied() {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     assert!(kernel.test_engine().holds_capability(cap_id, b));
 
     // Revoke.
@@ -375,7 +375,7 @@ fn s_a06_revoke_then_use_denied() {
             },
         )
         .expect("revoke must succeed");
-    kernel.handle(&mut tx2, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx2, KernelCall::Commit);
 
     assert!(
         !kernel.test_engine().holds_capability(cap_id, b),
@@ -655,7 +655,7 @@ fn s_w02_single_byte_corruption_no_panic() {
         let a = birth_via_kernel(&kernel);
         let mut tx = kernel.test_begin_in_object(a);
         kernel.test_write(&mut tx, 0, b"payload".to_vec()).unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
     }
 
     let original = std::fs::read(&wal).unwrap();
@@ -703,7 +703,7 @@ fn s_r01_recovery_idempotent() {
         id_b = birth_via_kernel(&kernel);
         let mut tx = kernel.test_begin_in_object(id_a);
         kernel.test_write(&mut tx, 0, b"data-a".to_vec()).unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
         root0 = kernel.state_root();
         let _ = (id_a, id_b, root0);
     }

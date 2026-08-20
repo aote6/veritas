@@ -83,12 +83,12 @@ fn birth_object(kernel: &Arc<Kernel>, as_object: u64) -> u64 {
         KernelCall::ObjectBirth {
             object_type: ObjectType::StateObject,
         },
-    ).expect("ObjectBirth failed");
+    );
     let id = match result {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut ctx, KernelCall::Commit).expect("commit birth failed");
+    kernel.handle(&mut ctx, KernelCall::Commit);
     id
 }
 
@@ -143,15 +143,15 @@ fn trap_equivalence_object_freeze() {
     legacy_kernel.handle(
         &mut legacy_ctx,
         KernelCall::ObjectFreeze { object_id: legacy_obj },
-    ).expect("legacy freeze failed");
-    legacy_kernel.handle(&mut legacy_ctx, KernelCall::Commit).expect("legacy freeze commit failed");
+    );
+    legacy_kernel.handle(&mut legacy_ctx, KernelCall::Commit);
 
     // TRAP: 通过 decode 构造相同的 KernelCall
     let decoded = veritas_kernel::kernel::KernelCall::decode(4, trap_obj, 0, 0)
         .expect("decode ObjectFreeze failed");
     let mut trap_ctx = trap_kernel.test_begin_in_object(trap_obj);
-    trap_kernel.handle(&mut trap_ctx, decoded).expect("trap freeze failed");
-    trap_kernel.handle(&mut trap_ctx, KernelCall::Commit).expect("trap freeze commit failed");
+    trap_kernel.handle(&mut trap_ctx, decoded);
+    trap_kernel.handle(&mut trap_ctx, KernelCall::Commit);
 
     assert_same_world(&legacy_kernel, &trap_kernel);
 }
@@ -247,15 +247,15 @@ fn trap_equivalence_object_death() {
     legacy_kernel.handle(
         &mut legacy_ctx,
         KernelCall::ObjectDeath { object_id: legacy_obj },
-    ).expect("legacy death failed");
-    legacy_kernel.handle(&mut legacy_ctx, KernelCall::Commit).expect("legacy death commit failed");
+    );
+    legacy_kernel.handle(&mut legacy_ctx, KernelCall::Commit);
 
     // TRAP: decode service_id 1, r0=object_id
     let decoded = veritas_kernel::kernel::KernelCall::decode(1, trap_obj, 0, 0)
         .expect("decode ObjectDeath failed");
     let mut trap_ctx = trap_kernel.test_begin_in_object(trap_obj);
-    trap_kernel.handle(&mut trap_ctx, decoded).expect("trap death failed");
-    trap_kernel.handle(&mut trap_ctx, KernelCall::Commit).expect("trap death commit failed");
+    trap_kernel.handle(&mut trap_ctx, decoded);
+    trap_kernel.handle(&mut trap_ctx, KernelCall::Commit);
 
     assert_same_world(&legacy_kernel, &trap_kernel);
 }

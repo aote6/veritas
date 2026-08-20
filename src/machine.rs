@@ -15,6 +15,21 @@ pub enum MachineStatus {
     Trapped(crate::types::TrapReason),
 }
 
+/// Map kernel TrapResult::Error code to TrapReason.
+/// `pc` is taken from the call site so trap frames carry accurate location.
+fn map_trap_code(code: u8, pc: usize) -> crate::types::TrapReason {
+    match code {
+        1 => crate::types::TrapReason::AccessDenied { pc },
+        2 => crate::types::TrapReason::InvalidEncoding { pc },
+        3 => crate::types::TrapReason::MemoryFault { addr: 0, size: 0 },
+        4 => crate::types::TrapReason::IllegalInstruction { opcode: 0 },
+        5 => crate::types::TrapReason::AccessDenied { pc },
+        6 => crate::types::TrapReason::InvalidEncoding { pc },
+        7 => crate::types::TrapReason::InvalidEncoding { pc },
+        _ => crate::types::TrapReason::InvalidEncoding { pc },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegisterValue {
     Empty,
@@ -367,7 +382,17 @@ impl Machine {
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
                 let r = reason;
                 let call = crate::kernel::KernelCall::Abort { reason: r };
-                self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 self.pc += consumed;
                 self.status = MachineStatus::Aborted(r);
                 return Ok(());
@@ -387,7 +412,17 @@ impl Machine {
                     capability_type: p.clone(),
                     resource: r,
                 };
-                let result = self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 if let crate::kernel::TrapResult::CapabilityId(cap_id) = result {
                     self.registers.set(0, RegisterValue::U64(cap_id));
                 }
@@ -551,7 +586,18 @@ impl Machine {
                         }
                     };
 
-                    let result = self.kernel.handle(&mut self.ctx, call)?;
+                    let result = self.kernel.handle(&mut self.ctx, call);
+
+                    if let crate::kernel::TrapResult::Error(code) = result {
+                        let reason = map_trap_code(code, self.pc);
+                        self.trap_frame = Some(crate::types::TrapFrame {
+                            pc: self.pc,
+                            reason: reason.clone(),
+                            cycles: 0,
+                        });
+                        self.status = MachineStatus::Trapped(reason);
+                        return Ok(());
+                    }
 
                     // Write result to r0
                     match result {
@@ -566,6 +612,7 @@ impl Machine {
                         }
                         crate::kernel::TrapResult::EffectKey(_) => {}
                         crate::kernel::TrapResult::Success => {}
+                        crate::kernel::TrapResult::Error(_) => unreachable!(),
                     }
                 }
                 self.pc += consumed;
@@ -621,7 +668,17 @@ impl Machine {
                 let call = crate::kernel::KernelCall::ObjectBirth {
                     object_type: crate::types::ObjectType::StateObject,
                 };
-                let result = self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 if let crate::kernel::TrapResult::ObjectId(id) = result {
                     self.registers.set(0, RegisterValue::U64(id));
                     // ARCH (2026-08-10, 二次修正): 此前一版在此恢复了
@@ -658,7 +715,17 @@ impl Machine {
             Instruction::ObjectDeath { object_id } => {
                 let object_id = self.resolve_operand(&object_id);
                 let call = crate::kernel::KernelCall::ObjectDeath { object_id };
-                self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 if self.pc >= self.ram.len() {
@@ -669,7 +736,17 @@ impl Machine {
             Instruction::ObjectFreeze { object_id } => {
                 let object_id = self.resolve_operand(&object_id);
                 let call = crate::kernel::KernelCall::ObjectFreeze { object_id };
-                self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 if self.pc >= self.ram.len() {
@@ -688,7 +765,17 @@ impl Machine {
                     to,
                     link_type: relation,
                 };
-                self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 if self.pc >= self.ram.len() {
@@ -700,7 +787,17 @@ impl Machine {
                 let from = self.resolve_operand(&from);
                 let to = self.resolve_operand(&to);
                 let call = crate::kernel::KernelCall::ObjectUnlink { from, to };
-                self.kernel.handle(&mut self.ctx, call)?;
+                let result = self.kernel.handle(&mut self.ctx, call);
+                if let crate::kernel::TrapResult::Error(code) = result {
+                    let reason = map_trap_code(code, self.pc);
+                    self.trap_frame = Some(crate::types::TrapFrame {
+                        pc: self.pc,
+                        reason: reason.clone(),
+                        cycles: 0,
+                    });
+                    self.status = MachineStatus::Trapped(reason);
+                    return Ok(());
+                }
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
                 if self.pc >= self.ram.len() {

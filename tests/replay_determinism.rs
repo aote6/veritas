@@ -25,7 +25,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -43,7 +43,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -164,7 +164,7 @@ fn object_ops_are_deterministic() {
                 },
             )
             .unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
     }
 
     let state1;
@@ -219,7 +219,7 @@ fn wal_contains_full_world() {
                 },
             )
             .unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
     }
 
     {

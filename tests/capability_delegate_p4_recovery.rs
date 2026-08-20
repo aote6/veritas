@@ -25,7 +25,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -44,7 +44,7 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -67,7 +67,7 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     cap_id
 }
 
@@ -84,7 +84,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn revoke(kernel: &Kernel, cap: u64, holder: u64, cascade_override: Option<bool>) {
@@ -99,7 +99,7 @@ fn revoke(kernel: &Kernel, cap: u64, holder: u64, cascade_override: Option<bool>
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 /// T1: grant → delegate → commit → checkpoint restore preserves topology.
@@ -314,7 +314,7 @@ fn t6_rollback_drops_pending_delegate() {
         "rollback must clear pending delegates"
     );
     // Commit empty residual — graph must not gain holder b
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     assert!(!kernel.test_engine().holds_capability(cap, b));
     assert!(kernel.test_engine().holds_capability(cap, a));
 }

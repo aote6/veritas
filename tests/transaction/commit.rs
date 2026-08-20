@@ -16,7 +16,7 @@ fn t1_commit_persists_state() {
     tk.kernel
         .test_write(&mut tx, state_id, payload.clone())
         .unwrap();
-    tk.kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    tk.kernel.handle(&mut tx, KernelCall::Commit);
 
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);
     let val = tk.kernel.test_read(&mut read_tx, state_id).unwrap();

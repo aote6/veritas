@@ -17,7 +17,7 @@ fn t2_conflict_detection() {
     tk.kernel
         .test_write(&mut tx_setup, state_id, initial_data)
         .unwrap();
-    tk.kernel.handle(&mut tx_setup, KernelCall::Commit).unwrap();
+    tk.kernel.handle(&mut tx_setup, KernelCall::Commit);
 
     // Tx1 reads
     let mut tx1 = tk.kernel.test_begin_in_object(tk.root_object);

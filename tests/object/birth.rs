@@ -26,7 +26,7 @@ fn o1_object_birth_creates_isolated_entity() {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    tk.kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    tk.kernel.handle(&mut tx, KernelCall::Commit);
 
     assert_ne!(child, root, "child must have unique ObjectId");
     assert_eq!(

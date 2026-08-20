@@ -296,9 +296,12 @@ impl WorldService {
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
-        )?;
+        );
         let id = match result {
             TrapResult::ObjectId(id) => id,
+            TrapResult::Error(code) => {
+                return Err(WorldError::Msg(format!("ObjectBirth trap error code {code}")));
+            }
             _ => {
                 return Err(WorldError::Msg(
                     "ObjectBirth did not return ObjectId".into(),
@@ -346,7 +349,7 @@ impl WorldService {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )?;
+            );
             match result {
                 TrapResult::ObjectId(id) => {
                     // Host Session Bootstrap exception (IDENTITY_MODEL §7.3):
@@ -365,6 +368,9 @@ impl WorldService {
                     }
                     Ok(id)
                 }
+                TrapResult::Error(code) => Err(WorldError::Msg(format!(
+                    "ObjectBirth trap error code {code}"
+                ))),
                 _ => Err(WorldError::Msg(
                     "ObjectBirth did not return ObjectId".into(),
                 )),
@@ -388,8 +394,11 @@ impl WorldService {
                     .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(object_id))?;
                 state.ctx.enter_object(object_id);
             }
-            kernel.handle(&mut state.ctx, KernelCall::ObjectFreeze { object_id })?;
-            Ok(())
+            match kernel.handle(&mut state.ctx, KernelCall::ObjectFreeze { object_id }) {
+                TrapResult::Success => Ok(()),
+                TrapResult::Error(code) => Err(WorldError::Msg(format!("ObjectFreeze trap error code {code}"))),
+                _ => Err(WorldError::Msg("ObjectFreeze unexpected result".into())),
+            }
         })
     }
 
@@ -408,8 +417,11 @@ impl WorldService {
                     .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(object_id))?;
                 state.ctx.enter_object(object_id);
             }
-            kernel.handle(&mut state.ctx, KernelCall::ObjectDeath { object_id })?;
-            Ok(())
+            match kernel.handle(&mut state.ctx, KernelCall::ObjectDeath { object_id }) {
+                TrapResult::Success => Ok(()),
+                TrapResult::Error(code) => Err(WorldError::Msg(format!("ObjectDeath trap error code {code}"))),
+                _ => Err(WorldError::Msg("ObjectDeath unexpected result".into())),
+            }
         })
     }
 
@@ -422,15 +434,18 @@ impl WorldService {
     ) -> Result<(), WorldError> {
         let lt = parse_link_type(link_type)?;
         self.with_session_mut(session_id, |kernel, state| {
-            kernel.handle(
+            match kernel.handle(
                 &mut state.ctx,
                 KernelCall::ObjectLink {
                     from,
                     to,
                     link_type: lt,
                 },
-            )?;
-            Ok(())
+            ) {
+                TrapResult::Success => Ok(()),
+                TrapResult::Error(code) => Err(WorldError::Msg(format!("ObjectLink trap error code {code}"))),
+                _ => Err(WorldError::Msg("ObjectLink unexpected result".into())),
+            }
         })
     }
 
@@ -449,7 +464,7 @@ impl WorldService {
                     .authorize_intent(&state.ctx, &crate::types::AccessIntent::Call(grantor))?;
                 state.ctx.enter_object(grantor);
             }
-            kernel.handle(
+            match kernel.handle(
                 &mut state.ctx,
                 KernelCall::CapabilityGrant {
                     grantor,
@@ -457,8 +472,11 @@ impl WorldService {
                     capability_type,
                     resource,
                 },
-            )?;
-            Ok(())
+            ) {
+                TrapResult::Success | TrapResult::CapabilityId(_) => Ok(()),
+                TrapResult::Error(code) => Err(WorldError::Msg(format!("CapabilityGrant trap error code {code}"))),
+                _ => Err(WorldError::Msg("CapabilityGrant unexpected result".into())),
+            }
         })
     }
 
@@ -469,8 +487,11 @@ impl WorldService {
         to: ObjectId,
     ) -> Result<(), WorldError> {
         self.with_session_mut(session_id, |kernel, state| {
-            kernel.handle(&mut state.ctx, KernelCall::ObjectUnlink { from, to })?;
-            Ok(())
+            match kernel.handle(&mut state.ctx, KernelCall::ObjectUnlink { from, to }) {
+                TrapResult::Success => Ok(()),
+                TrapResult::Error(code) => Err(WorldError::Msg(format!("ObjectUnlink trap error code {code}"))),
+                _ => Err(WorldError::Msg("ObjectUnlink unexpected result".into())),
+            }
         })
     }
 

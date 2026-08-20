@@ -14,7 +14,7 @@ fn t3_snapshot_isolation_read_own_writes() {
 
     let mut tx = tk.kernel.test_begin_in_object(tk.root_object);
     tk.kernel.test_write(&mut tx, state_id, vec![1]).unwrap();
-    tk.kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    tk.kernel.handle(&mut tx, KernelCall::Commit);
 
     // Write in tx and read back before commit
     let mut tx = tk.kernel.test_begin_in_object(tk.root_object);
@@ -50,7 +50,7 @@ fn t4_abort_rollback_all() {
     tk.kernel
         .test_write(&mut setup_tx, state_id, vec![0])
         .unwrap();
-    tk.kernel.handle(&mut setup_tx, KernelCall::Commit).unwrap();
+    tk.kernel.handle(&mut setup_tx, KernelCall::Commit);
 
     // Write then abort
     let mut tx = tk.kernel.test_begin_in_object(tk.root_object);

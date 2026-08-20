@@ -27,7 +27,7 @@ fn birth_host(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit);
     id
 }
 
@@ -92,7 +92,7 @@ fn admin_cap_holder_can_grant() {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     // A holds AdminCap(B) → may grant "link" on B to itself (or anyone Alive)
     let mut tx2 = kernel.test_begin_in_object(a);
@@ -110,7 +110,7 @@ fn admin_cap_holder_can_grant() {
         "AdminCap holder must be allowed to Grant: {:?}",
         result
     );
-    kernel.handle(&mut tx2, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx2, KernelCall::Commit);
 }
 
 /// Holding a non-AdminCap on resource does not authorize Grant.
@@ -168,7 +168,7 @@ fn revoked_admin_cap_rejects_grant() {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     // Find the AdminCap id held by A on B
     let records = kernel.test_capability_records();
@@ -190,7 +190,7 @@ fn revoked_admin_cap_rejects_grant() {
             },
         )
         .expect("revoke AdminCap");
-    kernel.handle(&mut tx_r, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx_r, KernelCall::Commit);
 
     // Grant must now fail
     let mut tx_g = kernel.test_begin_in_object(a);
@@ -244,7 +244,7 @@ fn same_tx_birth_admin_cap_allows_grant() {
         "same-tx pending AdminCap from ObjectBirth must authorize Grant: {:?}",
         result
     );
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 /// WorldService path: Host identity + AdminCap → Grant success.
@@ -316,13 +316,13 @@ fn grantee_dead_rejects_grant() {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 
     let mut tx_d = kernel.test_begin_in_object(a);
     kernel
         .handle(&mut tx_d, KernelCall::ObjectDeath { object_id: c })
         .unwrap();
-    kernel.handle(&mut tx_d, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx_d, KernelCall::Commit);
 
     // A still holds AdminCap on B; grantee C is dead
     let mut tx_g = kernel.test_begin_in_object(a);

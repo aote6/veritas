@@ -111,7 +111,7 @@ fn commit_birth_under(kernel: &Kernel, creator: u64) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -129,7 +129,7 @@ fn commit_birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
     id
 }
 
@@ -156,7 +156,7 @@ fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
             },
         )
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn commit_death(kernel: &Kernel, id: u64) {
@@ -164,7 +164,7 @@ fn commit_death(kernel: &Kernel, id: u64) {
     kernel
         .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn commit_freeze(kernel: &Kernel, id: u64) {
@@ -172,7 +172,7 @@ fn commit_freeze(kernel: &Kernel, id: u64) {
     kernel
         .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
         .unwrap();
-    kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 /// P29.3: Single object birth → recovery equivalence
@@ -239,7 +239,7 @@ fn equivalence_multi_object_topology() {
             },
         )
         .unwrap();
-        e.handle(&mut tx, KernelCall::Commit).unwrap();
+        e.handle(&mut tx, KernelCall::Commit);
 
         commit_link(e, a, b, LinkType::Owns);
         commit_link(e, a, c, LinkType::DependsOn);
@@ -294,7 +294,7 @@ fn cross_tx_unlink_then_death_no_cascade() {
         kernel
             .handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b })
             .unwrap();
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
     }
     commit_death(&kernel, a); // kill A
     drop(kernel); // crash

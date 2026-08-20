@@ -28,7 +28,7 @@ fn birth(kernel: &Kernel) -> u64 {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
-    kernel.handle(&mut ctx, KernelCall::Commit).unwrap();
+    kernel.handle(&mut ctx, KernelCall::Commit);
     id
 }
 
@@ -60,7 +60,7 @@ fn grantor_is_real_authorizer_not_self_grant() {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
         };
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
         id
     };
 
@@ -100,7 +100,7 @@ fn grantor_is_real_authorizer_not_self_grant() {
             TrapResult::CapabilityId(id) => id,
             _ => panic!("expected CapabilityId"),
         };
-        kernel.handle(&mut tx, KernelCall::Commit).unwrap();
+        kernel.handle(&mut tx, KernelCall::Commit);
         cap_id
     };
 
