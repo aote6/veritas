@@ -229,3 +229,65 @@ fn trap_equivalence_object_link() {
         _ => panic!("both must be ObjectLink"),
     }
 }
+/// E2E-TEQ-5: ObjectDeath 等价性 — 旧式 KernelCall vs TRAP decode
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-03, TRAP-01
+#[test]
+fn trap_equivalence_object_death() {
+    let legacy_kernel = Arc::new(Kernel::with_wal_path(fresh_wal("teq5_legacy")));
+    let trap_kernel = Arc::new(Kernel::with_wal_path(fresh_wal("teq5_trap")));
+
+    let legacy_obj = birth_object(&legacy_kernel, 0);
+    let trap_obj = birth_object(&trap_kernel, 0);
+
+    // Legacy: 直接构造 ObjectDeath KernelCall
+    let mut legacy_ctx = legacy_kernel.test_begin_in_object(legacy_obj);
+    legacy_kernel.handle(
+        &mut legacy_ctx,
+        KernelCall::ObjectDeath { object_id: legacy_obj },
+    ).expect("legacy death failed");
+    legacy_kernel.handle(&mut legacy_ctx, KernelCall::Commit).expect("legacy death commit failed");
+
+    // TRAP: decode service_id 1, r0=object_id
+    let decoded = veritas_kernel::kernel::KernelCall::decode(1, trap_obj, 0, 0)
+        .expect("decode ObjectDeath failed");
+    let mut trap_ctx = trap_kernel.test_begin_in_object(trap_obj);
+    trap_kernel.handle(&mut trap_ctx, decoded).expect("trap death failed");
+    trap_kernel.handle(&mut trap_ctx, KernelCall::Commit).expect("trap death commit failed");
+
+    assert_same_world(&legacy_kernel, &trap_kernel);
+}
+
+/// E2E-TEQ-6: ObjectUnlink 等价性 — 旧式 KernelCall vs TRAP decode
+/// @category: A
+/// @layer: kernel
+/// @testworld: FORBIDDEN
+/// @req: KER-03, TRAP-01
+#[test]
+fn trap_equivalence_object_unlink() {
+    let kernel = Arc::new(Kernel::with_wal_path(fresh_wal("teq6")));
+
+    let a = birth_object(&kernel, 0);
+    let b = birth_object(&kernel, 0);
+
+    // Legacy: 直接构造 ObjectUnlink KernelCall
+    let legacy_call = KernelCall::ObjectUnlink { from: a, to: b };
+
+    // TRAP: decode service_id 3, r0=from, r1=to
+    let trap_call = veritas_kernel::kernel::KernelCall::decode(3, a, b, 0)
+        .expect("decode ObjectUnlink failed");
+
+    // 两个 KernelCall 在结构上应完全等价
+    match (&legacy_call, &trap_call) {
+        (
+            KernelCall::ObjectUnlink { from: lf, to: lt },
+            KernelCall::ObjectUnlink { from: tf, to: tt },
+        ) => {
+            assert_eq!(lf, tf, "from must match");
+            assert_eq!(lt, tt, "to must match");
+        }
+        _ => panic!("both must be ObjectUnlink"),
+    }
+}
