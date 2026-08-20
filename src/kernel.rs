@@ -147,17 +147,25 @@ pub enum TrapResult {
     Error(u8),  // 错误码
 }
 
+// TRAP ABI error codes — frozen in docs/TRAP_ABI_ERROR_CONTRACT_FREEZE.md
+pub const TRAP_ERR_ACCESS_DENIED: u8 = 1;
+pub const TRAP_ERR_ENGINE: u8 = 2;
+pub const TRAP_ERR_MEMORY_FAULT: u8 = 3; // reserved, no real source yet
+pub const TRAP_ERR_WRITE_CONFLICT: u8 = 4;
+pub const TRAP_ERR_PERMISSION_DENIED: u8 = 5;
+pub const TRAP_ERR_STATE_NOT_FOUND: u8 = 6;
+
 impl TrapResult {
     pub fn from_error(e: VeritasError) -> Self {
         let code = match e {
-            VeritasError::PermissionDenied => 5,
-            VeritasError::Abort(AbortReason::WriteConflict) => 4,
-            VeritasError::Abort(AbortReason::ReadFutureVersion) => 4,
-            VeritasError::Abort(AbortReason::AlreadyAborted) => 4,
-            VeritasError::Abort(AbortReason::StateNotFound) => 6,
-            VeritasError::Abort(AbortReason::PhantomConflict) => 4,
-            VeritasError::EngineError(_) => 2,
-            VeritasError::DeterminismViolation => 4,
+            VeritasError::PermissionDenied => TRAP_ERR_PERMISSION_DENIED,
+            VeritasError::Abort(AbortReason::WriteConflict) => TRAP_ERR_WRITE_CONFLICT,
+            VeritasError::Abort(AbortReason::ReadFutureVersion) => TRAP_ERR_WRITE_CONFLICT,
+            VeritasError::Abort(AbortReason::AlreadyAborted) => TRAP_ERR_WRITE_CONFLICT,
+            VeritasError::Abort(AbortReason::StateNotFound) => TRAP_ERR_STATE_NOT_FOUND,
+            VeritasError::Abort(AbortReason::PhantomConflict) => TRAP_ERR_WRITE_CONFLICT,
+            VeritasError::EngineError(_) => TRAP_ERR_ENGINE,
+            VeritasError::DeterminismViolation => TRAP_ERR_WRITE_CONFLICT,
         };
         TrapResult::Error(code)
     }

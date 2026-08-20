@@ -19,14 +19,17 @@ pub enum MachineStatus {
 /// `pc` is taken from the call site so trap frames carry accurate location.
 fn map_trap_code(code: u8, pc: usize) -> crate::types::TrapReason {
     match code {
-        1 => crate::types::TrapReason::AccessDenied { pc },
-        2 => crate::types::TrapReason::InvalidEncoding { pc },
-        3 => crate::types::TrapReason::MemoryFault { addr: 0, size: 0 },
-        4 => crate::types::TrapReason::IllegalInstruction { opcode: 0 },
-        5 => crate::types::TrapReason::AccessDenied { pc },
-        6 => crate::types::TrapReason::InvalidEncoding { pc },
-        7 => crate::types::TrapReason::InvalidEncoding { pc },
-        _ => crate::types::TrapReason::InvalidEncoding { pc },
+        crate::kernel::TRAP_ERR_ACCESS_DENIED => crate::types::TrapReason::AccessDenied { pc },
+        crate::kernel::TRAP_ERR_ENGINE => crate::types::TrapReason::EngineError { pc },
+        crate::kernel::TRAP_ERR_MEMORY_FAULT => {
+            // Reserved: no real memory fault source exists yet.
+            // Do not fabricate addr/size. Treat as unknown until a real source exists.
+            crate::types::TrapReason::UnknownKernelError { code, pc }
+        }
+        crate::kernel::TRAP_ERR_WRITE_CONFLICT => crate::types::TrapReason::WriteConflict { pc },
+        crate::kernel::TRAP_ERR_PERMISSION_DENIED => crate::types::TrapReason::AccessDenied { pc },
+        crate::kernel::TRAP_ERR_STATE_NOT_FOUND => crate::types::TrapReason::StateNotFound { pc },
+        _ => crate::types::TrapReason::UnknownKernelError { code, pc },
     }
 }
 

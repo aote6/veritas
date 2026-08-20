@@ -435,6 +435,23 @@ pub enum TrapReason {
     AccessDenied {
         pc: usize,
     },
+    /// TRAP ABI: Kernel engine error
+    EngineError {
+        pc: usize,
+    },
+    /// TRAP ABI: transaction conflict class (WriteConflict/ReadFutureVersion/AlreadyAborted/PhantomConflict/DeterminismViolation)
+    WriteConflict {
+        pc: usize,
+    },
+    /// TRAP ABI: state not found
+    StateNotFound {
+        pc: usize,
+    },
+    /// TRAP ABI: unknown kernel error code
+    UnknownKernelError {
+        code: u8,
+        pc: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
