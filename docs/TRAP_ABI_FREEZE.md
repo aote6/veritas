@@ -205,7 +205,7 @@ Effect, Savepoint, RollbackTo, CapabilityGrant, Abort
 
 退役条件（全部满足后方可删除）：Machine E2E 等价性、无内部依赖、assembler/tests/examples 已切换。
 
-当前：**保留兼容入口**；正式 ABI 入口为 TRAP。
+当前：**旧式 Kernel Instruction 已从 Machine/Assembler/codec 删除**；唯一 Machine ABI 入口为 TRAP。
 
 
 ## 3. 错误码映射

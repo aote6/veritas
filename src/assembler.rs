@@ -1,7 +1,7 @@
 use crate::instruction::Instruction;
 use crate::module::{ModuleImage, ModuleVersion};
 use crate::program::ProgramImage;
-use crate::types::{AbortReason, LinkType, VeritasError};
+use crate::types::VeritasError;
 use std::collections::HashMap;
 
 pub fn assemble(source: &str) -> Result<Vec<Instruction>, VeritasError> {
@@ -103,17 +103,6 @@ fn parse_quoted_string(s: &str) -> Result<String, VeritasError> {
     }
 }
 
-fn parse_link_type(s: &str) -> Result<LinkType, VeritasError> {
-    match s.trim().to_lowercase().as_str() {
-        "depends_on" | "dependson" => Ok(LinkType::DependsOn),
-        "owns" => Ok(LinkType::Owns),
-        "references" | "refs" => Ok(LinkType::References),
-        _ => Err(VeritasError::EngineError(format!(
-            "Unknown LinkType: {} (use depends_on, owns, references)",
-            s
-        ))),
-    }
-}
 
 fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction, VeritasError> {
     let raw_parts: Vec<&str> = line.split_whitespace().collect();
@@ -129,10 +118,6 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
     match op.as_str() {
         "NOP" => Ok(Instruction::Nop),
         "HALT" => Ok(Instruction::Halt),
-        "COMMIT" => Ok(Instruction::Commit),
-        "ABORT" => Ok(Instruction::Abort {
-            reason: AbortReason::WriteConflict,
-        }),
         "RETURN" => Ok(Instruction::Return),
 
         "LOAD_CONST" => {
@@ -266,66 +251,6 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
                 payload,
             })
         }
-        "EFFECT" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError("EFFECT needs \"string\"".into()));
-            }
-            let payload = parse_quoted_string(args[0])?.into_bytes();
-            Ok(Instruction::Effect { payload })
-        }
-        "OBJECT_BIRTH" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError(
-                    "OBJECT_BIRTH needs object_id".into(),
-                ));
-            }
-            Ok(Instruction::ObjectBirth {
-                object_id: parse_u64(args[0])?,
-            })
-        }
-        "OBJECT_DEATH" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError(
-                    "OBJECT_DEATH needs object_id".into(),
-                ));
-            }
-            Ok(Instruction::ObjectDeath {
-                object_id: parse_operand(args[0])?,
-            })
-        }
-        "OBJECT_FREEZE" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError(
-                    "OBJECT_FREEZE needs object_id".into(),
-                ));
-            }
-            Ok(Instruction::ObjectFreeze {
-                object_id: parse_operand(args[0])?,
-            })
-        }
-        "OBJECT_LINK" => {
-            if args.len() < 3 {
-                return Err(VeritasError::EngineError(
-                    "OBJECT_LINK needs from, to, relation".into(),
-                ));
-            }
-            Ok(Instruction::ObjectLink {
-                from: parse_operand(args[0])?,
-                to: parse_operand(args[1])?,
-                relation: parse_link_type(args[2])?,
-            })
-        }
-        "OBJECT_UNLINK" => {
-            if args.len() < 2 {
-                return Err(VeritasError::EngineError(
-                    "OBJECT_UNLINK needs from, to".into(),
-                ));
-            }
-            Ok(Instruction::ObjectUnlink {
-                from: parse_operand(args[0])?,
-                to: parse_operand(args[1])?,
-            })
-        }
         "CALL" => {
             if args.len() < 2 {
                 return Err(VeritasError::EngineError(
@@ -351,36 +276,6 @@ fn parse_line(line: &str, labels: &HashMap<String, usize>) -> Result<Instruction
             }
             Ok(Instruction::HostCall {
                 call_id: parse_u64(args[0])? as u8,
-            })
-        }
-        "CAPABILITY_GRANT" => {
-            if args.len() < 3 {
-                return Err(VeritasError::EngineError(
-                    "CAPABILITY_GRANT needs holder, \"permission\", resource".into(),
-                ));
-            }
-            Ok(Instruction::CapabilityGrant {
-                holder: parse_operand(args[0])?,
-                permission: parse_quoted_string(args[1])?,
-                resource: parse_operand(args[2])?,
-            })
-        }
-        "SAVEPOINT" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError("SAVEPOINT needs \"name\"".into()));
-            }
-            Ok(Instruction::Savepoint {
-                name: parse_quoted_string(args[0])?,
-            })
-        }
-        "ROLLBACK_TO" => {
-            if args.is_empty() {
-                return Err(VeritasError::EngineError(
-                    "ROLLBACK_TO needs \"name\"".into(),
-                ));
-            }
-            Ok(Instruction::RollbackTo {
-                name: parse_quoted_string(args[0])?,
             })
         }
 
@@ -440,23 +335,19 @@ mod tests {
     }
 
     #[test]
-    fn test_assemble_new_instructions() {
+    fn test_assemble_trap_and_native() {
         let src = r#"
-            OBJECT_BIRTH 100
+            TRAP 0
             WRITE 100, "hello"
             READ 100
-            OBJECT_LINK 1, 100, owns
             CALL 100, 0
             RETURN
-            COMMIT
+            TRAP 5
             HALT
         "#;
         let insts = assemble(src).unwrap();
-        assert_eq!(insts.len(), 8);
-        assert!(matches!(
-            insts[0],
-            Instruction::ObjectBirth { object_id: 100 }
-        ));
+        assert_eq!(insts.len(), 7);
+        assert!(matches!(insts[0], Instruction::Trap { service_id: 0 }));
         assert!(matches!(
             insts[1],
             Instruction::Write {
@@ -472,22 +363,37 @@ mod tests {
         ));
         assert!(matches!(
             insts[3],
-            Instruction::ObjectLink {
-                from: Operand::Immediate(1),
-                to: Operand::Immediate(100),
-                ..
-            }
-        ));
-        assert!(matches!(
-            insts[4],
             Instruction::Call {
                 object_id: Operand::Immediate(100),
                 entry_pc: 0
             }
         ));
-        assert!(matches!(insts[5], Instruction::Return));
-        assert!(matches!(insts[6], Instruction::Commit));
-        assert!(matches!(insts[7], Instruction::Halt));
+        assert!(matches!(insts[4], Instruction::Return));
+        assert!(matches!(insts[5], Instruction::Trap { service_id: 5 }));
+        assert!(matches!(insts[6], Instruction::Halt));
+    }
+
+    #[test]
+    fn test_legacy_kernel_mnemonics_rejected() {
+        for mnemonic in [
+            "OBJECT_BIRTH 0",
+            "OBJECT_DEATH 0",
+            "OBJECT_LINK 1, 2, owns",
+            "OBJECT_UNLINK 1, 2",
+            "OBJECT_FREEZE 0",
+            "COMMIT",
+            "EFFECT \"x\"",
+            "SAVEPOINT \"s\"",
+            "ROLLBACK_TO \"s\"",
+            "CAPABILITY_GRANT 1, \"p\", 2",
+            "ABORT",
+        ] {
+            assert!(
+                assemble(mnemonic).is_err(),
+                "legacy mnemonic should be rejected: {}",
+                mnemonic
+            );
+        }
     }
 }
 

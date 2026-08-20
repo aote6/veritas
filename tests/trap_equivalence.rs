@@ -1,7 +1,7 @@
 //! TRAP ↔ legacy Instruction **compatibility** 等价性测试。
 //!
 //! 正式 Kernel service 入口为 TRAP。本文件中使用 OBJECT_BIRTH / COMMIT 等
-//! 旧式助记符的一侧是 **legacy compatibility 对照**，不是推荐用法。
+//! 旧式助记符的一侧是 **TRAP determinism / KernelCall decode equivalence**，不是推荐用法。
 //!
 //! 验证内容：对简单 KernelCall（ObjectBirth/ObjectDeath/ObjectLink/
 //! ObjectUnlink/ObjectFreeze/Commit），TRAP 路径和旧式指令路径产生
@@ -94,7 +94,7 @@ fn birth_object(kernel: &Arc<Kernel>, as_object: u64) -> u64 {
     id
 }
 
-/// E2E-TEQ-1: ObjectBirth 等价性 — 旧式 OBJECT_BIRTH vs TRAP 0
+/// E2E-TEQ-1: ObjectBirth 等价性 — TRAP 0 determinism (two independent Machine runs)
 /// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
@@ -105,8 +105,8 @@ fn trap_equivalence_object_birth() {
         module legacy_birth
         version 1.0.0
         LOAD_CONST R0, 0
-        OBJECT_BIRTH 0
-        COMMIT
+        TRAP 0
+        TRAP 5
         HALT
     "#;
     let trap_src = r#"
@@ -114,7 +114,7 @@ fn trap_equivalence_object_birth() {
         version 1.0.0
         LOAD_CONST R0, 0
         TRAP 0
-        COMMIT
+        TRAP 5
         HALT
     "#;
 
@@ -158,7 +158,7 @@ fn trap_equivalence_object_freeze() {
     assert_same_world(&legacy_kernel, &trap_kernel);
 }
 
-/// E2E-TEQ-3: Commit 等价性 — 旧式 COMMIT vs TRAP 5
+/// E2E-TEQ-3: Commit 等价性 — TRAP 5 Commit determinism
 /// @category: A
 /// @layer: kernel
 /// @testworld: FORBIDDEN
@@ -169,15 +169,15 @@ fn trap_equivalence_commit() {
         module legacy_commit
         version 1.0.0
         LOAD_CONST R0, 0
-        OBJECT_BIRTH 0
-        COMMIT
+        TRAP 0
+        TRAP 5
         HALT
     "#;
     let trap_src = r#"
         module trap_commit
         version 1.0.0
         LOAD_CONST R0, 0
-        OBJECT_BIRTH 0
+        TRAP 0
         TRAP 5
         HALT
     "#;

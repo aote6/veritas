@@ -169,7 +169,7 @@ mod image_tests {
                 src1: 0,
                 src2: 1,
             },
-            Instruction::Commit,
+            Instruction::Trap { service_id: 5 },
             Instruction::Halt,
         ];
         let image = ProgramImage::new(insts);

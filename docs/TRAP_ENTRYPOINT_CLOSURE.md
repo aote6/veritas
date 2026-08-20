@@ -62,3 +62,26 @@ All normal programs/tests/examples that *invoke* Kernel services now use TRAP.
   - `src/assembler.rs` mnemonics + unit tests — definition/compatibility
   - `src/instruction*` variants + codec — not deleted (phase 2)
   - `src/machine.rs` legacy execution arms — not deleted (phase 2)
+
+## Phase 2 — Legacy Instruction retirement (2026-08-20)
+
+Deleted Machine `Instruction` variants:
+
+ObjectBirth, ObjectDeath, ObjectLink, ObjectUnlink, ObjectFreeze,
+Commit, Effect, Savepoint, RollbackTo, CapabilityGrant, Abort
+
+Deleted corresponding opcodes, codec encode/decode arms, and assembler mnemonics.
+
+**KernelCall variants retained.** Formal Machine path:
+
+```
+Instruction::Trap { service_id }
+  → KernelCall::decode_with_memory
+  → Kernel::handle
+  → Engine
+```
+
+HostCall remains independent (`Instruction::HostCall`).
+Machine native instructions unchanged.
+
+Assembler rejects retired mnemonics (see `test_legacy_kernel_mnemonics_rejected`).

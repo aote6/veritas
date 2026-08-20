@@ -372,99 +372,6 @@ impl Machine {
                 }
                 return Ok(());
             }
-            Instruction::Commit => {
-                let _receipt = self.kernel.commit(&mut self.ctx)?;
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::Abort { reason } => {
-                self.record_trace(pc_before, regs_before, &instruction, consumed);
-                let r = reason;
-                let call = crate::kernel::KernelCall::Abort { reason: r };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                self.pc += consumed;
-                self.status = MachineStatus::Aborted(r);
-                return Ok(());
-            }
-            Instruction::CapabilityGrant {
-                holder,
-                permission,
-                resource,
-            } => {
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                let h = self.resolve_operand(&holder);
-                let p = permission;
-                let r = self.resolve_operand(&resource);
-                let call = crate::kernel::KernelCall::CapabilityGrant {
-                    grantor: self.ctx.current_object,
-                    grantee: h,
-                    capability_type: p.clone(),
-                    resource: r,
-                };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                if let crate::kernel::TrapResult::CapabilityId(cap_id) = result {
-                    self.registers.set(0, RegisterValue::U64(cap_id));
-                }
-                self.pc += consumed;
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::Effect { payload } => {
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                let p = payload;
-                let _key = self.kernel.effect(&mut self.ctx, p)?;
-                self.pc += consumed;
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::Savepoint { name } => {
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                let n = name;
-                self.kernel.savepoint(&mut self.ctx, &n)?;
-                self.pc += consumed;
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::RollbackTo { name } => {
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                let n = name;
-                self.kernel.rollback_to(&mut self.ctx, &n)?;
-                self.pc += consumed;
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
             Instruction::Halt => {
                 self.pc += consumed;
                 self.record_trace(pc_before, regs_before, &instruction, consumed);
@@ -574,7 +481,7 @@ impl Machine {
                 // P28: TRAP unified kernel service call
                 // Decode via KernelCall::decode_with_memory(), dispatch to Kernel::handle()
                 // Post-handle Machine glue (not Kernel semantics):
-                //   - ObjectBirth: attach pending self-AdminCap (parity with Instruction::ObjectBirth)
+                //   - ObjectBirth: attach pending self-AdminCap (Machine post-handle glue for TRAP ObjectBirth)
                 //   - Abort: set MachineStatus::Aborted (Machine lifecycle)
                 {
                     let r0 = self.registers.get_u64(0);
@@ -625,7 +532,7 @@ impl Machine {
                     match result {
                         crate::kernel::TrapResult::ObjectId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));
-                            // Parity with Instruction::ObjectBirth: attach pending self-AdminCap
+                            // TRAP ObjectBirth: attach pending self-AdminCap
                             // so subsequent CALL can pass authorize_intent.
                             if let Some(grant) = self.ctx.pending_capabilities.iter().find(|g| {
                                 g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
@@ -699,154 +606,6 @@ impl Machine {
                 }
                 return Ok(());
             }
-            Instruction::ObjectBirth { object_id: _ } => {
-                let call = crate::kernel::KernelCall::ObjectBirth {
-                    object_type: crate::types::ObjectType::StateObject,
-                };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                if let crate::kernel::TrapResult::ObjectId(id) = result {
-                    self.registers.set(0, RegisterValue::U64(id));
-                    // ARCH (2026-08-10, 二次修正): 此前一版在此恢复了
-                    // enter_object(id)，理由是"id 是内核刚分配的全新对象，
-                    // 审计一定会通过所以可以省略"。这个前提是错的——object_birth
-                    // 把新对象的 self-AdminCap push 进 ctx.pending_capabilities，
-                    // 但从未 attach 到 ctx.capabilities，导致同一事务内哪怕真的
-                    // 用 CALL 也无法通过 authorize_intent 的 has_pending 检查。
-                    // 也就是说当时"反正会通过"其实是"根本没被检查过"，
-                    // 跟 ObjectLink 那次 enter_object(from) 是同一类问题：
-                    // 用隐式身份切换掩盖了一个从未真正建立的授权关系。
-                    //
-                    // 现在的修法：不切换身份，而是把新对象的 self-AdminCap
-                    // 显式 attach 到本事务 ctx，让 CALL 这条唯一合法的身份切换
-                    // 入口能够真正走通 authorize_intent 审计——而不是绕开它。
-                    if let Some(grant) =
-                        self.ctx.pending_capabilities.iter().find(|g| {
-                            g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
-                        })
-                    {
-                        let cap_id = grant.capability_id;
-                        self.kernel
-                            .engine()
-                            .attach_capability(&mut self.ctx, cap_id);
-                    }
-                }
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::ObjectDeath { object_id } => {
-                let object_id = self.resolve_operand(&object_id);
-                let call = crate::kernel::KernelCall::ObjectDeath { object_id };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::ObjectFreeze { object_id } => {
-                let object_id = self.resolve_operand(&object_id);
-                let call = crate::kernel::KernelCall::ObjectFreeze { object_id };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::ObjectLink { from, to, relation } => {
-                let from = self.resolve_operand(&from);
-                let to = self.resolve_operand(&to);
-                // SECURITY: 不再隐式切换身份。授权检查完全交给 commit 时的
-                // authorize_intent(AccessIntent::Link(from, to))，以调用者
-                // 真实的 ctx.current_object 走 capability graph 校验。
-                let call = crate::kernel::KernelCall::ObjectLink {
-                    from,
-                    to,
-                    link_type: relation,
-                };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-            Instruction::ObjectUnlink { from, to } => {
-                let from = self.resolve_operand(&from);
-                let to = self.resolve_operand(&to);
-                let call = crate::kernel::KernelCall::ObjectUnlink { from, to };
-                let result = self.kernel.handle(&mut self.ctx, call);
-                if let crate::kernel::TrapResult::Error(code) = result {
-                    let reason = map_trap_code(code, self.pc);
-                    self.trap_frame = Some(crate::types::TrapFrame {
-                        pc: self.pc,
-                        reason: reason.clone(),
-                        cycles: 0,
-                    });
-                    self.status = MachineStatus::Trapped(reason);
-                    return Ok(());
-                }
-                self.pc += consumed;
-                self.record_trace(pc_before, regs_before, &instruction_for_trace, consumed);
-                if self.pc >= self.ram.len() {
-                    self.status = MachineStatus::Halted;
-                }
-                return Ok(());
-            }
-        }
-
-        // 宪法transaction.md第3节：Transaction不可嵌套。
-        // CALL/RETURN不改变Transaction边界，Commit只能在最外层执行。
-        if matches!(instruction, Instruction::Commit) && !self.call_stack.is_empty() {
-            self.status = MachineStatus::Aborted(AbortReason::WriteConflict);
-            return Err(VeritasError::Abort(AbortReason::WriteConflict));
         }
 
         // P1a: execute_kernel_instruction removed — all kernel ops now via KernelCall

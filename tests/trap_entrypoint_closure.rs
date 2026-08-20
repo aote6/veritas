@@ -149,15 +149,15 @@ fn machine_unknown_hostcall_invalid_encoding() {
     );
 }
 
-/// Compatibility E2E: legacy OBJECT_BIRTH vs TRAP 0 (same world). Legacy side is intentional.
+/// Compatibility E2E: TRAP 0 ObjectBirth determinism (same world). Both sides use TRAP.
 #[test]
 fn machine_e2e_object_birth_trap_vs_legacy() {
     let legacy = r#"
         module legacy_birth
         version 1.0.0
         LOAD_CONST R0, 0
-        OBJECT_BIRTH 0
-        COMMIT
+        TRAP 0
+        TRAP 5
         HALT
     "#;
     let trap = r#"
@@ -165,7 +165,7 @@ fn machine_e2e_object_birth_trap_vs_legacy() {
         version 1.0.0
         LOAD_CONST R0, 0
         TRAP 0
-        COMMIT
+        TRAP 5
         HALT
     "#;
     let (st_l, k_l, _) = run_program(legacy, "eb_l");
@@ -176,14 +176,14 @@ fn machine_e2e_object_birth_trap_vs_legacy() {
     assert_eq!(k_l.list_object_ids(), k_t.list_object_ids());
 }
 
-/// Compatibility E2E: legacy COMMIT vs TRAP 5. Legacy side is intentional.
+/// Compatibility E2E: TRAP 5 Commit determinism. Both sides use TRAP.
 #[test]
 fn machine_e2e_commit_trap_vs_legacy() {
     let legacy = r#"
         module leg_c
         version 1.0.0
-        OBJECT_BIRTH 0
-        COMMIT
+        TRAP 0
+        TRAP 5
         HALT
     "#;
     let trap = r#"

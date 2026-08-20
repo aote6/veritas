@@ -1,21 +1,12 @@
-use crate::types::AbortReason;
-use crate::types::{LinkType, ObjectId, StateId};
+use crate::types::StateId;
 
+/// Machine instruction opcodes. Kernel services use TRAP only (no dedicated opcodes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Opcode {
     Read,
     Write,
-    Effect,
-    ObjectBirth,
-    ObjectDeath,
     Trap,
     HostCall,
-    ObjectFreeze,
-    ObjectLink,
-    ObjectUnlink,
-    CapabilityGrant,
-    Savepoint,
-    RollbackTo,
     LoadConst,
     Add,
     Sub,
@@ -29,8 +20,6 @@ pub enum Opcode {
     Nop,
     Halt,
     Jn,
-    Commit,
-    Abort,
     Call,
     Return,
 }
@@ -41,6 +30,11 @@ pub enum Operand {
     Register(u8),
 }
 
+/// Machine instruction set.
+///
+/// Kernel services are **not** Instruction variants. Use `Trap { service_id }`
+/// (service_id 0–13) → KernelCall → Kernel::handle. HostCall is a separate
+/// host-boundary primitive (not KernelCall).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     Read {
@@ -50,52 +44,18 @@ pub enum Instruction {
         state_id: Operand,
         payload: Vec<u8>,
     },
-    Effect {
-        payload: Vec<u8>,
-    },
-    ObjectBirth {
-        object_id: ObjectId,
-    },
-    ObjectDeath {
-        object_id: Operand,
-    },
     Trap {
         service_id: u8,
     },
     HostCall {
         call_id: u8,
     },
-    ObjectFreeze {
-        object_id: Operand,
-    },
-    ObjectLink {
-        from: Operand,
-        to: Operand,
-        relation: LinkType,
-    },
-    ObjectUnlink {
-        from: Operand,
-        to: Operand,
-    },
-    CapabilityGrant {
-        holder: Operand,
-        permission: String,
-        resource: Operand,
-    },
-    Savepoint {
-        name: String,
-    },
-    RollbackTo {
-        name: String,
-    },
-    /// 切换当前执行上下文到目标Object，跳转到entry_pc继续执行。
-    /// 对应module.md第6节"跨Module调用"设计的最小可用实现：
-    /// 暂不涉及独立代码空间，仅切换current_object + 维护调用栈。
+    /// Switch execution context to target object and jump to entry_pc.
     Call {
         object_id: Operand,
         entry_pc: usize,
     },
-    /// 从Call返回：恢复调用前的current_object和pc。
+    /// Return from Call: restore current_object and pc.
     Return,
     Nop,
     LoadConst {
@@ -141,10 +101,6 @@ pub enum Instruction {
         target: usize,
     },
     Halt,
-    Commit,
-    Abort {
-        reason: AbortReason,
-    },
 }
 
 impl Instruction {
@@ -152,17 +108,8 @@ impl Instruction {
         match self {
             Instruction::Read { .. } => Opcode::Read,
             Instruction::Write { .. } => Opcode::Write,
-            Instruction::Effect { .. } => Opcode::Effect,
-            Instruction::ObjectBirth { .. } => Opcode::ObjectBirth,
-            Instruction::ObjectDeath { .. } => Opcode::ObjectDeath,
             Instruction::Trap { .. } => Opcode::Trap,
             Instruction::HostCall { .. } => Opcode::HostCall,
-            Instruction::ObjectFreeze { .. } => Opcode::ObjectFreeze,
-            Instruction::ObjectLink { .. } => Opcode::ObjectLink,
-            Instruction::ObjectUnlink { .. } => Opcode::ObjectUnlink,
-            Instruction::CapabilityGrant { .. } => Opcode::CapabilityGrant,
-            Instruction::Savepoint { .. } => Opcode::Savepoint,
-            Instruction::RollbackTo { .. } => Opcode::RollbackTo,
             Instruction::Nop => Opcode::Nop,
             Instruction::Halt => Opcode::Halt,
             Instruction::LoadConst { .. } => Opcode::LoadConst,
@@ -176,8 +123,6 @@ impl Instruction {
             Instruction::Jz { .. } => Opcode::Jz,
             Instruction::Jnz { .. } => Opcode::Jnz,
             Instruction::Jn { .. } => Opcode::Jn,
-            Instruction::Commit => Opcode::Commit,
-            Instruction::Abort { .. } => Opcode::Abort,
             Instruction::Call { .. } => Opcode::Call,
             Instruction::Return => Opcode::Return,
         }
