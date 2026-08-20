@@ -198,6 +198,7 @@ fn red_capability_unknown_endpoint_rejects() {
                 active: true,
                 parent: None,
                 cascade_on_revoke: true,
+                grant_sequence: 1,
             },
         );
     } else {

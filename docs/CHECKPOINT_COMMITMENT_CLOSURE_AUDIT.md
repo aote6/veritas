@@ -253,7 +253,7 @@ version=N 且 hash 为任意非零值的 checkpoint 在结构层仍可被接受�
 | State ↔ Continuation 解耦 | 设计边界，不绑定 |
 | Delta content_hash 不含 commit_version | 宪法要求，非缺陷 |
 | version=N ↔ content_hash(terminal_delta(N)) | RESIDUAL（需新 Serialization Contract） |
-| grant_sequence vs CapabilityGraph 下界 | RESIDUAL（snapshot 缺 sequence 字段） |
+| grant_sequence vs CapabilityGraph 下界 | CLOSED (Gap 7) |
 
 ### 6.4 Gap 5 — Commitment Domain referential integrity — CLOSED
 
@@ -310,8 +310,34 @@ State Commitment 与 Gap 5 引用检查仍允许「内部自洽但语义非法�
 
 **测试**：`tests/checkpoint_domain_structural_integrity.rs`（11 tests）
 
-**仍为 residual（当前 Serialization Contract 下不可闭合）**：
-- Gap 1 residual：terminal Delta 不在 snapshot 中，无法验证
-  `last_applied_delta_hash == content_hash(terminal_delta(N))`
-- grant_sequence 下界：CapabilitySemanticRecord 不持久化 sequence，
-  无法从 capability_id 反推 max sequence（capability_id 是单向哈希）
+### 6.6 Gap 7 — grant_sequence lower bound / capability_id binding — CLOSED
+
+**根因**：
+CapabilitySemanticRecord 原先不持久化 grant_sequence。capability_id =
+Hash(grantor, grantee, resource, sequence) 为单向哈希，无法从 id 反推 sequence，
+因此无法证明 `snap.grant_sequence` 是记录中已铸造 sequence 的合法上界，
+也无法证明 capability_id 与声明的端点一致。
+
+**架构选择（最小 Serialization Contract 扩展）**：
+在 `CapabilitySemanticRecord` 与运行时 `CapabilityInfo` 增加 `grant_sequence: u64`。
+
+- Canonical owner / 分配器：仍只有 `CapabilityGraph.grant_sequence`（单调计数器）
+- 每条 root 记录保存铸造时的 sequence（delegate 持有者共享同一 sequence）
+- 不进入 State Commitment 五组件编码（commitment 仍只编码 granted_by/holder/resource/type）
+- 不引入第二套哈希或第二分配器
+- WAL `PendingCapabilityGrant.grant_sequence` 已是同一真相源在事务层的投影
+
+**restore 校验（mutation 前）**：
+1. 同 capability_id 的所有记录 grant_sequence 一致
+2. 每个 root：`grant_sequence > 0` 且 `<= snap.grant_sequence`
+3. `capability_id == capability_id_of(granted_by, holder, resource, grant_sequence)`
+
+**测试**：`tests/checkpoint_grant_sequence_integrity.rs`
+
+**仍为 residual（刻意不扩展）**：
+- Gap 1 residual / terminal Delta binding：Checkpoint 不携带 terminal Delta body。
+  `last_applied_delta_hash` 已是 Delta Identity；在不引入第二 canonical source
+  （把 TransactionDelta 再塞进 WorldSnapshot）的前提下，genesis pairing 是
+  本地可执行的最强结构不变量。完整 `version=N ↔ content_hash(terminal_delta(N))`
+  需要外部 Receipt/WAL 链验证，或未来明确的 Continuation-only delta identity
+  字节字段且仍不得进入 State Commitment。

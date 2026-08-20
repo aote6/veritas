@@ -60,6 +60,8 @@ pub struct CapabilityInfo {
     pub granted_by: ObjectId,
     pub root_holder: ObjectId,
     pub resource: ResourceId,
+    /// Sequence that minted capability_id via capability_id_of.
+    pub grant_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,6 +119,7 @@ impl CapabilityGraph {
                         granted_by: rec.granted_by,
                         root_holder,
                         resource: rec.resource,
+                        grant_sequence: rec.grant_sequence,
                     },
                 );
             }
@@ -172,6 +175,7 @@ impl CapabilityGraph {
                     active: holder_record.active,
                     parent: holder_record.parent,
                     cascade_on_revoke,
+                    grant_sequence: info.grant_sequence,
                 })
             })
             .collect();
@@ -257,8 +261,13 @@ impl CapabilityGraph {
                 granted_by: grantor,
                 root_holder: grantee,
                 resource,
+                grant_sequence: sequence,
             },
         );
+        // Keep counter at least the restored sequence.
+        if sequence > self.grant_sequence {
+            self.grant_sequence = sequence;
+        }
         cap_id
     }
 
@@ -283,6 +292,7 @@ impl CapabilityGraph {
                 granted_by: grantor,
                 root_holder: grantee,
                 resource,
+                grant_sequence: seq,
             },
         );
         self.holders.insert(
@@ -303,7 +313,8 @@ impl CapabilityGraph {
         resource: ResourceId,
     ) -> CapabilityId {
         self.grant_sequence += 1;
-        let cap_id = capability_id_of(grantor, grantee, resource, self.grant_sequence);
+        let seq = self.grant_sequence;
+        let cap_id = capability_id_of(grantor, grantee, resource, seq);
 
         self.grants.insert(
             cap_id,
@@ -312,6 +323,7 @@ impl CapabilityGraph {
                 granted_by: grantor,
                 root_holder: grantee,
                 resource,
+                grant_sequence: seq,
             },
         );
         self.holders.insert(

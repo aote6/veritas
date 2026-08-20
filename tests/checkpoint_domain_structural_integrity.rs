@@ -14,7 +14,6 @@
 //!   an existing holder of the same capability_id; (capability_id, holder) unique
 //!
 //! Residuals (not closed here):
-//! - grant_sequence lower bound (CapabilitySemanticRecord has no sequence field)
 //! - terminal Delta binding for last_applied_delta_hash
 
 use veritas_kernel::engine::state_commitment_from_components;
@@ -208,7 +207,8 @@ fn red_cap_parent_not_holder_rejects() {
         active: true,
         parent: Some(stranger),
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     recompute_commitment(&mut snap);
 
     let k2 = Kernel::with_wal_path(temp_wal("cap_parent_dst"));
@@ -251,7 +251,8 @@ fn red_cap_zero_roots_rejects() {
         active: true,
         parent: Some(c),
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     snap.capability_records.push(CapabilitySemanticRecord {
         capability_id: 0xCAFE,
         granted_by: a,
@@ -261,7 +262,8 @@ fn red_cap_zero_roots_rejects() {
         active: true,
         parent: Some(b),
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     recompute_commitment(&mut snap);
 
     let k2 = Kernel::with_wal_path(temp_wal("cap_0root_dst"));
@@ -294,7 +296,8 @@ fn red_cap_two_roots_rejects() {
         active: true,
         parent: None,
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     snap.capability_records.push(CapabilitySemanticRecord {
         capability_id: 0xBEEF,
         granted_by: a,
@@ -304,7 +307,8 @@ fn red_cap_two_roots_rejects() {
         active: true,
         parent: None,
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     recompute_commitment(&mut snap);
 
     let k2 = Kernel::with_wal_path(temp_wal("cap_2root_dst"));
@@ -338,7 +342,8 @@ fn red_cap_inconsistent_meta_rejects() {
         active: true,
         parent: None,
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     snap.capability_records.push(CapabilitySemanticRecord {
         capability_id: 0x1111,
         granted_by: d, // inconsistent granted_by
@@ -348,7 +353,8 @@ fn red_cap_inconsistent_meta_rejects() {
         active: true,
         parent: Some(b),
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     recompute_commitment(&mut snap);
 
     let k2 = Kernel::with_wal_path(temp_wal("cap_meta_dst"));
@@ -382,7 +388,8 @@ fn red_cap_self_parent_rejects() {
         active: true,
         parent: None,
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     snap.capability_records.push(CapabilitySemanticRecord {
         capability_id: 0x2222,
         granted_by: a,
@@ -392,7 +399,8 @@ fn red_cap_self_parent_rejects() {
         active: true,
         parent: Some(c), // self-parent
         cascade_on_revoke: true,
-    });
+                grant_sequence: 1,
+            });
     recompute_commitment(&mut snap);
 
     let k2 = Kernel::with_wal_path(temp_wal("cap_self_dst"));
@@ -425,7 +433,8 @@ fn red_cap_duplicate_holder_rejects() {
         active: true,
         parent: None,
         cascade_on_revoke: true,
-    };
+                grant_sequence: 1,
+            };
     snap.capability_records.push(rec.clone());
     snap.capability_records.push(rec);
     recompute_commitment(&mut snap);
@@ -463,39 +472,36 @@ fn green_honest_structural_accepted() {
 /// @req: REC-16
 #[test]
 fn green_legal_cap_forest_accepted() {
+    // Birth mints creator AdminCap roots with real grant_sequence binding.
     let kernel = Kernel::with_wal_path(temp_wal("ok_cap_src"));
     let a = birth(&kernel);
-    let b = birth(&kernel);
-    let c = birth(&kernel);
+    let _b = birth(&kernel);
     write_state(&kernel, a, 1, b"a".to_vec());
 
-    let mut snap = kernel.test_create_checkpoint();
-    snap.capability_records.push(CapabilitySemanticRecord {
-        capability_id: 0x4444,
-        granted_by: a,
-        holder: b,
-        resource: c,
-        capability_type: "read".to_string(),
-        active: true,
-        parent: None,
-        cascade_on_revoke: true,
-    });
-    snap.capability_records.push(CapabilitySemanticRecord {
-        capability_id: 0x4444,
-        granted_by: a,
-        holder: c,
-        resource: c,
-        capability_type: "read".to_string(),
-        active: true,
-        parent: Some(b),
-        cascade_on_revoke: true,
-    });
-    recompute_commitment(&mut snap);
+    let snap = kernel.test_create_checkpoint();
+    assert!(
+        !snap.capability_records.is_empty(),
+        "precondition: birth leaves AdminCap records"
+    );
+    assert!(snap.grant_sequence > 0);
+    for rec in &snap.capability_records {
+        if rec.parent.is_none() {
+            assert!(rec.grant_sequence > 0);
+            assert!(rec.grant_sequence <= snap.grant_sequence);
+            let expected = veritas_kernel::capability::capability_id_of(
+                rec.granted_by,
+                rec.holder,
+                rec.resource,
+                rec.grant_sequence,
+            );
+            assert_eq!(expected, rec.capability_id);
+        }
+    }
 
     let k2 = Kernel::with_wal_path(temp_wal("ok_cap_dst"));
     assert!(
         k2.test_restore_checkpoint(&snap),
-        "legal single-root capability forest must be accepted"
+        "honest capability forest with sequence binding must be accepted"
     );
 }
 

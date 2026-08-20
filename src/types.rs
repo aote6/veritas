@@ -607,6 +607,10 @@ pub struct CapabilitySemanticRecord {
     pub active: bool,
     pub parent: Option<ObjectId>,
     pub cascade_on_revoke: bool,
+    /// Sequence used when this capability_id was minted (grant path).
+    /// Same for every holder record of a given capability_id.
+    /// Canonical input to capability_id_of; Continuation binding, not a second allocator.
+    pub grant_sequence: u64,
 }
 
 /// AccessIntent — commit 前所有跨 Object side-effect 的统一访问意图。

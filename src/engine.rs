@@ -611,9 +611,11 @@ impl VeritasEngine {
                         crate::types::ObjectId,
                         crate::types::ObjectId,
                         String,
+                        u64,
                     ),
                 > = HashMap::new();
                 let mut root_count: HashMap<crate::types::CapabilityId, u32> = HashMap::new();
+                let mut max_grant_seq: u64 = 0;
 
                 for rec in &snap.capability_records {
                     if !object_ids.contains(&rec.granted_by)
@@ -638,10 +640,11 @@ impl VeritasEngine {
                         .or_default()
                         .insert(rec.holder);
                     match meta_by_cap.get(&rec.capability_id) {
-                        Some((gb, res, ct)) => {
+                        Some((gb, res, ct, seq)) => {
                             if *gb != rec.granted_by
                                 || *res != rec.resource
                                 || *ct != rec.capability_type
+                                || *seq != rec.grant_sequence
                             {
                                 return false;
                             }
@@ -653,12 +656,32 @@ impl VeritasEngine {
                                     rec.granted_by,
                                     rec.resource,
                                     rec.capability_type.clone(),
+                                    rec.grant_sequence,
                                 ),
                             );
                         }
                     }
                     if rec.parent.is_none() {
                         *root_count.entry(rec.capability_id).or_insert(0) += 1;
+                        // Root sequence must mint capability_id and sit under the counter.
+                        if rec.grant_sequence == 0 {
+                            return false;
+                        }
+                        if rec.grant_sequence > snap.grant_sequence {
+                            return false;
+                        }
+                        let expected = crate::capability::capability_id_of(
+                            rec.granted_by,
+                            rec.holder,
+                            rec.resource,
+                            rec.grant_sequence,
+                        );
+                        if expected != rec.capability_id {
+                            return false;
+                        }
+                        if rec.grant_sequence > max_grant_seq {
+                            max_grant_seq = rec.grant_sequence;
+                        }
                     }
                 }
 
@@ -679,6 +702,10 @@ impl VeritasEngine {
                         }
                     }
                 }
+
+                // Counter must be a valid upper envelope of all minted sequences.
+                // (Already enforced per-root: seq <= snap.grant_sequence.)
+                let _ = max_grant_seq;
             }
         }
 
@@ -2095,9 +2122,11 @@ impl VeritasEngine {
             let (creator_cap_id, creator_seq) = {
                 let cap_graph = self.capability_graph.lock().unwrap();
                 let seq = cap_graph.current_sequence() + 1 + ctx.pending_capabilities.len() as u64;
+                // Must match PendingCapabilityGrant field order:
+                // capability_id_of(grantor, grantee, resource, seq).
                 let id = crate::capability::capability_id_of(
-                    ctx.current_object,
                     object_id,
+                    ctx.current_object,
                     object_id,
                     seq,
                 );
