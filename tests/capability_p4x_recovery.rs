@@ -23,7 +23,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -128,7 +127,6 @@ fn capability_grant_no_leak_on_abort() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -139,8 +137,7 @@ fn capability_grant_no_leak_on_abort() {
             KernelCall::Abort {
                 reason: veritas_kernel::types::AbortReason::WriteConflict,
             },
-        )
-        .unwrap();
+        );
 
     let would_be_cap_id = capability_id_of(target, target, target, seq_before + 1);
     assert!(

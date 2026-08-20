@@ -29,8 +29,7 @@ fn diagnose_live_vs_recovery_components() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -81,8 +80,7 @@ fn self_access_does_not_grow_capability_graph() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),

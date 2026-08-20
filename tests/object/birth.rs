@@ -21,7 +21,6 @@ fn o1_object_birth_creates_isolated_entity() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),

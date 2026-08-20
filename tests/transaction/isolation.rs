@@ -27,8 +27,7 @@ fn t3_snapshot_isolation_read_own_writes() {
             KernelCall::Abort {
                 reason: AbortReason::AlreadyAborted,
             },
-        )
-        .unwrap();
+        );
 
     // After abort, must see old value
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);
@@ -61,8 +60,7 @@ fn t4_abort_rollback_all() {
             KernelCall::Abort {
                 reason: AbortReason::WriteConflict,
             },
-        )
-        .unwrap();
+        );
 
     // Must see original value
     let mut read_tx = tk.kernel.test_begin_in_object(tk.root_object);

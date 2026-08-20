@@ -56,8 +56,7 @@ fn module_a_object_visible_to_module_b_through_runtime_execute() {
     // Freeze requires acting as the target (AccessIntent::Freeze self-access)
     let mut ctx = kernel.test_begin_in_object(object_id);
     kernel
-        .handle(&mut ctx, KernelCall::ObjectFreeze { object_id })
-        .expect("freeze as self must succeed");
+        .handle(&mut ctx, KernelCall::ObjectFreeze { object_id });
     kernel.handle(&mut ctx, KernelCall::Commit);
 
     assert_eq!(

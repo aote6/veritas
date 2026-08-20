@@ -65,8 +65,7 @@ fn root_hash_changes_on_birth() {
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
-        )
-        .unwrap();
+        );
     let _new_id = match result {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -97,8 +96,7 @@ fn root_hash_changes_on_link() {
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
-        )
-        .unwrap();
+        );
     let child = match result {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -118,8 +116,7 @@ fn root_hash_changes_on_link() {
                 capability_type: "link".to_string(),
                 resource: child,
             },
-        )
-        .unwrap();
+        );
     tk.kernel
         .handle(
             &mut tx2,
@@ -128,8 +125,7 @@ fn root_hash_changes_on_link() {
                 to: child,
                 link_type: LinkType::Owns,
             },
-        )
-        .unwrap();
+        );
     tk.kernel.test_commit(&mut tx2).unwrap();
 
     let after = tk.kernel.test_engine().root_hash();

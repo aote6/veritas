@@ -12,7 +12,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -30,7 +29,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -42,16 +40,14 @@ fn birth(kernel: &Kernel) -> u64 {
 fn death(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
     kernel
-        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
-        .unwrap();
+        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id });
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn freeze(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
     kernel
-        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
-        .unwrap();
+        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id });
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -66,8 +62,7 @@ fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
                 capability_type: "link".to_string(),
                 resource: to,
             },
-        )
-        .unwrap();
+        );
     kernel
         .handle(
             &mut tx,
@@ -76,8 +71,7 @@ fn link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
                 to,
                 link_type: lt,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -128,8 +122,7 @@ fn lifecycle_frozen_rejects_link() {
                 capability_type: "link".to_string(),
                 resource: a,
             },
-        )
-        .unwrap();
+        );
     // Link from frozen a is recorded; commit validates frozen endpoints
     let _ = tk.kernel.handle(
         &mut tx,
@@ -156,7 +149,7 @@ fn lifecycle_frozen_rejects_link() {
         },
     );
     assert!(
-        grant_result.is_err(),
+        matches!(grant_result, TrapResult::Error(_)),
         "frozen object must reject capability grant"
     );
 }
@@ -228,7 +221,7 @@ fn lifecycle_self_link_rejected() {
             link_type: LinkType::Owns,
         },
     );
-    assert!(result.is_err(), "self-link must be rejected");
+    assert!(matches!(result, TrapResult::Error(_)), "self-link must be rejected");
 }
 
 /// @category: A
@@ -244,7 +237,7 @@ fn lifecycle_death_irreversible() {
     let result = tk
         .kernel
         .handle(&mut tx, KernelCall::ObjectDeath { object_id: obj });
-    assert!(result.is_err(), "re-death must be rejected");
+    assert!(matches!(result, TrapResult::Error(_)), "re-death must be rejected");
 }
 
 /// @category: A

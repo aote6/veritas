@@ -54,8 +54,7 @@ fn replay_equals_recovery_idle() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -99,8 +98,7 @@ fn wal_replay_is_deterministic() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -141,8 +139,7 @@ fn replay_different_ops_different_hash() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -165,8 +162,7 @@ fn replay_different_ops_different_hash() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),

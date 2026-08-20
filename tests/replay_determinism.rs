@@ -20,7 +20,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -38,7 +37,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -152,8 +150,7 @@ fn object_ops_are_deterministic() {
                     capability_type: "link".to_string(),
                     resource: b,
                 },
-            )
-            .unwrap();
+            );
         kernel
             .handle(
                 &mut tx,
@@ -162,8 +159,7 @@ fn object_ops_are_deterministic() {
                     to: b,
                     link_type: veritas_kernel::types::LinkType::Owns,
                 },
-            )
-            .unwrap();
+            );
         kernel.handle(&mut tx, KernelCall::Commit);
     }
 
@@ -207,8 +203,7 @@ fn wal_contains_full_world() {
                     capability_type: "link".to_string(),
                     resource: b,
                 },
-            )
-            .unwrap();
+            );
         kernel
             .handle(
                 &mut tx,
@@ -217,8 +212,7 @@ fn wal_contains_full_world() {
                     to: b,
                     link_type: veritas_kernel::types::LinkType::Owns,
                 },
-            )
-            .unwrap();
+            );
         kernel.handle(&mut tx, KernelCall::Commit);
     }
 

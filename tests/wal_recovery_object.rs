@@ -18,7 +18,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -36,7 +35,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -108,8 +106,7 @@ fn object_link_survives_recovery() {
                     capability_type: "link".to_string(),
                     resource: obj_b,
                 },
-            )
-            .unwrap();
+            );
         kernel
             .handle(
                 &mut tx,
@@ -118,8 +115,7 @@ fn object_link_survives_recovery() {
                     to: obj_b,
                     link_type: LinkType::Owns,
                 },
-            )
-            .unwrap();
+            );
         kernel.handle(&mut tx, KernelCall::Commit);
         assert!(
             kernel.test_engine().has_link(obj_a, obj_b),
@@ -168,7 +164,6 @@ fn aborted_object_not_recovered() {
                     object_type: ObjectType::StateObject,
                 },
             )
-            .unwrap()
         {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
@@ -180,8 +175,7 @@ fn aborted_object_not_recovered() {
                 KernelCall::Abort {
                     reason: veritas_kernel::types::AbortReason::WriteConflict,
                 },
-            )
-            .unwrap();
+            );
     }
 
     {

@@ -23,7 +23,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -55,7 +54,6 @@ fn grantor_is_real_authorizer_not_self_grant() {
                     object_type: ObjectType::StateObject,
                 },
             )
-            .unwrap()
         {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
@@ -77,7 +75,7 @@ fn grantor_is_real_authorizer_not_self_grant() {
         );
         let commit_result = kernel.handle(&mut tx, KernelCall::Commit);
         assert!(
-            commit_result.is_err(),
+            matches!(commit_result, veritas_kernel::kernel::TrapResult::Error(_)),
             "未持有 capability 时，B 对 C 的 link 必须在 commit 时被拒绝"
         );
     }
@@ -95,7 +93,6 @@ fn grantor_is_real_authorizer_not_self_grant() {
                     resource: c,
                 },
             )
-            .unwrap()
         {
             TrapResult::CapabilityId(id) => id,
             _ => panic!("expected CapabilityId"),
@@ -131,12 +128,12 @@ fn grantor_is_real_authorizer_not_self_grant() {
         },
     );
     assert!(
-        link_result.is_ok(),
+        !matches!(link_result, veritas_kernel::kernel::TrapResult::Error(_)),
         "B 持有 A 授予的 capability 后，对 C 的 link 应当成功"
     );
     let commit_result = kernel.handle(&mut tx, KernelCall::Commit);
     assert!(
-        commit_result.is_ok(),
+        !matches!(commit_result, veritas_kernel::kernel::TrapResult::Error(_)),
         "commit 应当成功：B 持有对 C 的有效授权"
     );
     assert!(kernel.test_engine().has_link(b, c), "link 关系必须真实建立");

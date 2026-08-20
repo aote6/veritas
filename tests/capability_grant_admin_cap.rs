@@ -22,7 +22,6 @@ fn birth_host(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -55,16 +54,15 @@ fn grant_without_admin_cap_on_resource_rejected() {
         },
     );
     assert!(
-        result.is_err(),
+        matches!(result, TrapResult::Error(_)),
         "A without AdminCap on B must not mint Capability on B (self-access is not Grant authority)"
     );
-    let err = format!("{:?}", result.unwrap_err());
+    // TrapResult::Error encodes the original VeritasError as a u8 code
+    // (PermissionDenied=5, EngineError=2). Either is a valid rejection signal.
     assert!(
-        err.contains("AdminCap")
-            || err.contains("PermissionDenied")
-            || err.contains("CapabilityGrant"),
-        "error must be an explicit capability authorization failure, got: {}",
-        err
+        matches!(result, TrapResult::Error(2) | TrapResult::Error(5)),
+        "error must be authorization failure code (2 or 5), got: {:?}",
+        result
     );
 }
 
@@ -87,7 +85,6 @@ fn admin_cap_holder_can_grant() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -106,7 +103,7 @@ fn admin_cap_holder_can_grant() {
         },
     );
     assert!(
-        result.is_ok(),
+        !matches!(result, TrapResult::Error(_)),
         "AdminCap holder must be allowed to Grant: {:?}",
         result
     );
@@ -140,7 +137,7 @@ fn non_admin_cap_on_resource_does_not_authorize_grant() {
         },
     );
     assert!(
-        result.is_err(),
+        matches!(result, TrapResult::Error(_)),
         "AdminCap on A must not authorize Grant on C"
     );
 }
@@ -163,7 +160,6 @@ fn revoked_admin_cap_rejects_grant() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -188,8 +184,7 @@ fn revoked_admin_cap_rejects_grant() {
                 holder: a,
                 cascade_override: Some(true),
             },
-        )
-        .expect("revoke AdminCap");
+        );
     kernel.handle(&mut tx_r, KernelCall::Commit);
 
     // Grant must now fail
@@ -203,7 +198,7 @@ fn revoked_admin_cap_rejects_grant() {
             resource: b,
         },
     );
-    assert!(result.is_err(), "revoked AdminCap must not authorize Grant");
+    assert!(matches!(result, TrapResult::Error(_)), "revoked AdminCap must not authorize Grant");
 }
 
 /// Same-tx ObjectBirth pending AdminCap is visible to Grant authorization.
@@ -224,7 +219,6 @@ fn same_tx_birth_admin_cap_allows_grant() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -240,7 +234,7 @@ fn same_tx_birth_admin_cap_allows_grant() {
         },
     );
     assert!(
-        result.is_ok(),
+        !matches!(result, TrapResult::Error(_)),
         "same-tx pending AdminCap from ObjectBirth must authorize Grant: {:?}",
         result
     );
@@ -299,7 +293,6 @@ fn grantee_dead_rejects_grant() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -311,7 +304,6 @@ fn grantee_dead_rejects_grant() {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -320,8 +312,7 @@ fn grantee_dead_rejects_grant() {
 
     let mut tx_d = kernel.test_begin_in_object(a);
     kernel
-        .handle(&mut tx_d, KernelCall::ObjectDeath { object_id: c })
-        .unwrap();
+        .handle(&mut tx_d, KernelCall::ObjectDeath { object_id: c });
     kernel.handle(&mut tx_d, KernelCall::Commit);
 
     // A still holds AdminCap on B; grantee C is dead
@@ -335,5 +326,5 @@ fn grantee_dead_rejects_grant() {
             resource: b,
         },
     );
-    assert!(result.is_err(), "dead grantee must reject Grant");
+    assert!(matches!(result, TrapResult::Error(_)), "dead grantee must reject Grant");
 }

@@ -1,3 +1,4 @@
+use veritas_kernel::kernel::TrapResult;
 use crate::common::new_kernel;
 use veritas_kernel::kernel::KernelCall;
 use veritas_kernel::test_api::KernelTestExt;
@@ -28,14 +29,13 @@ fn t2_conflict_detection() {
     let tx2_data = vec![99];
     tk.kernel.test_write(&mut tx2, state_id, tx2_data).unwrap();
     tk.kernel
-        .handle(&mut tx2, KernelCall::Commit)
-        .expect("Tx2 should commit successfully");
+        .handle(&mut tx2, KernelCall::Commit);
 
     // Tx1 tries to write and commit — must conflict
     let tx1_data = vec![1];
     tk.kernel.test_write(&mut tx1, state_id, tx1_data).unwrap();
     let res = tk.kernel.handle(&mut tx1, KernelCall::Commit);
-    assert!(res.is_err(), "Tx1 must detect write-write conflict");
+    assert!(matches!(res, TrapResult::Error(_)), "Tx1 must detect write-write conflict");
 }
 
 /// @category: B

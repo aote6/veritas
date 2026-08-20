@@ -55,7 +55,6 @@ fn birth_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -73,7 +72,6 @@ fn birth_kernel(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -91,7 +89,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -259,12 +256,11 @@ fn audit_link_kernel_commit_rejects_without_target_cap() {
                 to: b,
                 link_type: LinkType::References,
             },
-        )
-        .expect("staging ObjectLink ok");
+        );
 
     let commit = kernel.handle(&mut tx, KernelCall::Commit);
     assert!(
-        commit.is_err(),
+        matches!(commit, veritas_kernel::kernel::TrapResult::Error(_)),
         "Kernel commit must reject Link without target cap; got Ok"
     );
     assert!(!kernel.has_link(a, b));
@@ -365,9 +361,8 @@ fn audit_link_worldservice_machine_parity() {
             to: b,
             link_type: LinkType::References,
         },
-    )
-    .unwrap();
-    let k_commit_err = k.handle(&mut tx, KernelCall::Commit).is_err();
+    );
+    let k_commit_err = matches!(k.handle(&mut tx, KernelCall::Commit), veritas_kernel::kernel::TrapResult::Error(_));
     let k_has_link = k.has_link(a, b);
 
     assert_eq!(
@@ -817,10 +812,8 @@ fn audit_wal_duplicate_link_records() {
                 to: b_id,
                 link_type: LinkType::References,
             },
-        )
-        .expect("stage link with creator AdminCap on B");
-        k.handle(&mut tx, KernelCall::Commit)
-            .expect("commit authorized link");
+        );
+        k.handle(&mut tx, KernelCall::Commit);
         a = a_id;
         b = b_id;
         snap = snapshot_world(&k);
@@ -869,7 +862,6 @@ fn audit_wal_duplicate_capability_grant() {
                     resource: r,
                 },
             )
-            .unwrap()
         {
             TrapResult::CapabilityId(id) => id,
             _ => panic!("cap id"),
@@ -1070,7 +1062,7 @@ fn audit_wal_replay_committed_delta_idempotent() {
         let mut tx = k.test_begin_in_object(a);
         // grant self on b then link — or birth b under a
         let _ = b;
-        k.handle(&mut tx, KernelCall::Commit).ok();
+        let _ = k.handle(&mut tx, KernelCall::Commit);
         snap = snapshot_world(&k);
     }
 

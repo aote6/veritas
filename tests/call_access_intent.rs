@@ -23,7 +23,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -45,7 +44,6 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
                 resource,
             },
         )
-        .unwrap()
     {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
@@ -64,7 +62,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -180,8 +177,7 @@ fn call_after_delegate_succeeds() {
                     to: delegatee,
                     cascade_on_revoke: true,
                 },
-            )
-            .unwrap();
+            );
         kernel.handle(&mut tx, KernelCall::Commit);
     }
 
@@ -241,8 +237,7 @@ fn call_after_revoke_fails() {
                 holder: caller,
                 cascade_override: Some(true),
             },
-        )
-        .unwrap();
+        );
     kernel
         .handle(
             &mut tx,
@@ -251,8 +246,7 @@ fn call_after_revoke_fails() {
                 holder: caller,
                 cascade_override: Some(true),
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 
     let mut machine = Machine::new(Arc::new(kernel));
@@ -346,7 +340,7 @@ fn call_intent_collected_in_verify_path() {
     // commit goes through verify_capability
     let res = kernel.handle(&mut ctx, KernelCall::Commit);
     assert!(
-        res.is_err(),
+        matches!(res, veritas_kernel::kernel::TrapResult::Error(_)),
         "commit with unauthorized Call intent must fail"
     );
 }

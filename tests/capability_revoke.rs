@@ -13,7 +13,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -32,7 +31,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -52,8 +50,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
                 to,
                 cascade_on_revoke: cascade,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -71,7 +68,6 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
                 resource,
             },
         )
-        .unwrap()
     {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
@@ -117,8 +113,7 @@ fn kernel_capability_revoke_cascade_downstream() {
                 holder: o2,
                 cascade_override: Some(true),
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(kernel.test_engine().holds_capability(cap, o1));
@@ -159,8 +154,7 @@ fn kernel_capability_revoke_non_cascade_preserves_downstream() {
                 holder: o2,
                 cascade_override: None, // edge o1→o2 was cascade=false
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(kernel.test_engine().holds_capability(cap, o1));
@@ -201,8 +195,7 @@ fn kernel_capability_revoke_survives_checkpoint() {
                 holder: o1,
                 cascade_override: Some(true),
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 
     assert!(!kernel.test_engine().holds_capability(cap, o1));
@@ -251,8 +244,7 @@ fn kernel_capability_revoke_wal_replay() {
                 holder: o1,
                 cascade_override: Some(true),
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
     assert!(!kernel.test_engine().holds_capability(cap, o1));
 
@@ -293,5 +285,5 @@ fn kernel_capability_revoke_not_holder_errors() {
             cascade_override: None,
         },
     );
-    assert!(err.is_err());
+    assert!(matches!(err, TrapResult::Error(_)));
 }

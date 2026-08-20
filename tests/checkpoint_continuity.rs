@@ -22,7 +22,6 @@ fn birth(kernel: &Kernel, ctx: &mut TransactionContext) -> ObjectId {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -37,7 +36,6 @@ fn birth_under(kernel: &Kernel, creator: ObjectId) -> ObjectId {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -63,7 +61,6 @@ fn grant(
                 resource,
             },
         )
-        .unwrap()
     {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
@@ -192,8 +189,7 @@ fn object_death_no_ghost_state_after_checkpoint() {
     let root_alive = kernel.state_root();
     let mut ctx3 = kernel.test_begin_in_object(oid);
     kernel
-        .handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid })
-        .unwrap();
+        .handle(&mut ctx3, KernelCall::ObjectDeath { object_id: oid });
     kernel.handle(&mut ctx3, KernelCall::Commit);
     let snap_dead = kernel.test_create_checkpoint();
     assert!(!snap_dead

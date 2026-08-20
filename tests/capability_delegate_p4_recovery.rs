@@ -20,7 +20,6 @@ fn birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -39,7 +38,6 @@ fn birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -62,7 +60,6 @@ fn grant(kernel: &Kernel, grantor: u64, grantee: u64, resource: u64) -> u64 {
                 resource,
             },
         )
-        .unwrap()
     {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
@@ -82,8 +79,7 @@ fn delegate(kernel: &Kernel, cap: u64, from: u64, to: u64, cascade: bool) {
                 to,
                 cascade_on_revoke: cascade,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -97,8 +93,7 @@ fn revoke(kernel: &Kernel, cap: u64, holder: u64, cascade_override: Option<bool>
                 holder,
                 cascade_override,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -292,8 +287,7 @@ fn t6_rollback_drops_pending_delegate() {
 
     let mut tx = kernel.test_begin();
     kernel
-        .handle(&mut tx, KernelCall::Savepoint { name: "sp".into() })
-        .unwrap();
+        .handle(&mut tx, KernelCall::Savepoint { name: "sp".into() });
     kernel
         .handle(
             &mut tx,
@@ -303,12 +297,10 @@ fn t6_rollback_drops_pending_delegate() {
                 to: b,
                 cascade_on_revoke: true,
             },
-        )
-        .unwrap();
+        );
     assert_eq!(tx.pending_delegates.len(), 1);
     kernel
-        .handle(&mut tx, KernelCall::RollbackTo { name: "sp".into() })
-        .unwrap();
+        .handle(&mut tx, KernelCall::RollbackTo { name: "sp".into() });
     assert!(
         tx.pending_delegates.is_empty(),
         "rollback must clear pending delegates"

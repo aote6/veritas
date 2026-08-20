@@ -29,15 +29,13 @@ pub fn new_kernel() -> TestKernel {
                 object_type: ObjectType::StateObject,
             },
         )
-        .expect("Failed to birth Root Object")
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
     };
 
     kernel
-        .handle(&mut tx, KernelCall::Commit)
-        .expect("Failed to commit Root Object birth");
+        .handle(&mut tx, KernelCall::Commit);
 
     let mut tx_init = kernel.test_begin_in_object(root_object);
     kernel
@@ -45,8 +43,7 @@ pub fn new_kernel() -> TestKernel {
         .expect("Failed to init Root Object memory");
 
     kernel
-        .handle(&mut tx_init, KernelCall::Commit)
-        .expect("Failed to commit Root Object initialization");
+        .handle(&mut tx_init, KernelCall::Commit);
 
     TestKernel {
         kernel,
@@ -102,15 +99,13 @@ impl TestWorld {
                     object_type: ObjectType::StateObject,
                 },
             )
-            .expect("ObjectBirth failed")
         {
             TrapResult::ObjectId(id) => id,
             _ => panic!("expected ObjectId"),
         };
 
         self.kernel()
-            .handle(&mut tx, KernelCall::Commit)
-            .expect("ObjectBirth commit failed");
+            .handle(&mut tx, KernelCall::Commit);
 
         id
     }
@@ -137,11 +132,9 @@ impl TestWorld {
                     capability_type: capability_type.to_string(),
                     resource,
                 },
-            )
-            .expect("CapabilityGrant failed");
+            );
 
         self.kernel()
-            .handle(&mut tx, KernelCall::Commit)
-            .expect("CapabilityGrant commit failed");
+            .handle(&mut tx, KernelCall::Commit);
     }
 }

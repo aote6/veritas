@@ -29,8 +29,7 @@ fn receipt_after_matches_root_hash() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -66,8 +65,7 @@ fn receipt_before_after_consistency() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),
@@ -106,8 +104,7 @@ fn receipt_replay_consistency() {
                 KernelCall::ObjectBirth {
                     object_type: ObjectType::StateObject,
                 },
-            )
-            .unwrap();
+            );
         let id = match result {
             veritas_kernel::kernel::TrapResult::ObjectId(id) => id,
             _ => panic!(),

@@ -27,7 +27,6 @@ fn birth_under(kernel: &veritas_kernel::kernel::Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -67,14 +66,14 @@ fn object_link_without_capability_on_target_is_rejected() {
     );
     // ObjectLink 本身只是 push 到 pending_links，预期这一步不报错
     assert!(
-        handle_result.is_ok(),
+        !matches!(handle_result, veritas_kernel::kernel::TrapResult::Error(_)),
         "object_link staging should not itself error"
     );
 
     // 真正的授权检查发生在 commit
     let commit_result = tk.kernel.handle(&mut tx, KernelCall::Commit);
     assert!(
-        commit_result.is_err(),
+        matches!(commit_result, veritas_kernel::kernel::TrapResult::Error(_)),
         "commit must reject Link(A,B) when caller holds no capability on B \
          (regression test for the enter_object(from) self-authorization bypass)"
     );
@@ -111,8 +110,7 @@ fn object_link_with_proper_capability_succeeds() {
                 capability_type: "link".to_string(),
                 resource: b,
             },
-        )
-        .unwrap();
+        );
     tk.kernel
         .handle(
             &mut tx,
@@ -121,12 +119,11 @@ fn object_link_with_proper_capability_succeeds() {
                 to: b,
                 link_type: LinkType::Owns,
             },
-        )
-        .unwrap();
+        );
 
     let commit_result = tk.kernel.handle(&mut tx, KernelCall::Commit);
     assert!(
-        commit_result.is_ok(),
+        !matches!(commit_result, veritas_kernel::kernel::TrapResult::Error(_)),
         "commit should succeed when caller holds capability on target"
     );
 

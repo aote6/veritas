@@ -106,7 +106,6 @@ fn commit_birth_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -124,7 +123,6 @@ fn commit_birth(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -144,8 +142,7 @@ fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
                 capability_type: "link".to_string(),
                 resource: to,
             },
-        )
-        .unwrap();
+        );
     kernel
         .handle(
             &mut tx,
@@ -154,24 +151,21 @@ fn commit_link(kernel: &Kernel, from: u64, to: u64, lt: LinkType) {
                 to,
                 link_type: lt,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn commit_death(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
     kernel
-        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id })
-        .unwrap();
+        .handle(&mut tx, KernelCall::ObjectDeath { object_id: id });
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
 fn commit_freeze(kernel: &Kernel, id: u64) {
     let mut tx = kernel.test_begin_in_object(id);
     kernel
-        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id })
-        .unwrap();
+        .handle(&mut tx, KernelCall::ObjectFreeze { object_id: id });
     kernel.handle(&mut tx, KernelCall::Commit);
 }
 
@@ -237,8 +231,7 @@ fn equivalence_multi_object_topology() {
                 capability_type: "AdminCap".to_string(),
                 resource: c,
             },
-        )
-        .unwrap();
+        );
         e.handle(&mut tx, KernelCall::Commit);
 
         commit_link(e, a, b, LinkType::Owns);
@@ -292,8 +285,7 @@ fn cross_tx_unlink_then_death_no_cascade() {
     {
         let mut tx = kernel.test_begin_in_object(a);
         kernel
-            .handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b })
-            .unwrap();
+            .handle(&mut tx, KernelCall::ObjectUnlink { from: a, to: b });
         kernel.handle(&mut tx, KernelCall::Commit);
     }
     commit_death(&kernel, a); // kill A

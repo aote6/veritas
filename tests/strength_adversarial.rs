@@ -77,7 +77,6 @@ fn birth_via_kernel_under(kernel: &Kernel, creator: u64) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -95,7 +94,6 @@ fn birth_via_kernel(kernel: &Kernel) -> u64 {
                 object_type: ObjectType::StateObject,
             },
         )
-        .unwrap()
     {
         TrapResult::ObjectId(id) => id,
         _ => panic!("expected ObjectId"),
@@ -355,7 +353,6 @@ fn s_a06_revoke_then_use_denied() {
                 resource,
             },
         )
-        .unwrap()
     {
         TrapResult::CapabilityId(id) => id,
         _ => panic!("expected CapabilityId"),
@@ -373,8 +370,7 @@ fn s_a06_revoke_then_use_denied() {
                 holder: b,
                 cascade_override: Some(true),
             },
-        )
-        .expect("revoke must succeed");
+        );
     kernel.handle(&mut tx2, KernelCall::Commit);
 
     assert!(

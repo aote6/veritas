@@ -33,8 +33,7 @@ fn build_world(world: &TestWorld) {
                 to: o2,
                 link_type: LinkType::Owns,
             },
-        )
-        .unwrap();
+        );
     world.kernel().handle(&mut ctx, KernelCall::Commit);
 }
 
@@ -92,8 +91,7 @@ fn checkpoint_restore_then_continue_execution() {
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut ctx, KernelCall::Commit);
 
     // 验证 Object 3 存在
@@ -214,8 +212,7 @@ fn checkpoint_counter_roundtrip() {
             KernelCall::ObjectBirth {
                 object_type: ObjectType::StateObject,
             },
-        )
-        .unwrap();
+        );
     kernel.handle(&mut ctx, KernelCall::Commit);
     let snap3 = kernel.test_create_checkpoint();
     assert!(

@@ -142,8 +142,7 @@ fn test_aborted_tx_commit_must_fail() {
             veritas_kernel::kernel::KernelCall::Abort {
                 reason: veritas_kernel::types::AbortReason::WriteConflict,
             },
-        )
-        .unwrap();
+        );
 
     // 尝试 COMMIT 必须失败
     let result = tk.kernel.test_commit(&mut tx);
