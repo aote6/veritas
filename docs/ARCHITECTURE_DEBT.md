@@ -280,12 +280,30 @@ Runtime::execute(kernel, ModuleImage)
 
 ---
 
-### 发现 #12 — Controller / TxManager / Lock
+### 发现 #12 — Controller / TxManager / Lock（职责已冻结 ✅）
 
-- **文件**: `controller.rs`, `tx_manager.rs`, `lock.rs`  
-- **调用者**: `engine` commit 路径仍 `TransactionController::new`  
-- **分类**: **A**（仍接入）但架构上偏 **C**（早期 OCC/锁框架与 WAL 主叙事重叠）  
-- **建议**: P1 理清职责文档；禁止并行再写第二套事务状态机
+- **文件**: `controller.rs`, `tx_manager.rs`, `lock.rs`
+- **调用者**: `engine.rs` 4 个路径 — begin(919) / pre_commit_check(1149) / post_commit(1195) / abort(1933)
+- **分类**: **A. ACTIVE CORE**（职责已明确）
+- **2026-08-20 状态**: 职责边界已冻结，文档收口如下：
+
+**TransactionController**（事务生命周期协调器）
+- begin(snapshot_version)：分配 TxId + 创建 TransactionContext
+- pre_commit_check(ctx)：验证 ctx 未 Aborted + TxManager 中 Active
+- post_commit(tx_id)：标记 Committed + release_all + remove
+- abort(ctx, reason)：标记 Aborted + release_all + remove
+
+**TransactionManager**（TxId 分配器 + 事务状态表）
+- 独占 TxId 分配（AtomicU64，单调递增）
+- 事务进程表（Active / Committed / Aborted）
+- Wound-Wait 的 is_older 裁决
+
+**LockManager**（Wound-Wait 锁管理器 — 预留，未接入 commit 路径）
+- Shared / Exclusive 锁模式
+- Wound-Wait 死锁避免
+- **关键事实**: acquire() 从未被 Engine 调用；实际并发控制是
+  commit_lock 全局串行化 + OCC detect_conflict（version 检查）
+- 当前定位: 未来并发需求预留；勿与 OCC 主链混淆
 
 ---
 
