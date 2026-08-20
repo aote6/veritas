@@ -55,7 +55,8 @@
 
 - Effect executor：recovery 保持 pending，无自动重放执行
 - Machine 完整寄存器/栈状态不进 WorldSnapshot（checkpoint 目标是 World State）
-- TRAP Savepoint/RollbackTo 名恒空（ABI 未完成）
+- ~~TRAP Savepoint/RollbackTo 名恒空~~ ✅ 2026-08-20 参数块 ABI 已落地（service_id 7/8）
+- ~~旧式 Kernel Machine Instruction~~ ✅ 2026-08-20 已退役；唯一入口 TRAP 0–13
 - grant → WAL recover → 新 session 用 recovered grant（可选增强）
 
 ## 下一阶段：Forge ↔ Veritas Identity / Capability Boundary Closure
@@ -77,3 +78,8 @@
 
 核心问题：
   Forge 有没有可能把"谁在操作"弄丢、弄错、降级或绕过？
+
+## 2026-08-20 TRAP Machine 入口收口（已完成）
+
+Kernel service 的 **唯一** Machine ABI：TRAP service_id 0–13。  
+HostCall 不属于 TRAP。详见 `docs/TRAP_ABI_FREEZE.md`、`docs/TRAP_ENTRYPOINT_CLOSURE.md`。

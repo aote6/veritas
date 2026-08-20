@@ -2174,3 +2174,42 @@ Forge → WRI → veritasd → WorldService → Kernel 身份链审计。
 **结论**：Forge E2E 基础功能可用；身份边界完整性问题当前不阻塞，但未来多用户/网络部署时必须重开。
 
 **相关 commit**：57a5f0c docs: update STATUS/ROADMAP/TEST_ARCHITECTURE/USAGE/VASM_EXECUTION_MODEL
+
+## 2026-08-20 TRAP 唯一 Kernel Service Machine 入口收口
+
+**背景**：Kernel service 长期并存「旧式 Machine Instruction」与 `Instruction::Trap` 两套入口，Assembler 仍生成 OBJECT_BIRTH/COMMIT 等 mnemonic。
+
+**完成（按阶段）**：
+
+1. **TRAP ABI Batch 2**（参数块 + 寄存器）
+   - service_id 6–12：Effect / Savepoint / RollbackTo / CapabilityGrant / Revoke / Delegate / MemoryAlloc
+   - little-endian 参数块；malformed → InvalidEncoding（fail-closed）
+   - EffectKey → R0；MemoryAlloc → StateId → R0
+
+2. **入口闭环**
+   - service_id 13 Abort（R0=reason_tag；成功后 MachineStatus::Aborted）
+   - HostCall 裁定为 host boundary，**不属于** KernelCall/TRAP
+   - TRAP ObjectBirth 后处理：attach pending self-AdminCap（与 CALL 授权路径对齐）
+
+3. **用户面迁移**
+   - programs/、world_demo.vasm、countdown_cn.vasm、machine E2E 等改为 TRAP
+
+4. **旧 Instruction 退役**
+   - 删除 Machine Instruction 变体：ObjectBirth/Death/Link/Unlink/Freeze、Commit、Effect、Savepoint、RollbackTo、CapabilityGrant、Abort
+   - 删除对应 opcode、codec 臂、assembler mnemonic
+   - **KernelCall 变体全部保留**
+
+**正式路径**：
+
+```
+Instruction::Trap { service_id 0..=13 }
+  → KernelCall::decode_with_memory
+  → Kernel::handle
+  → Engine
+```
+
+**验证**：`cargo test --all-targets --no-fail-fast` → 470 passed / 0 failed（收口当时）。
+
+**明确未改**：宪法十文档；Engine/Capability/WAL/Checkpoint 语义标准；HostCall 独立边界。
+
+**后续可选**：文档索引精简、Forge 侧示例与 TRAP 对齐、Effect executor 仍为设计留白。

@@ -10,11 +10,11 @@
 
 - **模块定义**：必须包含 `module <名称>` 与 `version <x.y.z>`。
 - **注释与段落**：注释用 `;` 开头；无需写 `.code` 或 `.module` 等带点的标号。
-- **对象创建 (OBJECT_BIRTH)**：格式为 `OBJECT_BIRTH <dummy_id>`。内核会动态分配全局唯一 ID 并自动写入寄存器 `R0`。
-- **对象关联 (OBJECT_LINK)**：格式为 `OBJECT_LINK <from>, <to>, <relation>`。
-  参数可为寄存器（如 `R0`, `R1`）或具体 ID。
-  关系类型 (`relation`) 支持：`owns`、`depends_on`、`references`。
-- **事务与终止**：提交变更使用 `COMMIT`，结束虚拟机执行使用 `HALT`。
+- **Kernel service（唯一入口 TRAP）**：`TRAP <service_id>`。例如 `TRAP 0` 创建对象（ObjectId → R0），`TRAP 5` 提交事务。
+  对象链接：先把 from/to/link_type 写入 R0/R1/R2（link_type：0=depends_on，1=owns，2=references），再 `TRAP 2`。
+  完整 service_id 表见 `docs/Veritas_指令集.md` / `docs/TRAP_ABI_FREEZE.md`。
+  **已退役助记符**：`OBJECT_BIRTH`、`OBJECT_LINK`、`COMMIT` 等，Assembler 会拒绝。
+- **终止**：`HALT` 结束虚拟机执行。
 
 ---
 
@@ -28,13 +28,17 @@
 module world_demo
 version 1.0.0
 
-OBJECT_BIRTH 0
+TRAP 0
 LOAD_CONST R2, 0
 ADD R1, R0, R2
-OBJECT_BIRTH 0
-OBJECT_LINK R1, R0, owns
-OBJECT_LINK R0, R1, depends_on
-COMMIT
+TRAP 0
+LOAD_CONST R4, 0
+ADD R3, R0, R4
+ADD R0, R1, R4
+ADD R1, R3, R4
+LOAD_CONST R2, 1
+TRAP 2
+TRAP 5
 HALT
 ```
 
@@ -72,7 +76,7 @@ cargo run --bin veritas -- run world_demo.vmod ./world_demo.wal
 | 现象 / 报错 | 根因说明 | 解决办法 |
 | :--- | :--- | :--- |
 | `Missing module name` | 汇编文件中使用了 `.module` 或误加入了未支持的指示符 | 去掉前导点，直接使用 `module <name>` |
-| `Bad num: R0` | `OBJECT_BIRTH` 参数填了 `R0` | `OBJECT_BIRTH` 参数填任意数字即可，分配结果会自动存入 `R0` |
+| `Unknown op: OBJECT_BIRTH` | 使用了已退役的 Kernel mnemonic | 改用 `TRAP 0`（及对应 service_id），见指令集文档 |
 | `Os { code: 2, ... NotFound }` | 指定的 WAL 文件不存在 | 执行前先运行 `touch <wal_path>` |
 | `Error: unknown inspect subcommand` | 使用了未定义的 inspect 子命令 | inspect 仅支持 `list` 和 `object <id>` |
 

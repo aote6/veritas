@@ -1,6 +1,11 @@
 # Veritas VASM 执行模型与操作手册
 
-写给下一个接手的 AI 或人类。目的：把 2026-08-10/11 两轮会话里反复查证、反复推翻又重建的结论，一次性讲清楚，避免重新排查一遍。
+> **2026-08-20 更新**：Kernel service 的 Machine 入口已统一为 `TRAP <service_id>`（0–13）。
+> 旧式 `OBJECT_BIRTH` / `COMMIT` 等 **Instruction / Assembler mnemonic 已删除**。
+> 下文若仍出现 `OBJECT_BIRTH` 字样，指 **Kernel 语义名 / 历史排查笔记**，汇编请写 `TRAP 0`。
+> 权威 ABI：`docs/TRAP_ABI_FREEZE.md`、指令表：`docs/Veritas_指令集.md`。
+
+写给下一个接手的 AI 或人类。目的：把执行链路与身份/授权结论讲清楚，避免重新排查一遍。
 
 ---
 
@@ -14,7 +19,7 @@
     -> ModuleLoader（module.rs）                          把字节解码回 ModuleImage，安装进 loader
     -> Machine::boot()                                    把 ProgramImage 写入 Machine 的 ram
     -> Machine::step() 循环                                逐条取指、译码、执行
-    -> KernelCall / Kernel::handle()                       涉及世界状态变化的指令（BIRTH/LINK/COMMIT等）转发给 Kernel
+    -> Instruction::Trap → KernelCall::decode_with_memory → Kernel::handle()   Kernel service（TRAP 0–13）
     -> Engine（engine.rs）                                  真正的状态存储：object_registry / topology / capability_graph / state_store
     -> WAL（wal.rs）                                        commit 时把 TransactionDelta 写入 WAL，保证持久化
     -> Recovery / Replay                                    重启或 inspect 命令时，从 WAL 重放出世界状态
@@ -124,16 +129,15 @@ assembler.rs 的 parse_operand 靠前缀是不是 "R" + 数字来判断，不需
 
 常用指令写法举例（每行一条，逗号分隔参数）：
 
-  OBJECT_BIRTH 0                       创建一个新对象，新 id 自动写入 R0，不切换身份
+  TRAP 0                               创建对象（ObjectBirth），新 id 写入 R0，不切换身份
   LOAD_CONST R2, 0                     把立即数 0 写入寄存器 R2
   ADD R1, R0, R2                       R1 = R0 + R2
   CALL R1, body                        身份切换进 R1 里的对象 id，跳到标签 body
   WRITE R0, "some text"                往当前身份对象的 Address(current_object, R0槽位) 写入字符串
   RETURN                               弹栈返回，身份/PC/寄存器全部恢复到 CALL 之前
-  OBJECT_LINK R1, R2, owns             建立 R1 对象 到 R2 对象 的 owns 关系
-  OBJECT_LINK R1, R2, depends_on       依赖关系
-  OBJECT_LINK R1, R2, references       引用关系（无级联）
-  COMMIT                               提交事务，之前的所有 pending 变更落 WAL
+  ; 链接：R0=from R1=to R2=1(owns)/0(depends_on)/2(references) 后：
+  TRAP 2                               ObjectLink
+  TRAP 5                               Commit，pending 变更落 WAL
   HALT                                 停机
 
 ---

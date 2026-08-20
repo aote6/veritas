@@ -525,3 +525,17 @@ enter_object 原语；begin_in_object 无审计 bootstrap；Controller/TxManager
 - **源码变更**: 无  
 
 *报告结束。*
+
+
+---
+
+## 2026-08-20 记录：TRAP 入口双轨已消除
+
+**曾属债务**：Machine 上 Kernel service 双入口（旧 Instruction + TRAP）。
+
+**处理**：旧 Kernel Instruction / opcode / assembler mnemonic 已删除；正式路径仅为 TRAP → KernelCall → handle。
+
+**仍属债务或设计留白**（未在本轮处理）：
+- Effect executor 自动重放
+- Forge Identity / Capability 边界（见 STATUS / ROADMAP）
+- 文档中部分历史审计文仍描述旧 mnemonic（已加现行状态页眉处说明的除外）

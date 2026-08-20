@@ -1,3 +1,5 @@
+> **状态（2026-08-20）**：本文件为迁移前审计快照。结论已落地——TRAP 0–13 为唯一 Machine Kernel 入口；旧 Instruction/mnemonic 已删除。请以 `TRAP_ABI_FREEZE.md` + `TRAP_ENTRYPOINT_CLOSURE.md` 为现行规范。以下正文保留作历史对照，**勿当作当前 ABI**。
+
 # TRAP 化现状审计
 
 **日期**: 2026-08-20

@@ -8,8 +8,11 @@ and not a database. It is software that can prove how it changed.
 
 ## Start here
 
+docs/README.md                                       - Documentation index (current vs historical)
 docs/VERIFICATION_MAP.md                              - What has been verified and frozen. Read this before questioning anything.
 STATUS.md                                            - What is implemented now
+docs/Veritas_指令集.md                                - Machine instructions + TRAP service_id table
+docs/TRAP_ABI_FREEZE.md                              - Kernel service Machine ABI (TRAP only)
 docs/Veritas_设计文档.md                              - Why is the system shaped this way
 docs/Veritas_运行时数据模型标准.md                    - What are the data structures
 docs/Veritas_Runtime_Object_规范.md                   - What machine guarantees must Object obey
