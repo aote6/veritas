@@ -16,6 +16,11 @@ use veritas_kernel::kernel::{
 };
 use veritas_kernel::types::{AbortReason, VeritasError};
 
+/// PermissionDenied maps to TRAP_ERR_PERMISSION_DENIED (code 5).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn permission_denied_maps_to_code_5() {
     let result = TrapResult::from_error(VeritasError::PermissionDenied);
@@ -25,6 +30,11 @@ fn permission_denied_maps_to_code_5() {
     }
 }
 
+/// EngineError maps to TRAP_ERR_ENGINE (code 2).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn engine_error_maps_to_code_2() {
     let result = TrapResult::from_error(VeritasError::EngineError("test".into()));
@@ -34,6 +44,11 @@ fn engine_error_maps_to_code_2() {
     }
 }
 
+/// WriteConflict maps to TRAP_ERR_WRITE_CONFLICT (code 4).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn write_conflict_maps_to_code_4() {
     let result = TrapResult::from_error(VeritasError::Abort(AbortReason::WriteConflict));
@@ -43,6 +58,11 @@ fn write_conflict_maps_to_code_4() {
     }
 }
 
+/// StateNotFound maps to TRAP_ERR_STATE_NOT_FOUND (code 6).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn state_not_found_maps_to_code_6() {
     let result = TrapResult::from_error(VeritasError::Abort(AbortReason::StateNotFound));
@@ -52,6 +72,11 @@ fn state_not_found_maps_to_code_6() {
     }
 }
 
+/// All transaction AbortReason variants map to TRAP_ERR_WRITE_CONFLICT (code 4).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn all_abort_reasons_map_to_write_conflict_class() {
     let reasons = vec![
@@ -74,6 +99,11 @@ fn all_abort_reasons_map_to_write_conflict_class() {
     }
 }
 
+/// DeterminismViolation maps to TRAP_ERR_WRITE_CONFLICT (code 4).
+/// @category: C
+/// @layer: integration
+/// @testworld: NOT_USED
+/// @req: ABI-01
 #[test]
 fn determinism_violation_maps_to_write_conflict_class() {
     let result = TrapResult::from_error(VeritasError::DeterminismViolation);
