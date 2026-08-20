@@ -48,6 +48,7 @@
 | 10 | CapabilityRevoke | R0=内存指针（参数块） | Success |
 | 11 | CapabilityDelegate | R0=内存指针（参数块） | Success |
 | 12 | MemoryAlloc | R0=object_id, R1=size_hint | StateId → R0 |
+| 13 | Abort | R0=reason_tag | MachineStatus::Aborted |
 
 
 ## 2. 内存参数块格式
@@ -158,6 +159,53 @@
 - R1 = size_hint
 
 返回：`TrapResult::StateId` → 写入 R0。
+
+
+
+### 2.9 Abort（service_id 13）
+
+寄存器 ABI（无参数块）：
+
+- R0 = reason_tag
+  - 0 WriteConflict
+  - 1 ReadFutureVersion
+  - 2 AlreadyAborted
+  - 3 StateNotFound
+  - 4 PhantomConflict
+  - 其他值非法 → decode 失败 → InvalidEncoding
+
+Kernel 侧：`engine.abort(ctx, reason)`。
+
+Machine 侧（TRAP 后处理，与 `Instruction::Abort` 对齐）：成功后设置 `MachineStatus::Aborted(reason)`。
+
+Abort 属于 Kernel service（事务中止语义）+ Machine 生命周期控制；通过 TRAP 到达时 Machine 必须执行 status 转换。
+
+
+## 2.10 HostCall 架构裁定（非 Kernel service）
+
+`Instruction::HostCall { call_id }` **不属于** KernelCall / TRAP service domain。
+
+依据 `src/host.rs`：
+
+> Host Calls are provided by the external environment, not by Kernel mode.
+
+合法 call_id：0 Time / 1 Random / 2 Write / 3 Read / 4 Spawn。
+
+未知 call_id → `TrapReason::InvalidEncoding`。
+
+**不得**将 HostCall 映射为 TRAP service_id（与 Kernel 0–13 数字空间冲突且语义层级不同）。
+
+
+## 2.11 旧式 Kernel Instruction（兼容层，尚未退役）
+
+以下仍可执行，语义应经 `KernelCall::handle` 或等价 pub(crate) 转发，不得拥有独立 Engine 语义：
+
+ObjectBirth, ObjectDeath, ObjectLink, ObjectUnlink, ObjectFreeze, Commit,
+Effect, Savepoint, RollbackTo, CapabilityGrant, Abort
+
+退役条件（全部满足后方可删除）：Machine E2E 等价性、无内部依赖、assembler/tests/examples 已切换。
+
+当前：**保留兼容入口**；正式 ABI 入口为 TRAP。
 
 
 ## 3. 错误码映射

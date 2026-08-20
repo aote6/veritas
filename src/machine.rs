@@ -573,6 +573,9 @@ impl Machine {
             Instruction::Trap { service_id } => {
                 // P28: TRAP unified kernel service call
                 // Decode via KernelCall::decode_with_memory(), dispatch to Kernel::handle()
+                // Post-handle Machine glue (not Kernel semantics):
+                //   - ObjectBirth: attach pending self-AdminCap (parity with Instruction::ObjectBirth)
+                //   - Abort: set MachineStatus::Aborted (Machine lifecycle)
                 {
                     let r0 = self.registers.get_u64(0);
                     let r1 = self.registers.get_u64(1);
@@ -592,6 +595,12 @@ impl Machine {
                         }
                     };
 
+                    // Capture Abort reason before move into handle
+                    let abort_reason = match &call {
+                        crate::kernel::KernelCall::Abort { reason } => Some(*reason),
+                        _ => None,
+                    };
+
                     let result = self.kernel.handle(&mut self.ctx, call);
 
                     if let crate::kernel::TrapResult::Error(code) = result {
@@ -605,10 +614,27 @@ impl Machine {
                         return Ok(());
                     }
 
+                    // Abort: Kernel marks tx aborted; Machine enters Aborted status
+                    if let Some(r) = abort_reason {
+                        self.pc += consumed;
+                        self.status = MachineStatus::Aborted(r);
+                        return Ok(());
+                    }
+
                     // Write result to r0 (EffectKey as UTF-8 bytes per TRAP ABI freeze)
                     match result {
                         crate::kernel::TrapResult::ObjectId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));
+                            // Parity with Instruction::ObjectBirth: attach pending self-AdminCap
+                            // so subsequent CALL can pass authorize_intent.
+                            if let Some(grant) = self.ctx.pending_capabilities.iter().find(|g| {
+                                g.grantee == id && g.resource == id && g.cap_type == "AdminCap"
+                            }) {
+                                let cap_id = grant.capability_id;
+                                self.kernel
+                                    .engine()
+                                    .attach_capability(&mut self.ctx, cap_id);
+                            }
                         }
                         crate::kernel::TrapResult::CapabilityId(id) => {
                             self.registers.set(0, RegisterValue::U64(id));

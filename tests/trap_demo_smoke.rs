@@ -45,6 +45,7 @@ fn birth(kernel: &Kernel) -> u64 {
     id
 }
 
+/// Smoke demo: trap_demo_savepoint_via_param_block
 #[test]
 fn trap_demo_savepoint_via_param_block() {
     let kernel = Kernel::new();
@@ -67,6 +68,7 @@ fn trap_demo_savepoint_via_param_block() {
     println!("[demo] Savepoint via TRAP param block OK");
 }
 
+/// Smoke demo: trap_demo_capability_grant_via_param_block
 #[test]
 fn trap_demo_capability_grant_via_param_block() {
     let kernel = Kernel::new();

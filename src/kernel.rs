@@ -93,8 +93,12 @@ pub enum KernelCall {
 // VeritasError::EngineError so Machine maps them to TrapReason::InvalidEncoding.
 
 impl KernelCall {
-    /// Register-only decode for simple services (0–5, 12).
+    /// Register-only decode for simple services (0–5, 12, 13).
     /// Complex services 6–11 require [`decode_with_memory`].
+    ///
+    /// service_id 13 Abort: R0 = reason tag
+    ///   0 WriteConflict, 1 ReadFutureVersion, 2 AlreadyAborted,
+    ///   3 StateNotFound, 4 PhantomConflict
     pub fn decode(
         service_id: u8,
         r0: u64,
@@ -135,6 +139,22 @@ impl KernelCall {
                 object_id: r0,
                 size_hint: r1,
             }),
+            13 => {
+                let reason = match r0 as u8 {
+                    0 => crate::types::AbortReason::WriteConflict,
+                    1 => crate::types::AbortReason::ReadFutureVersion,
+                    2 => crate::types::AbortReason::AlreadyAborted,
+                    3 => crate::types::AbortReason::StateNotFound,
+                    4 => crate::types::AbortReason::PhantomConflict,
+                    _ => {
+                        return Err(crate::types::VeritasError::EngineError(format!(
+                            "Invalid AbortReason tag: {}",
+                            r0
+                        )))
+                    }
+                };
+                Ok(KernelCall::Abort { reason })
+            }
             6 | 7 | 8 | 9 | 10 | 11 => Err(crate::types::VeritasError::EngineError(format!(
                 "service_id {} requires parameter block (use decode_with_memory)",
                 service_id
@@ -155,7 +175,7 @@ impl KernelCall {
         memory: &crate::memory::Memory,
     ) -> Result<Self, crate::types::VeritasError> {
         match service_id {
-            0..=5 | 12 => Self::decode(service_id, r0, r1, r2),
+            0..=5 | 12 | 13 => Self::decode(service_id, r0, r1, r2),
             6 => Self::decode_effect_block(r0, memory),
             7 => Self::decode_name_block(r0, memory, true),
             8 => Self::decode_name_block(r0, memory, false),
