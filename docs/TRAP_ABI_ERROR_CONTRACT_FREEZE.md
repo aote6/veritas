@@ -93,3 +93,29 @@ pub const TRAP_ERR_STATE_NOT_FOUND: u8 = 6;
 - 未知 code 不再被静默映射成 InvalidEncoding
 - ABI 测试覆盖完整映射链
 - 全量测试通过
+
+## 6. Code 1 vs Code 5 语义边界（2026-08-20 补充）
+
+**code 1 = TRAP_ERR_ACCESS_DENIED**
+- 层级：Machine CALL 指令层级的访问拒绝
+- 来源：未来 Machine 执行 CALL 时的硬件级访问检查
+- 当前状态：预留，尚无实际产生来源
+
+**code 5 = TRAP_ERR_PERMISSION_DENIED**
+- 层级：Kernel 层级的权限拒绝
+- 来源：VeritasError::PermissionDenied
+- 当前状态：活跃使用
+
+两者都映射到 TrapReason::AccessDenied，但保留不同的 ABI code 是有意设计：
+- 便于未来区分错误来源层级
+- 避免语义耦合：Machine 层拒绝不应伪装成 Kernel 层拒绝
+
+**冻结判定**：两个 code 都保留，不合并。
+
+## 7. 测试闭环状态（2026-08-20 更新）
+
+- `tests/trap_error_abi.rs`：验证 VeritasError → TrapResult::Error(code)
+  - 6 个测试，覆盖所有 VeritasError 变体到 ABI code 的映射
+- `src/machine.rs` unit tests（trap_mapping_tests）：验证 TrapResult::Error(code) → 真实 map_trap_code() → TrapReason
+  - 8 个测试，直接调用生产代码，无镜像实现
+- 两部分测试共同构成完整映射链的闭环

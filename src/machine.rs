@@ -956,3 +956,97 @@ impl Machine {
         )
     }
 }
+
+#[cfg(test)]
+mod trap_mapping_tests {
+    use super::map_trap_code;
+    use crate::kernel::{
+        TRAP_ERR_ACCESS_DENIED, TRAP_ERR_ENGINE, TRAP_ERR_MEMORY_FAULT, TRAP_ERR_PERMISSION_DENIED,
+        TRAP_ERR_STATE_NOT_FOUND, TRAP_ERR_WRITE_CONFLICT,
+    };
+    use crate::types::TrapReason;
+
+    #[test]
+    fn code_1_maps_to_access_denied() {
+        assert_eq!(
+            map_trap_code(TRAP_ERR_ACCESS_DENIED, 42),
+            TrapReason::AccessDenied { pc: 42 }
+        );
+    }
+
+    #[test]
+    fn code_2_maps_to_engine_error() {
+        assert_eq!(
+            map_trap_code(TRAP_ERR_ENGINE, 7),
+            TrapReason::EngineError { pc: 7 }
+        );
+    }
+
+    #[test]
+    fn code_3_reserved_does_not_fabricate_memory_fault() {
+        let reason = map_trap_code(TRAP_ERR_MEMORY_FAULT, 5);
+        assert!(
+            !matches!(reason, TrapReason::MemoryFault { .. }),
+            "reserved MEMORY_FAULT must not fabricate MemoryFault"
+        );
+        assert_eq!(
+            reason,
+            TrapReason::UnknownKernelError {
+                code: TRAP_ERR_MEMORY_FAULT,
+                pc: 5
+            }
+        );
+    }
+
+    #[test]
+    fn code_4_maps_to_write_conflict_not_illegal_instruction() {
+        let reason = map_trap_code(TRAP_ERR_WRITE_CONFLICT, 10);
+        assert!(
+            !matches!(reason, TrapReason::IllegalInstruction { .. }),
+            "WRITE_CONFLICT must not map to IllegalInstruction"
+        );
+        assert_eq!(reason, TrapReason::WriteConflict { pc: 10 });
+    }
+
+    #[test]
+    fn code_5_maps_to_access_denied() {
+        assert_eq!(
+            map_trap_code(TRAP_ERR_PERMISSION_DENIED, 43),
+            TrapReason::AccessDenied { pc: 43 }
+        );
+    }
+
+    #[test]
+    fn code_6_maps_to_state_not_found_not_invalid_encoding() {
+        let reason = map_trap_code(TRAP_ERR_STATE_NOT_FOUND, 11);
+        assert!(
+            !matches!(reason, TrapReason::InvalidEncoding { .. }),
+            "STATE_NOT_FOUND must not map to InvalidEncoding"
+        );
+        assert_eq!(reason, TrapReason::StateNotFound { pc: 11 });
+    }
+
+    #[test]
+    fn unknown_code_maps_to_unknown_kernel_error() {
+        let unknown = 99u8;
+        assert_eq!(
+            map_trap_code(unknown, 23),
+            TrapReason::UnknownKernelError {
+                code: unknown,
+                pc: 23
+            }
+        );
+    }
+
+    #[test]
+    fn code_1_and_code_5_share_trap_reason_but_are_distinct_abi_codes() {
+        // code 1: Machine CALL 层级的访问拒绝（预留）
+        // code 5: Kernel PermissionDenied
+        // 两者都映射到 AccessDenied，但 ABI code 不同，语义层级不同
+        let machine_access = map_trap_code(TRAP_ERR_ACCESS_DENIED, 1);
+        let kernel_permission = map_trap_code(TRAP_ERR_PERMISSION_DENIED, 1);
+        assert_eq!(machine_access, TrapReason::AccessDenied { pc: 1 });
+        assert_eq!(kernel_permission, TrapReason::AccessDenied { pc: 1 });
+        assert_ne!(TRAP_ERR_ACCESS_DENIED, TRAP_ERR_PERMISSION_DENIED);
+    }
+}
