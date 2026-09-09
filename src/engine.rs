@@ -981,12 +981,32 @@ impl VeritasEngine {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = format!(
-            "wal_{}_{:?}_{}.log",
-            std::process::id(),
-            std::thread::current().id(),
-            n
-        );
+        let base = std::env::temp_dir().join("veritas_ephemeral_wal");
+        let _ = std::fs::create_dir_all(&base);
+
+        // 同类文件是一次性产物，用完即弃：顺手清掉超过1小时的旧文件，避免长期堆积
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        if modified < cutoff {
+                            let _ = std::fs::remove_file(entry.path());
+                        }
+                    }
+                }
+            }
+        }
+
+        let path = base
+            .join(format!(
+                "wal_{}_{:?}_{}.log",
+                std::process::id(),
+                std::thread::current().id(),
+                n
+            ))
+            .to_string_lossy()
+            .into_owned();
         let _ = std::fs::remove_file(&path);
         Self::with_wal_path(path)
     }
